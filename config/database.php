@@ -28,8 +28,14 @@ try {
             `title` VARCHAR(200) NOT NULL,
             `content` TEXT NOT NULL,
             `target_role` ENUM('semua', 'guru', 'siswa', 'orang_tua', 'staf') NOT NULL DEFAULT 'semua',
+            `category` ENUM('umum', 'akademik', 'kegiatan', 'penting', 'darurat') NOT NULL DEFAULT 'umum',
+            `is_pinned` TINYINT(1) NOT NULL DEFAULT 0,
+            `attachment_url` VARCHAR(255) DEFAULT NULL,
+            `status` ENUM('draft', 'published') NOT NULL DEFAULT 'published',
+            `expires_at` DATETIME DEFAULT NULL,
             `author_id` INT NOT NULL,
-            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
         CREATE TABLE IF NOT EXISTS `assignments` (
@@ -202,6 +208,12 @@ try {
         "ALTER TABLE `users` ADD COLUMN `gender` ENUM('L', 'P') DEFAULT 'L' AFTER `nisn`",
         "ALTER TABLE `service_requests` ADD COLUMN `target_date` DATE DEFAULT NULL AFTER `request_type`",
         "ALTER TABLE `service_requests` ADD COLUMN `attachment_url` VARCHAR(255) DEFAULT NULL AFTER `notes`",
+        "ALTER TABLE `announcements` ADD COLUMN `category` ENUM('umum', 'akademik', 'kegiatan', 'penting', 'darurat') NOT NULL DEFAULT 'umum' AFTER `target_role`",
+        "ALTER TABLE `announcements` ADD COLUMN `is_pinned` TINYINT(1) NOT NULL DEFAULT 0 AFTER `category`",
+        "ALTER TABLE `announcements` ADD COLUMN `attachment_url` VARCHAR(255) DEFAULT NULL AFTER `is_pinned`",
+        "ALTER TABLE `announcements` ADD COLUMN `status` ENUM('draft', 'published') NOT NULL DEFAULT 'published' AFTER `attachment_url`",
+        "ALTER TABLE `announcements` ADD COLUMN `expires_at` DATETIME DEFAULT NULL AFTER `status`",
+        "ALTER TABLE `announcements` ADD COLUMN `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`",
     ];
     foreach ($alter_queries as $aq) {
         try {
@@ -392,6 +404,29 @@ function getAttendanceIcon(string $status): string {
 }
 
 /**
+ * Daftar kategori pengumuman
+ */
+const ANNOUNCEMENT_CATEGORIES = [
+    'umum'     => ['label' => 'Umum',     'badge' => 'border-blue-500/30 bg-blue-500/10 text-blue-300',       'icon' => '📢'],
+    'akademik' => ['label' => 'Akademik', 'badge' => 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300', 'icon' => '🎓'],
+    'kegiatan' => ['label' => 'Kegiatan', 'badge' => 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300',       'icon' => '📌'],
+    'penting'  => ['label' => 'Penting',  'badge' => 'border-amber-500/30 bg-amber-500/10 text-amber-300',     'icon' => '⚡'],
+    'darurat'  => ['label' => 'Darurat',  'badge' => 'border-rose-500/30 bg-rose-500/10 text-rose-300',       'icon' => '🚨'],
+];
+
+function getAnnouncementCategoryLabel(string $category): string {
+    return ANNOUNCEMENT_CATEGORIES[$category]['label'] ?? ucfirst($category);
+}
+
+function getAnnouncementCategoryBadge(string $category): string {
+    return ANNOUNCEMENT_CATEGORIES[$category]['badge'] ?? 'border-slate-500/30 bg-slate-500/10 text-slate-300';
+}
+
+function getAnnouncementCategoryIcon(string $category): string {
+    return ANNOUNCEMENT_CATEGORIES[$category]['icon'] ?? '📢';
+}
+
+/**
  * Helper Kalender Akademik & Agenda
  */
 const CALENDAR_CATEGORIES = [
@@ -417,7 +452,9 @@ function requireLogin(): void {
         session_start();
     }
     if (!isset($_SESSION['user_id'])) {
-        header("Location: ../auth/login.php");
+        $parentFolder = basename(dirname($_SERVER['PHP_SELF']));
+        $loginUrl = ($parentFolder === 'dashboard') ? '../auth/login.php' : '../../auth/login.php';
+        header("Location: " . $loginUrl);
         exit;
     }
 }
@@ -429,7 +466,9 @@ function requireRole(array $allowedRoles): void {
     requireLogin();
     $currentRole = $_SESSION['user_role'] ?? 'siswa';
     if (!in_array($currentRole, $allowedRoles, true)) {
-        header("Location: index.php?error=unauthorized");
+        $parentFolder = basename(dirname($_SERVER['PHP_SELF']));
+        $dashIndex = ($parentFolder === 'dashboard') ? 'index.php?error=unauthorized' : '../index.php?error=unauthorized';
+        header("Location: " . $dashIndex);
         exit;
     }
 }

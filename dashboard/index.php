@@ -20,11 +20,27 @@ $stmt_ann = $pdo->prepare("
     SELECT a.*, u.name as author_name 
     FROM announcements a 
     JOIN users u ON a.author_id = u.id 
-    WHERE a.target_role IN ('semua', ?) 
-    ORDER BY a.id DESC LIMIT 3
+    WHERE a.status = 'published'
+      AND (a.expires_at IS NULL OR a.expires_at > NOW())
+      AND a.target_role IN ('semua', ?) 
+    ORDER BY a.is_pinned DESC, a.id DESC LIMIT 5
 ");
 $stmt_ann->execute([$user_role]);
 $latest_announcements = $stmt_ann->fetchAll();
+
+// Ambil pengumuman darurat/penting yang di-pin untuk alert banner
+$stmt_urgent = $pdo->prepare("
+    SELECT a.*, u.name as author_name 
+    FROM announcements a 
+    JOIN users u ON a.author_id = u.id 
+    WHERE a.status = 'published'
+      AND (a.expires_at IS NULL OR a.expires_at > NOW())
+      AND a.target_role IN ('semua', ?) 
+      AND (a.category IN ('darurat', 'penting') OR a.is_pinned = 1)
+    ORDER BY FIELD(a.category, 'darurat', 'penting') ASC, a.id DESC LIMIT 3
+");
+$stmt_urgent->execute([$user_role]);
+$urgent_announcements = $stmt_urgent->fetchAll();
 
 // 2. Data Khusus Admin
 $total_users = 0;
@@ -261,57 +277,109 @@ try {
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-            <a href="attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5">
+            <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5">
                 <span>📅</span> Presensi
             </a>
-            <a href="calendar.php" class="rounded-xl border border-cyan-500/30 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5">
+            <a href="akademik/calendar.php" class="rounded-xl border border-cyan-500/30 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5">
                 <span>🗓️</span> Kalender
             </a>
             <a href="Modul-ujian/exams.php" class="rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5">
                 <span>📝</span> Ujian & Latihan
             </a>
-            <a href="announcements.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-sm font-semibold transition">
+            <a href="informasi/announcements.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-sm font-semibold transition">
                 📢 Pengumuman
             </a>
             <?php if ($user_role === 'administrator'): ?>
-                <a href="users.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
+                <a href="admin/users.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
                     👥 Kelola Pengguna
                 </a>
-                <a href="classes.php" class="rounded-xl border border-indigo-500/30 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 px-4 py-2.5 text-sm font-semibold transition">
+                <a href="admin/classes.php" class="rounded-xl border border-indigo-500/30 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 px-4 py-2.5 text-sm font-semibold transition">
                     🏫 Rombel & Kelas
                 </a>
             <?php elseif ($user_role === 'guru'): ?>
-                <a href="assignments.php" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition">
+                <a href="akademik/assignments.php" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition">
                     ➕ Buat Tugas
                 </a>
-                <a href="gradebook.php" class="rounded-xl border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 px-4 py-2.5 text-sm font-semibold transition">
+                <a href="akademik/gradebook.php" class="rounded-xl border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 px-4 py-2.5 text-sm font-semibold transition">
                     📚 Buku Nilai
                 </a>
             <?php elseif ($user_role === 'siswa'): ?>
-                <a href="exam_card.php" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-sm font-semibold transition">
+                <a href="Modul-ujian/exam_card.php" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-sm font-semibold transition">
                     🪪 Kartu Ujian
                 </a>
-                <a href="report_card.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
+                <a href="akademik/report_card.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
                     📈 E-Rapor
                 </a>
             <?php elseif ($user_role === 'orang_tua'): ?>
-                <a href="report_card.php<?= $linked_child ? '?student_id='.$linked_child['id'] : '' ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
+                <a href="akademik/report_card.php<?= $linked_child ? '?student_id='.$linked_child['id'] : '' ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
                     📈 Rapor Anak
                 </a>
-                <a href="requests.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition">
+                <a href="surat/requests.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition">
                     📋 Izin / Sakit
                 </a>
             <?php elseif ($user_role === 'staf'): ?>
-                <a href="requests.php" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition">
+                <a href="surat/requests.php" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition">
                     📋 Surat Masuk
                 </a>
-                <a href="attendance_report.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition">
+                <a href="presensi/attendance_report.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition">
                     📊 Rekap Presensi
                 </a>
             <?php endif; ?>
         </div>
     </div>
 </div>
+
+<!-- Banner Pengumuman Penting / Darurat -->
+<?php if (!empty($urgent_announcements)): ?>
+<div class="space-y-3 mb-8">
+    <?php foreach ($urgent_announcements as $ua): 
+        $is_darurat = (($ua['category'] ?? '') === 'darurat');
+        $is_penting = (($ua['category'] ?? '') === 'penting');
+        if ($is_darurat) {
+            $banner_border = 'border-rose-500/40';
+            $banner_bg = 'bg-gradient-to-r from-rose-950/30 via-rose-900/20 to-slate-900/30';
+            $banner_icon = '🚨';
+            $banner_label = 'DARURAT';
+            $banner_label_cls = 'text-rose-400';
+            $banner_text = 'text-rose-200';
+            $banner_btn = 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/30';
+            $animate = 'animate-pulse';
+        } elseif ($is_penting) {
+            $banner_border = 'border-amber-500/40';
+            $banner_bg = 'bg-gradient-to-r from-amber-950/30 via-amber-900/15 to-slate-900/30';
+            $banner_icon = '⚡';
+            $banner_label = 'PENTING';
+            $banner_label_cls = 'text-amber-400';
+            $banner_text = 'text-amber-200';
+            $banner_btn = 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/30';
+            $animate = '';
+        } else {
+            $banner_border = 'border-blue-500/30';
+            $banner_bg = 'bg-gradient-to-r from-blue-950/20 via-slate-900/40 to-slate-900/30';
+            $banner_icon = '📌';
+            $banner_label = 'DISEMATKAN';
+            $banner_label_cls = 'text-blue-400';
+            $banner_text = 'text-blue-200';
+            $banner_btn = 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30';
+            $animate = '';
+        }
+    ?>
+        <div class="p-4 rounded-2xl border <?= $banner_border ?> <?= $banner_bg ?> <?= $banner_text ?> flex flex-col sm:flex-row sm:items-center justify-between gap-3 <?= $animate ?>">
+            <div class="flex items-center gap-3 min-w-0">
+                <span class="text-2xl flex-shrink-0"><?= $banner_icon ?></span>
+                <div class="min-w-0">
+                    <p class="text-[10px] font-black uppercase tracking-widest <?= $banner_label_cls ?>"><?= $banner_label ?></p>
+                    <h4 class="text-sm font-bold text-white truncate"><?= htmlspecialchars($ua['title']) ?></h4>
+                    <p class="text-xs <?= $banner_text ?> line-clamp-1 opacity-80"><?= htmlspecialchars(mb_substr($ua['content'], 0, 120)) ?><?= mb_strlen($ua['content']) > 120 ? '...' : '' ?></p>
+                </div>
+            </div>
+            <a href="informasi/announcements.php" class="whitespace-nowrap px-4 py-2 rounded-xl <?= $banner_btn ?> text-xs font-bold text-white transition shadow-lg text-center flex-shrink-0">
+                Baca Selengkapnya →
+            </a>
+        </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <!-- ========================================================= -->
 <!-- 1. TAMPILAN KHUSUS: ADMINISTRATOR -->
@@ -322,19 +390,19 @@ try {
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
             <span class="text-xs text-slate-400 font-medium">Total Pengguna</span>
             <p class="text-3xl font-extrabold text-white mt-2"><?= $total_users ?></p>
-            <a href="users.php" class="text-xs text-blue-400 hover:underline mt-1 block">Kelola pengguna →</a>
+            <a href="admin/users.php" class="text-xs text-blue-400 hover:underline mt-1 block">Kelola pengguna →</a>
         </div>
 
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
             <span class="text-xs text-slate-400 font-medium">Surat Diproses</span>
             <p class="text-3xl font-extrabold text-amber-300 mt-2"><?= $total_requests_pending ?></p>
-            <a href="requests.php" class="text-xs text-amber-400 hover:underline mt-1 block">Lihat permohonan →</a>
+            <a href="surat/requests.php" class="text-xs text-amber-400 hover:underline mt-1 block">Lihat permohonan →</a>
         </div>
 
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
             <span class="text-xs text-slate-400 font-medium">Tugas Belajar</span>
             <p class="text-3xl font-extrabold text-emerald-300 mt-2"><?= $total_assignments ?></p>
-            <a href="assignments.php" class="text-xs text-emerald-400 hover:underline mt-1 block">Daftar tugas →</a>
+            <a href="akademik/assignments.php" class="text-xs text-emerald-400 hover:underline mt-1 block">Daftar tugas →</a>
         </div>
 
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
@@ -346,7 +414,7 @@ try {
         <div class="rounded-2xl border border-white/10 bg-white/5 p-5 col-span-2 sm:col-span-1">
             <span class="text-xs text-slate-400 font-medium">Pengumuman Terbit</span>
             <p class="text-3xl font-extrabold text-blue-300 mt-2"><?= count($latest_announcements) ?></p>
-            <a href="announcements.php" class="text-xs text-blue-400 hover:underline mt-1 block">Buka pengumuman →</a>
+            <a href="informasi/announcements.php" class="text-xs text-blue-400 hover:underline mt-1 block">Buka pengumuman →</a>
         </div>
     </div>
 
@@ -370,14 +438,27 @@ try {
         <div class="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-6">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-base font-bold text-white">📢 Pengumuman Sekolah Terkini</h3>
-                <a href="announcements.php" class="text-xs text-blue-400 hover:underline">Semua →</a>
+                <a href="informasi/announcements.php" class="text-xs text-blue-400 hover:underline">Semua →</a>
             </div>
             <div class="space-y-3">
-                <?php foreach ($latest_announcements as $a): ?>
-                    <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5">
+                <?php foreach ($latest_announcements as $a): 
+                    $a_cat = ANNOUNCEMENT_CATEGORIES[$a['category'] ?? 'umum'] ?? ANNOUNCEMENT_CATEGORIES['umum'];
+                ?>
+                    <div class="p-4 rounded-2xl bg-slate-900/60 border <?= !empty($a['is_pinned']) ? 'border-amber-500/30' : 'border-white/5' ?>">
                         <div class="flex items-center justify-between gap-2 mb-1">
-                            <h4 class="text-sm font-bold text-white"><?= htmlspecialchars($a['title']) ?></h4>
-                            <span class="text-[10px] text-slate-400"><?= date('d M Y', strtotime($a['created_at'])) ?></span>
+                            <div class="flex items-center gap-2 min-w-0">
+                                <?php if (!empty($a['is_pinned'])): ?>
+                                    <span class="text-amber-400 text-xs flex-shrink-0">📌</span>
+                                <?php endif; ?>
+                                <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold <?= $a_cat['badge'] ?> flex-shrink-0"><?= $a_cat['icon'] ?> <?= $a_cat['label'] ?></span>
+                                <h4 class="text-sm font-bold text-white truncate"><?= htmlspecialchars($a['title']) ?></h4>
+                            </div>
+                            <div class="flex items-center gap-1.5 flex-shrink-0">
+                                <?php if (!empty($a['attachment_url'])): ?>
+                                    <span class="text-[10px] text-slate-400">📎</span>
+                                <?php endif; ?>
+                                <span class="text-[10px] text-slate-400"><?= date('d M Y', strtotime($a['created_at'])) ?></span>
+                            </div>
                         </div>
                         <p class="text-xs text-slate-300 line-clamp-2"><?= htmlspecialchars($a['content']) ?></p>
                     </div>
@@ -401,7 +482,7 @@ try {
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">Surat yang baru diajukan oleh siswa atau orang tua.</p>
                 </div>
-                <a href="requests.php" class="text-xs font-semibold text-amber-400 hover:text-amber-300">
+                <a href="surat/requests.php" class="text-xs font-semibold text-amber-400 hover:text-amber-300">
                     Buka Semua (<?= count($pending_requests) ?>) →
                 </a>
             </div>
@@ -419,11 +500,11 @@ try {
                                 <p class="text-xs text-slate-400">Pemohon: <strong class="text-slate-300"><?= htmlspecialchars($req['applicant_name']) ?></strong> (<?= htmlspecialchars(getRoleLabel($req['applicant_role'])) ?>)</p>
                             </div>
                             <div class="flex items-center gap-2">
-                                <a href="requests.php?update_id=<?= $req['id'] ?>&new_status=diproses" 
+                                <a href="surat/requests.php?update_id=<?= $req['id'] ?>&new_status=diproses" 
                                    class="rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition">
                                     Proses
                                 </a>
-                                <a href="requests.php?update_id=<?= $req['id'] ?>&new_status=selesai" 
+                                <a href="surat/requests.php?update_id=<?= $req['id'] ?>&new_status=selesai" 
                                    class="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition">
                                     Selesai
                                 </a>
@@ -439,7 +520,7 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <h3 class="text-base font-bold text-white mb-2">📢 Buat Pengumuman Sekolah</h3>
                 <p class="text-xs text-slate-400 mb-4">Terbitkan informasi resmi untuk guru, siswa, atau wali murid.</p>
-                <a href="announcements.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white transition">
+                <a href="informasi/announcements.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white transition">
                     ➕ Tulis Pengumuman Baru
                 </a>
             </div>
@@ -470,7 +551,7 @@ try {
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">Daftar tugas yang sedang aktif dan dikerjakan oleh siswa.</p>
                 </div>
-                <a href="assignments.php" class="text-xs font-semibold text-emerald-400 hover:text-emerald-300">
+                <a href="akademik/assignments.php" class="text-xs font-semibold text-emerald-400 hover:text-emerald-300">
                     Kelola Tugas →
                 </a>
             </div>
@@ -490,7 +571,7 @@ try {
                                 <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($asg['title']) ?></h4>
                                 <p class="text-xs text-slate-400">Batas Waktu: <?= date('d M Y', strtotime($asg['due_date'])) ?></p>
                             </div>
-                            <a href="assignments.php" class="text-xs text-blue-400 hover:underline">
+                            <a href="akademik/assignments.php" class="text-xs text-blue-400 hover:underline">
                                 Detail →
                             </a>
                         </div>
@@ -559,10 +640,10 @@ try {
                     <a href="Modul-ujian/exams.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white shadow-lg shadow-blue-500/25 transition">
                         ➕ Buat Ujian / Latihan Baru
                     </a>
-                    <a href="assignments.php" class="block w-full py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-center text-xs font-semibold text-emerald-300 transition">
+                    <a href="akademik/assignments.php" class="block w-full py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-center text-xs font-semibold text-emerald-300 transition">
                         📚 Buat Tugas Belajar
                     </a>
-                    <a href="gradebook.php" class="block w-full py-2.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-center text-xs font-semibold text-amber-300 transition">
+                    <a href="akademik/gradebook.php" class="block w-full py-2.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-center text-xs font-semibold text-amber-300 transition">
                         📊 Rekap Nilai Gabungan
                     </a>
                 </div>
@@ -571,9 +652,16 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <h3 class="text-base font-bold text-white mb-3">📢 Pengumuman Guru Terkini</h3>
                 <div class="space-y-3">
-                    <?php foreach ($latest_announcements as $an): ?>
-                        <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                            <h4 class="text-xs font-bold text-white mb-1"><?= htmlspecialchars($an['title']) ?></h4>
+                    <?php foreach ($latest_announcements as $an): 
+                        $an_cat = ANNOUNCEMENT_CATEGORIES[$an['category'] ?? 'umum'] ?? ANNOUNCEMENT_CATEGORIES['umum'];
+                    ?>
+                        <div class="p-3 rounded-xl bg-slate-900/60 border <?= !empty($an['is_pinned']) ? 'border-amber-500/30' : 'border-white/5' ?>">
+                            <div class="flex items-center gap-1.5 mb-1">
+                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400">📌</span><?php endif; ?>
+                                <span class="rounded px-1 py-0.5 text-[9px] font-semibold <?= $an_cat['badge'] ?>"><?= $an_cat['icon'] ?></span>
+                                <h4 class="text-xs font-bold text-white truncate"><?= htmlspecialchars($an['title']) ?></h4>
+                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto">📎</span><?php endif; ?>
+                            </div>
                             <p class="text-[11px] text-slate-400 line-clamp-2"><?= htmlspecialchars($an['content']) ?></p>
                         </div>
                     <?php endforeach; ?>
@@ -608,13 +696,13 @@ try {
                 </div>
             </div>
             <div class="flex flex-wrap items-center gap-2.5">
-                <a href="report_card.php?student_id=<?= $linked_child['id'] ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                <a href="akademik/report_card.php?student_id=<?= $linked_child['id'] ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
                     <span>📈</span> Rapor Digital Anak
                 </a>
-                <a href="exam_card.php?student_id=<?= $linked_child['id'] ?>" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-xs font-bold transition flex items-center gap-2">
+                <a href="Modul-ujian/exam_card.php?student_id=<?= $linked_child['id'] ?>" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-xs font-bold transition flex items-center gap-2">
                     <span>🪪</span> Kartu Peserta Ujian
                 </a>
-                <a href="attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-xs font-bold transition flex items-center gap-2">
+                <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-xs font-bold transition flex items-center gap-2">
                     <span>📅</span> Riwayat Presensi
                 </a>
             </div>
@@ -633,7 +721,7 @@ try {
                             <p class="text-sm">Ananda <strong><?= htmlspecialchars($linked_child['name'] ?? 'Siswa') ?></strong> tercatat <strong>ALPA (Tidak Masuk Tanpa Keterangan)</strong> pada presensi hari ini!</p>
                         </div>
                     </div>
-                    <a href="requests.php" class="whitespace-nowrap px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white transition shadow-lg shadow-rose-600/30 text-center">
+                    <a href="surat/requests.php" class="whitespace-nowrap px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white transition shadow-lg shadow-rose-600/30 text-center">
                         Ajukan Izin / Sakit Sekarang →
                     </a>
                 </div>
@@ -671,7 +759,7 @@ try {
                             </p>
                         </div>
                     </div>
-                    <a href="assignments.php" class="whitespace-nowrap px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition text-center">
+                    <a href="akademik/assignments.php" class="whitespace-nowrap px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition text-center">
                         Ingatkan Anak →
                     </a>
                 </div>
@@ -689,7 +777,7 @@ try {
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">Daftar tugas pelajaran aktif dari guru untuk siswa.</p>
                 </div>
-                <a href="assignments.php" class="text-xs font-semibold text-purple-400 hover:text-purple-300">
+                <a href="akademik/assignments.php" class="text-xs font-semibold text-purple-400 hover:text-purple-300">
                     Buka Semua →
                 </a>
             </div>
@@ -757,7 +845,7 @@ try {
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
                         <span>📅</span> Presensi Kehadiran Anak
                     </h3>
-                    <a href="attendance.php" class="text-xs font-semibold text-emerald-400 hover:underline">
+                    <a href="presensi/attendance.php" class="text-xs font-semibold text-emerald-400 hover:underline">
                         Rincian →
                     </a>
                 </div>
@@ -797,7 +885,7 @@ try {
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
                         <span>🗓️</span> Agenda Terdekat
                     </h3>
-                    <a href="calendar.php" class="text-xs font-semibold text-blue-400 hover:underline">
+                    <a href="akademik/calendar.php" class="text-xs font-semibold text-blue-400 hover:underline">
                         Kalender →
                     </a>
                 </div>
@@ -817,7 +905,7 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <h3 class="text-base font-bold text-white mb-2">📋 Layanan Surat Sekolah</h3>
                 <p class="text-xs text-slate-400 mb-4">Ajukan surat izin dispensasi atau permohonan dokumen untuk putra/putri Anda.</p>
-                <a href="requests.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white transition">
+                <a href="surat/requests.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white transition">
                     ➕ Ajukan Permohonan Surat
                 </a>
             </div>
@@ -825,9 +913,16 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <h3 class="text-base font-bold text-white mb-3">📢 Pengumuman Wali Murid</h3>
                 <div class="space-y-3">
-                    <?php foreach ($latest_announcements as $an): ?>
-                        <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                            <h4 class="text-xs font-bold text-white mb-1"><?= htmlspecialchars($an['title']) ?></h4>
+                    <?php foreach ($latest_announcements as $an): 
+                        $an_cat = ANNOUNCEMENT_CATEGORIES[$an['category'] ?? 'umum'] ?? ANNOUNCEMENT_CATEGORIES['umum'];
+                    ?>
+                        <div class="p-3 rounded-xl bg-slate-900/60 border <?= !empty($an['is_pinned']) ? 'border-amber-500/30' : 'border-white/5' ?>">
+                            <div class="flex items-center gap-1.5 mb-1">
+                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400">📌</span><?php endif; ?>
+                                <span class="rounded px-1 py-0.5 text-[9px] font-semibold <?= $an_cat['badge'] ?>"><?= $an_cat['icon'] ?></span>
+                                <h4 class="text-xs font-bold text-white truncate"><?= htmlspecialchars($an['title']) ?></h4>
+                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto">📎</span><?php endif; ?>
+                            </div>
                             <p class="text-[11px] text-slate-400 line-clamp-2"><?= htmlspecialchars($an['content']) ?></p>
                         </div>
                     <?php endforeach; ?>
@@ -851,7 +946,7 @@ try {
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">Kerjakan dan tandai tugas yang sudah Anda selesaikan.</p>
                 </div>
-                <a href="assignments.php" class="text-xs font-semibold text-blue-400 hover:text-blue-300">
+                <a href="akademik/assignments.php" class="text-xs font-semibold text-blue-400 hover:text-blue-300">
                     Lihat Semua Tugas →
                 </a>
             </div>
@@ -874,7 +969,7 @@ try {
                                 <p class="text-xs text-slate-400">Guru: <?= htmlspecialchars($asg['teacher_name']) ?> • Deadline: <span class="text-amber-300"><?= date('d M Y', strtotime($asg['due_date'])) ?></span></p>
                             </div>
                             <div>
-                                <a href="assignments.php?toggle_id=<?= $asg['id'] ?>" 
+                                <a href="akademik/assignments.php?toggle_id=<?= $asg['id'] ?>" 
                                    class="inline-flex items-center justify-center gap-1.5 py-1.5 px-3.5 rounded-xl text-xs font-semibold transition <?= $is_done ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white' ?>">
                                     <?= $is_done ? '✅ Selesai' : '📌 Tandai Selesai' ?>
                                 </a>
@@ -954,7 +1049,7 @@ try {
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
                         <span>📅</span> Presensi Kehadiran
                     </h3>
-                    <a href="attendance.php" class="text-xs font-semibold text-emerald-400 hover:underline">
+                    <a href="presensi/attendance.php" class="text-xs font-semibold text-emerald-400 hover:underline">
                         Riwayat →
                     </a>
                 </div>
@@ -994,7 +1089,7 @@ try {
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
                         <span>🗓️</span> Agenda Terdekat
                     </h3>
-                    <a href="calendar.php" class="text-xs font-semibold text-blue-400 hover:underline">
+                    <a href="akademik/calendar.php" class="text-xs font-semibold text-blue-400 hover:underline">
                         Kalender →
                     </a>
                 </div>
@@ -1015,16 +1110,16 @@ try {
                 <h3 class="text-base font-bold text-white mb-2">⚡ Pintasan Cepat Siswa</h3>
                 <p class="text-xs text-slate-400 mb-4">Akses dokumen akademik dan layanan permohonan surat tata usaha.</p>
                 <div class="space-y-2.5">
-                    <a href="exam_card.php" class="block w-full py-2.5 rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-center text-xs font-bold text-purple-300 transition">
+                    <a href="Modul-ujian/exam_card.php" class="block w-full py-2.5 rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-center text-xs font-bold text-purple-300 transition">
                         🪪 Cetak Kartu Peserta Ujian
                     </a>
-                    <a href="report_card.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition">
+                    <a href="akademik/report_card.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition">
                         📈 Cetak / Unduh E-Rapor Digital
                     </a>
                     <a href="Modul-ujian/exams.php" class="block w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-center text-xs font-semibold text-slate-300 transition">
                         📝 Buka Ujian & Latihan
                     </a>
-                    <a href="requests.php" class="block w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-center text-xs font-semibold text-white transition">
+                    <a href="surat/requests.php" class="block w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-center text-xs font-semibold text-white transition">
                         📋 Ajukan Surat Keterangan / Izin
                     </a>
                 </div>
@@ -1033,9 +1128,16 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <h3 class="text-base font-bold text-white mb-3">📢 Pengumuman Sekolah</h3>
                 <div class="space-y-3">
-                    <?php foreach ($latest_announcements as $an): ?>
-                        <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                            <h4 class="text-xs font-bold text-white mb-1"><?= htmlspecialchars($an['title']) ?></h4>
+                    <?php foreach ($latest_announcements as $an): 
+                        $an_cat = ANNOUNCEMENT_CATEGORIES[$an['category'] ?? 'umum'] ?? ANNOUNCEMENT_CATEGORIES['umum'];
+                    ?>
+                        <div class="p-3 rounded-xl bg-slate-900/60 border <?= !empty($an['is_pinned']) ? 'border-amber-500/30' : 'border-white/5' ?>">
+                            <div class="flex items-center gap-1.5 mb-1">
+                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400">📌</span><?php endif; ?>
+                                <span class="rounded px-1 py-0.5 text-[9px] font-semibold <?= $an_cat['badge'] ?>"><?= $an_cat['icon'] ?></span>
+                                <h4 class="text-xs font-bold text-white truncate"><?= htmlspecialchars($an['title']) ?></h4>
+                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto">📎</span><?php endif; ?>
+                            </div>
                             <p class="text-[11px] text-slate-400 line-clamp-2"><?= htmlspecialchars($an['content']) ?></p>
                         </div>
                     <?php endforeach; ?>

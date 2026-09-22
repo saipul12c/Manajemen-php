@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . "/../config/database.php";
+require_once __DIR__ . "/../../config/database.php";
 
 requireRole(['staf', 'administrator', 'guru']);
 
@@ -53,7 +53,7 @@ foreach ($report_rows as $r) {
 $school_att_rate = $tot_records > 0 ? round(($tot_hadir / $tot_records) * 100, 1) : 100.0;
 
 $page_title = "Laporan Rekapitulasi Presensi Bulanan";
-require_once __DIR__ . "/includes/header.php";
+require_once __DIR__ . "/../includes/header.php";
 ?>
 
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -73,7 +73,7 @@ require_once __DIR__ . "/includes/header.php";
         <button onclick="window.print()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5">
             <span>🖨️</span> Cetak Laporan
         </button>
-        <a href="requests.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition">
+        <a href="../surat/requests.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition">
             📋 Layanan Surat
         </a>
     </div>
@@ -176,4 +176,4 @@ require_once __DIR__ . "/includes/header.php";
     </div>
 </div>
 
-<?php require_once __DIR__ . "/includes/footer.php"; ?>
+<?php require_once __DIR__ . "/../includes/footer.php"; ?>

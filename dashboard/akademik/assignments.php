@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . "/../config/database.php";
+require_once __DIR__ . "/../../config/database.php";
 
 requireLogin();
 
@@ -12,7 +12,7 @@ $message = "";
 $message_type = "";
 
 // Buat direktori upload tugas jika belum ada
-$upload_dir = __DIR__ . "/../uploads/assignments";
+$upload_dir = __DIR__ . "/../../uploads/assignments";
 if (!is_dir($upload_dir)) {
     @mkdir($upload_dir, 0777, true);
 }
@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $new_filename = 'tugas_' . $assignment_id . '_siswa_' . $user_id . '_' . time() . '.' . $file_ext;
             $destination  = $upload_dir . '/' . $new_filename;
             if (move_uploaded_file($file_tmp, $destination)) {
-                $file_url = '../uploads/assignments/' . $new_filename;
+                $file_url = '../../uploads/assignments/' . $new_filename;
             }
         }
     }
@@ -183,7 +183,7 @@ if ($selected_assign_id > 0 && $is_teacher) {
 }
 
 $page_title = "Tugas Pembelajaran";
-require_once __DIR__ . "/includes/header.php";
+require_once __DIR__ . "/../includes/header.php";
 ?>
 
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -501,4 +501,4 @@ function openSubmitModal(id, title) {
 </div>
 <?php endif; ?>
 
-<?php require_once __DIR__ . "/includes/footer.php"; ?>
+<?php require_once __DIR__ . "/../includes/footer.php"; ?>

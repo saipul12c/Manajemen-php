@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . "/../config/database.php";
+require_once __DIR__ . "/../../config/database.php";
 
 requireLogin();
 
@@ -154,7 +154,7 @@ while ($ex = $stmt_ex->fetch()) {
         'description' => "Batas pengerjaan asesmen: " . date('H:i', strtotime($ex['due_date'])) . " WIB",
         'category'    => 'ujian',
         'color'       => 'purple',
-        'url'         => 'Modul-ujian/exams.php',
+        'url'         => '../Modul-ujian/exams.php',
     ];
 }
 
@@ -193,7 +193,7 @@ $stmt_upcoming = $pdo->query("
 $upcoming_agenda = $stmt_upcoming->fetchAll();
 
 $page_title = "Kalender Akademik";
-require_once __DIR__ . "/includes/header.php";
+require_once __DIR__ . "/../includes/header.php";
 ?>
 
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -579,4 +579,4 @@ function showEventDetail(item, dateStr) {
 }
 </script>
 
-<?php require_once __DIR__ . "/includes/footer.php"; ?>
+<?php require_once __DIR__ . "/../includes/footer.php"; ?>

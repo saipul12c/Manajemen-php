@@ -10,9 +10,8 @@ $user_role = $_SESSION["user_role"] ?? "siswa";
 
 // Active page indicator & base URL resolution
 $current_page = basename($_SERVER['PHP_SELF']);
-$is_in_module = (basename(dirname($_SERVER['PHP_SELF'])) === 'Modul-ujian');
-$dash_url = $is_in_module ? '../' : '';
-$exam_url = $is_in_module ? '' : 'Modul-ujian/';
+$parent_folder = basename(dirname($_SERVER['PHP_SELF']));
+$dash_url = ($parent_folder === 'dashboard') ? '' : '../';
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -43,67 +42,67 @@ $exam_url = $is_in_module ? '' : 'Modul-ujian/';
                         📊 Dashboard
                     </a>
 
-                    <a href="<?= $dash_url ?>attendance.php" 
+                    <a href="<?= $dash_url ?>presensi/attendance.php" 
                        class="rounded-xl px-3 py-2 transition <?= $current_page === 'attendance.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                         📅 Presensi
                     </a>
 
-                    <a href="<?= $dash_url ?>assignments.php" 
+                    <a href="<?= $dash_url ?>akademik/assignments.php" 
                        class="rounded-xl px-3 py-2 transition <?= $current_page === 'assignments.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                         📚 Tugas
                     </a>
 
-                    <a href="<?= $exam_url ?>exams.php" 
+                    <a href="<?= $dash_url ?>Modul-ujian/exams.php" 
                        class="rounded-xl px-3 py-2 transition <?= in_array($current_page, ['exams.php', 'exam_questions.php', 'exam_take.php', 'exam_results.php']) ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                         📝 Ujian & Latihan
                     </a>
 
-                    <a href="<?= $dash_url ?>calendar.php" 
+                    <a href="<?= $dash_url ?>akademik/calendar.php" 
                        class="rounded-xl px-3 py-2 transition <?= $current_page === 'calendar.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                         🗓️ Kalender
                     </a>
 
-                    <a href="<?= $dash_url ?>announcements.php" 
+                    <a href="<?= $dash_url ?>informasi/announcements.php" 
                        class="rounded-xl px-3 py-2 transition <?= $current_page === 'announcements.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                         📢 Pengumuman
                     </a>
 
-                    <a href="<?= $dash_url ?>requests.php" 
-                       class="rounded-xl px-3 py-2 transition <?= $current_page === 'requests.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
+                    <a href="<?= $dash_url ?>surat/requests.php" 
+                       class="rounded-xl px-3 py-2 transition <?= in_array($current_page, ['requests.php', 'request_print.php']) ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                         📋 Layanan Surat
                     </a>
 
                     <?php if (in_array($user_role, ['guru', 'administrator'], true)): ?>
-                        <a href="<?= $dash_url ?>gradebook.php" 
+                        <a href="<?= $dash_url ?>akademik/gradebook.php" 
                            class="rounded-xl px-3 py-2 transition <?= $current_page === 'gradebook.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                             📊 Buku Nilai
                         </a>
                     <?php endif; ?>
 
                     <?php if (in_array($user_role, ['siswa', 'orang_tua'], true)): ?>
-                        <a href="<?= $dash_url ?>report_card.php" 
+                        <a href="<?= $dash_url ?>akademik/report_card.php" 
                            class="rounded-xl px-3 py-2 transition <?= $current_page === 'report_card.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                             📈 Rapor
                         </a>
                     <?php endif; ?>
 
                     <?php if ($user_role === 'siswa'): ?>
-                        <a href="<?= $dash_url ?>exam_card.php" 
+                        <a href="<?= $dash_url ?>Modul-ujian/exam_card.php" 
                            class="rounded-xl px-3 py-2 transition <?= $current_page === 'exam_card.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                             🪪 Kartu Ujian
                         </a>
                     <?php endif; ?>
 
                     <?php if ($user_role === 'administrator'): ?>
-                        <a href="<?= $dash_url ?>classes.php" 
+                        <a href="<?= $dash_url ?>admin/classes.php" 
                            class="rounded-xl px-3 py-2 transition <?= $current_page === 'classes.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                             🏫 Kelas
                         </a>
-                        <a href="<?= $dash_url ?>users.php" 
+                        <a href="<?= $dash_url ?>admin/users.php" 
                            class="rounded-xl px-3 py-2 transition <?= $current_page === 'users.php' ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                             👥 User
                         </a>
-                        <a href="<?= $dash_url ?>settings.php" 
+                        <a href="<?= $dash_url ?>admin/settings.php" 
                            class="rounded-xl px-3 py-2 transition <?= in_array($current_page, ['settings.php', 'audit_logs.php']) ? 'bg-white/10 text-white font-semibold' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
                             ⚙️ Pengaturan
                         </a>
@@ -147,47 +146,47 @@ $exam_url = $is_in_module ? '' : 'Modul-ujian/';
             <a href="<?= $dash_url ?>index.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'index.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                 Dashboard
             </a>
-            <a href="<?= $dash_url ?>attendance.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'attendance.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+            <a href="<?= $dash_url ?>presensi/attendance.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'attendance.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                 Presensi
             </a>
-            <a href="<?= $dash_url ?>assignments.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'assignments.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+            <a href="<?= $dash_url ?>akademik/assignments.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'assignments.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                 Tugas
             </a>
-            <a href="<?= $exam_url ?>exams.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= in_array($current_page, ['exams.php', 'exam_questions.php', 'exam_take.php', 'exam_results.php']) ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+            <a href="<?= $dash_url ?>Modul-ujian/exams.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= in_array($current_page, ['exams.php', 'exam_questions.php', 'exam_take.php', 'exam_results.php']) ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                 Ujian & Latihan
             </a>
-            <a href="<?= $dash_url ?>calendar.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'calendar.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+            <a href="<?= $dash_url ?>akademik/calendar.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'calendar.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                 Kalender
             </a>
-            <a href="<?= $dash_url ?>announcements.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'announcements.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+            <a href="<?= $dash_url ?>informasi/announcements.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'announcements.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                 Pengumuman
             </a>
-            <a href="<?= $dash_url ?>requests.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'requests.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+            <a href="<?= $dash_url ?>surat/requests.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= in_array($current_page, ['requests.php', 'request_print.php']) ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                 Layanan Surat
             </a>
             <?php if (in_array($user_role, ['guru', 'administrator'], true)): ?>
-                <a href="<?= $dash_url ?>gradebook.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'gradebook.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+                <a href="<?= $dash_url ?>akademik/gradebook.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'gradebook.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                     Buku Nilai
                 </a>
             <?php endif; ?>
             <?php if (in_array($user_role, ['siswa', 'orang_tua'], true)): ?>
-                <a href="<?= $dash_url ?>report_card.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'report_card.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+                <a href="<?= $dash_url ?>akademik/report_card.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'report_card.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                     Rapor
                 </a>
             <?php endif; ?>
             <?php if ($user_role === 'siswa'): ?>
-                <a href="<?= $dash_url ?>exam_card.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'exam_card.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+                <a href="<?= $dash_url ?>Modul-ujian/exam_card.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'exam_card.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                     Kartu Ujian
                 </a>
             <?php endif; ?>
             <?php if ($user_role === 'administrator'): ?>
-                <a href="<?= $dash_url ?>classes.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'classes.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+                <a href="<?= $dash_url ?>admin/classes.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'classes.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                     Kelas
                 </a>
-                <a href="<?= $dash_url ?>users.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'users.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+                <a href="<?= $dash_url ?>admin/users.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= $current_page === 'users.php' ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                     User
                 </a>
-                <a href="<?= $dash_url ?>settings.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= in_array($current_page, ['settings.php', 'audit_logs.php']) ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
+                <a href="<?= $dash_url ?>admin/settings.php" class="px-2.5 py-1.5 rounded-lg whitespace-nowrap <?= in_array($current_page, ['settings.php', 'audit_logs.php']) ? 'bg-white/10 text-white' : 'text-slate-400' ?>">
                     Pengaturan
                 </a>
             <?php endif; ?>

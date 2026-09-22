@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . "/../config/database.php";
+require_once __DIR__ . "/../../config/database.php";
 
 requireLogin();
 
@@ -149,7 +149,7 @@ if ($can_manage) {
 }
 
 $page_title = "Presensi Siswa";
-require_once __DIR__ . "/includes/header.php";
+require_once __DIR__ . "/../includes/header.php";
 
 // Helper nama hari dalam bahasa Indonesia
 if (!function_exists('hariIndo')) {
@@ -597,4 +597,4 @@ function markAllStatus(status) {
 }
 </script>
 
-<?php require_once __DIR__ . "/includes/footer.php"; ?>
+<?php require_once __DIR__ . "/../includes/footer.php"; ?>

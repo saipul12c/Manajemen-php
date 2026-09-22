@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . "/../config/database.php";
+require_once __DIR__ . "/../../config/database.php";
 
 requireLogin();
 
@@ -12,7 +12,7 @@ $message = "";
 $message_type = "";
 
 // Buat direktori upload lampiran surat jika belum ada
-$upload_letter_dir = __DIR__ . "/../uploads/letters";
+$upload_letter_dir = __DIR__ . "/../../uploads/letters";
 if (!is_dir($upload_letter_dir)) {
     @mkdir($upload_letter_dir, 0777, true);
 }
@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $new_filename = 'surat_' . $user_id . '_' . time() . '.' . $file_ext;
             $destination  = $upload_letter_dir . '/' . $new_filename;
             if (move_uploaded_file($file_tmp, $destination)) {
-                $attachment_url = '../uploads/letters/' . $new_filename;
+                $attachment_url = '../../uploads/letters/' . $new_filename;
             }
         }
     }
@@ -145,7 +145,7 @@ if ($is_staff) {
 $requests_list = $stmt->fetchAll();
 
 $page_title = "Layanan Surat Tata Usaha";
-require_once __DIR__ . "/includes/header.php";
+require_once __DIR__ . "/../includes/header.php";
 ?>
 
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -160,7 +160,7 @@ require_once __DIR__ . "/includes/header.php";
 
     <div class="flex items-center gap-2">
         <?php if ($is_staff): ?>
-            <a href="attendance_report.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition flex items-center gap-1.5">
+            <a href="../presensi/attendance_report.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition flex items-center gap-1.5">
                 <span>📑</span> Laporan Presensi TU
             </a>
         <?php else: ?>
@@ -334,4 +334,4 @@ require_once __DIR__ . "/includes/header.php";
 </div>
 <?php endif; ?>
 
-<?php require_once __DIR__ . "/includes/footer.php"; ?>
+<?php require_once __DIR__ . "/../includes/footer.php"; ?>

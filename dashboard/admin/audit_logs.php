@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . "/../config/database.php";
+require_once __DIR__ . "/../../config/database.php";
 
 requireRole(['administrator']);
 
@@ -15,7 +15,7 @@ $stmt = $pdo->query("
 $logs = $stmt->fetchAll();
 
 $page_title = "Audit Trail & Log Aktivitas";
-require_once __DIR__ . "/includes/header.php";
+require_once __DIR__ . "/../includes/header.php";
 ?>
 
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -98,4 +98,4 @@ require_once __DIR__ . "/includes/header.php";
     </div>
 </div>
 
-<?php require_once __DIR__ . "/includes/footer.php"; ?>
+<?php require_once __DIR__ . "/../includes/footer.php"; ?>

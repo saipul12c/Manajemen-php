@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . "/../config/database.php";
+require_once __DIR__ . "/../../config/database.php";
 
 requireLogin();
 
@@ -68,7 +68,7 @@ $page_title = "Kartu Peserta Ujian - " . htmlspecialchars($student['name']);
 
     <!-- Action Bar -->
     <div class="no-print w-full max-w-2xl mb-6 flex items-center justify-between">
-        <a href="index.php" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition">
+        <a href="../index.php" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition">
             ← Kembali ke Dashboard
         </a>
         <button onclick="window.print()" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition flex items-center gap-2">
