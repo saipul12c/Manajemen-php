@@ -19,6 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         header("Location: attendance.php?error=unauthorized");
         exit;
     }
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
 
     $attendance_date = $_POST['attendance_date'] ?? date('Y-m-d');
     $statuses = $_POST['status'] ?? [];
@@ -55,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $message_type = "error";
         }
     }
+    } // end CSRF check
 }
 
 // -------------------------------------------------------------
@@ -108,12 +113,26 @@ if ($can_manage) {
     // -------------------------------------------------------------
     // 3. DATA UNTUK SISWA & ORANG TUA
     // -------------------------------------------------------------
+    // BUG-12 fix: Jangan fallback ke siswa random. Cari siswa yang memang terhubung via parent_students
     $target_student_id = $user_id;
-    // Jika orang tua, ambil siswa pertama sebagai sampel anak jika belum ada relasi
+    $linked_student = null;
     if ($user_role === 'orang_tua') {
-        $first_student = $pdo->query("SELECT id FROM users WHERE role = 'siswa' LIMIT 1")->fetchColumn();
-        if ($first_student) {
-            $target_student_id = (int) $first_student;
+        try {
+            $stmt_child = $pdo->prepare("
+                SELECT u.id, u.name, u.nisn 
+                FROM parent_students ps
+                JOIN users u ON ps.student_id = u.id
+                WHERE ps.parent_id = ? 
+                LIMIT 1
+            ");
+            $stmt_child->execute([$user_id]);
+            $linked_student = $stmt_child->fetch();
+        } catch (Exception $e) {}
+
+        if ($linked_student) {
+            $target_student_id = (int) $linked_student['id'];
+        } else {
+            $target_student_id = 0; // Tidak ada siswa terhubung
         }
     }
 
@@ -167,8 +186,8 @@ if (!function_exists('hariIndo')) {
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
         <div class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400 text-xl border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
-                📅
+            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400 text-lg border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
+                <i class="fa-solid fa-calendar-check"></i>
             </span>
             <div>
                 <h1 class="text-2xl font-bold text-white tracking-tight">Presensi Siswa</h1>
@@ -182,12 +201,12 @@ if (!function_exists('hariIndo')) {
     <?php if ($can_manage): ?>
         <div class="flex items-center gap-2 bg-white/5 border border-white/10 p-1.5 rounded-2xl">
             <a href="attendance.php?tab=input&date=<?= htmlspecialchars($selected_date) ?>" 
-               class="px-4 py-2 rounded-xl text-sm font-medium transition <?= $active_tab === 'input' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'text-slate-400 hover:text-white' ?>">
-                ✍️ Input Presensi
+               class="px-4 py-2 rounded-xl text-sm font-medium transition inline-flex items-center gap-2 <?= $active_tab === 'input' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'text-slate-400 hover:text-white' ?>">
+                <i class="fa-solid fa-pen-to-square"></i> Input Presensi
             </a>
             <a href="attendance.php?tab=rekap&month=<?= $selected_month ?>&year=<?= $selected_year ?>" 
-               class="px-4 py-2 rounded-xl text-sm font-medium transition <?= $active_tab === 'rekap' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'text-slate-400 hover:text-white' ?>">
-                📊 Rekapitulasi
+               class="px-4 py-2 rounded-xl text-sm font-medium transition inline-flex items-center gap-2 <?= $active_tab === 'rekap' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'text-slate-400 hover:text-white' ?>">
+                <i class="fa-solid fa-chart-column"></i> Rekapitulasi
             </a>
         </div>
     <?php endif; ?>
@@ -197,10 +216,10 @@ if (!function_exists('hariIndo')) {
 <?php if ($message): ?>
     <div class="mb-6 rounded-2xl border p-4 text-sm flex items-center justify-between <?= $message_type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300' ?>">
         <div class="flex items-center gap-3">
-            <span class="text-lg"><?= $message_type === 'success' ? '✅' : '⚠️' ?></span>
+            <span class="text-base"><i class="fa-solid <?= $message_type === 'success' ? 'fa-circle-check text-emerald-400' : 'fa-triangle-exclamation text-amber-400' ?>"></i></span>
             <span><?= htmlspecialchars($message) ?></span>
         </div>
-        <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100">✕</button>
+        <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100"><i class="fa-solid fa-xmark"></i></button>
     </div>
 <?php endif; ?>
 
@@ -231,13 +250,13 @@ if (!function_exists('hariIndo')) {
             <div class="flex items-center gap-2">
                 <button type="button" 
                         onclick="markAllStatus('hadir')"
-                        class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 shadow-sm">
-                    ✅ Tandai Semua Hadir
+                        class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 shadow-sm inline-flex items-center gap-1.5">
+                    <i class="fa-solid fa-check-double"></i> Tandai Semua Hadir
                 </button>
                 <button type="button" 
                         onclick="markAllStatus('izin')"
-                        class="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3.5 py-2 text-xs font-semibold text-blue-300 transition hover:bg-blue-500/20 shadow-sm">
-                    ✉️ Semua Izin
+                        class="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3.5 py-2 text-xs font-semibold text-blue-300 transition hover:bg-blue-500/20 shadow-sm inline-flex items-center gap-1.5">
+                    <i class="fa-solid fa-envelope"></i> Semua Izin
                 </button>
             </div>
         </div>
@@ -245,6 +264,7 @@ if (!function_exists('hariIndo')) {
 
     <!-- Form Input Presensi -->
     <form method="POST" action="attendance.php?tab=input&date=<?= htmlspecialchars($selected_date) ?>">
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="save_attendance">
         <input type="hidden" name="attendance_date" value="<?= htmlspecialchars($selected_date) ?>">
 
@@ -263,7 +283,7 @@ if (!function_exists('hariIndo')) {
                         <?php if (empty($students)): ?>
                             <tr>
                                 <td colspan="4" class="px-6 py-12 text-center text-slate-400">
-                                    <span class="text-3xl block mb-2">👥</span>
+                                    <span class="text-3xl block mb-2 text-slate-500"><i class="fa-solid fa-users"></i></span>
                                     Belum ada data akun siswa yang terdaftar di sistem.
                                 </td>
                             </tr>
@@ -349,8 +369,8 @@ if (!function_exists('hariIndo')) {
                     Total Siswa: <strong class="text-white"><?= count($students) ?></strong> anak
                 </p>
                 <button type="submit" 
-                        class="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-indigo-500">
-                    💾 Simpan Presensi Hari Ini
+                        class="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-indigo-500 inline-flex items-center gap-2">
+                    <i class="fa-solid fa-floppy-disk"></i> Simpan Presensi Hari Ini
                 </button>
             </div>
         </div>
@@ -394,8 +414,8 @@ if (!function_exists('hariIndo')) {
             <div class="flex items-center gap-2">
                 <button type="button" 
                         onclick="window.print()" 
-                        class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition">
-                    🖨️ Cetak Rekap
+                        class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition inline-flex items-center gap-1.5">
+                    <i class="fa-solid fa-print"></i> Cetak Rekap
                 </button>
             </div>
         </div>
@@ -478,6 +498,28 @@ if (!function_exists('hariIndo')) {
     <!-- VIEW SISWA & ORANG TUA: RIWAYAT & STATISTIK PRIBADI -->
     <!-- ========================================================= -->
 
+    <?php if ($user_role === 'orang_tua'): ?>
+        <?php if ($linked_student): ?>
+            <div class="mb-6 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-4 flex items-center justify-between text-indigo-200">
+                <div class="flex items-center gap-3">
+                    <span class="text-xl text-indigo-400"><i class="fa-solid fa-user-graduate"></i></span>
+                    <div>
+                        <p class="text-xs font-bold text-indigo-400 uppercase tracking-wider">Memantau Presensi Anak</p>
+                        <p class="text-sm font-semibold text-white"><?= htmlspecialchars($linked_student['name']) ?> <span class="font-mono text-xs text-slate-400">(NISN: <?= htmlspecialchars($linked_student['nisn'] ?? '-') ?>)</span></p>
+                    </div>
+                </div>
+            </div>
+        <?php else: ?>
+            <div class="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-center gap-3 text-amber-200">
+                <span class="text-xl text-amber-400"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                <div>
+                    <p class="text-xs font-bold text-amber-400 uppercase tracking-wider">Belum Ada Siswa Terhubung</p>
+                    <p class="text-sm">Akun orang tua ini belum terhubung dengan data siswa manapun. Silakan hubungi administrator sekolah.</p>
+                </div>
+            </div>
+        <?php endif; ?>
+    <?php endif; ?>
+
     <!-- KPI Metrics Grid -->
     <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <!-- Persentase -->
@@ -498,7 +540,7 @@ if (!function_exists('hariIndo')) {
         <div class="rounded-3xl border border-emerald-500/20 bg-slate-900/60 p-5 shadow-xl backdrop-blur">
             <div class="flex items-center justify-between">
                 <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Hadir</p>
-                <span class="text-emerald-400">✅</span>
+                <span class="text-emerald-400"><i class="fa-solid fa-circle-check"></i></span>
             </div>
             <p class="text-2xl font-bold text-emerald-300 mt-2"><?= $student_stats['hadir'] ?? 0 ?></p>
             <p class="text-xs text-slate-500 mt-1">Hari belajar</p>
@@ -508,7 +550,7 @@ if (!function_exists('hariIndo')) {
         <div class="rounded-3xl border border-amber-500/20 bg-slate-900/60 p-5 shadow-xl backdrop-blur">
             <div class="flex items-center justify-between">
                 <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Sakit</p>
-                <span class="text-amber-400">🩺</span>
+                <span class="text-amber-400"><i class="fa-solid fa-notes-medical"></i></span>
             </div>
             <p class="text-2xl font-bold text-amber-300 mt-2"><?= $student_stats['sakit'] ?? 0 ?></p>
             <p class="text-xs text-slate-500 mt-1">Dengan surat</p>
@@ -518,7 +560,7 @@ if (!function_exists('hariIndo')) {
         <div class="rounded-3xl border border-blue-500/20 bg-slate-900/60 p-5 shadow-xl backdrop-blur">
             <div class="flex items-center justify-between">
                 <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Izin</p>
-                <span class="text-blue-400">✉️</span>
+                <span class="text-blue-400"><i class="fa-solid fa-envelope"></i></span>
             </div>
             <p class="text-2xl font-bold text-blue-300 mt-2"><?= $student_stats['izin'] ?? 0 ?></p>
             <p class="text-xs text-slate-500 mt-1">Dispensasi</p>
@@ -528,7 +570,7 @@ if (!function_exists('hariIndo')) {
         <div class="rounded-3xl border border-rose-500/20 bg-slate-900/60 p-5 shadow-xl backdrop-blur">
             <div class="flex items-center justify-between">
                 <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Alpa</p>
-                <span class="text-rose-400">❌</span>
+                <span class="text-rose-400"><i class="fa-solid fa-circle-xmark"></i></span>
             </div>
             <p class="text-2xl font-bold text-rose-300 mt-2"><?= $student_stats['alpa'] ?? 0 ?></p>
             <p class="text-xs text-slate-500 mt-1">Tanpa keterangan</p>
@@ -556,7 +598,7 @@ if (!function_exists('hariIndo')) {
                     <?php if (empty($student_history)): ?>
                         <tr>
                             <td colspan="4" class="px-6 py-12 text-center text-slate-400">
-                                <span class="text-3xl block mb-2">📋</span>
+                                <span class="text-3xl block mb-2 text-slate-500"><i class="fa-solid fa-clipboard-list"></i></span>
                                 Belum ada riwayat catatan presensi untuk akun Anda.
                             </td>
                         </tr>

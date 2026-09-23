@@ -8,20 +8,25 @@ $message = "";
 $message_type = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_settings') {
-    $fields = [
-        'school_name', 'school_address', 'school_phone', 'school_email',
-        'school_website', 'headmaster_name', 'headmaster_nip', 'academic_year', 'school_logo'
-    ];
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
+        $fields = [
+            'school_name', 'school_address', 'school_phone', 'school_email',
+            'school_website', 'headmaster_name', 'headmaster_nip', 'academic_year', 'school_logo'
+        ];
 
-    foreach ($fields as $f) {
-        if (isset($_POST[$f])) {
-            updateSchoolSetting($pdo, $f, trim($_POST[$f]));
+        foreach ($fields as $f) {
+            if (isset($_POST[$f])) {
+                updateSchoolSetting($pdo, $f, trim($_POST[$f]));
+            }
         }
-    }
 
-    logActivity($pdo, 'UPDATE_SETTINGS', 'Memperbarui profil lembaga dan tahun ajaran aktif');
-    $message = "Pengaturan identitas sekolah dan semester aktif berhasil disimpan!";
-    $message_type = "success";
+        logActivity($pdo, 'UPDATE_SETTINGS', 'Memperbarui profil lembaga dan tahun ajaran aktif');
+        $message = "Pengaturan identitas sekolah dan semester aktif berhasil disimpan!";
+        $message_type = "success";
+    }
 }
 
 $school_info = getSchoolSettings($pdo);
@@ -33,8 +38,8 @@ require_once __DIR__ . "/../includes/header.php";
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
         <div class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-200 text-xl border border-white/10 shadow-lg">
-                ⚙️
+            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-200 text-lg border border-white/10 shadow-lg">
+                <i class="fa-solid fa-gear"></i>
             </span>
             <div>
                 <h1 class="text-2xl font-bold text-white tracking-tight">Pengaturan Profil Lembaga & Semester</h1>
@@ -43,20 +48,21 @@ require_once __DIR__ . "/../includes/header.php";
         </div>
     </div>
 
-    <a href="audit_logs.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5">
-        <span>🛡️</span> Lihat Audit Log
+    <a href="audit_logs.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-2">
+        <i class="fa-solid fa-shield-halved text-blue-400"></i> Lihat Audit Log
     </a>
 </div>
 
 <?php if ($message): ?>
     <div class="mb-6 rounded-2xl border p-4 text-sm flex items-center justify-between <?= $message_type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300' ?>">
         <span><?= htmlspecialchars($message) ?></span>
-        <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100">✕</button>
+        <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
     </div>
 <?php endif; ?>
 
 <div class="max-w-3xl rounded-3xl border border-white/10 bg-slate-900/60 p-6 sm:p-8 shadow-xl backdrop-blur">
     <form method="POST" class="space-y-6">
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="save_settings">
 
         <div>
@@ -70,7 +76,7 @@ require_once __DIR__ . "/../includes/header.php";
                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Simbol / Logo Emoji</label>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Simbol / Logo Singkat</label>
                     <input type="text" name="school_logo" value="<?= htmlspecialchars($school_info['school_logo']) ?>" 
                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none text-center">
                 </div>
@@ -126,8 +132,8 @@ require_once __DIR__ . "/../includes/header.php";
         </div>
 
         <div class="pt-6 border-t border-white/10 flex justify-end">
-            <button type="submit" class="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 hover:from-blue-500 hover:to-indigo-500 transition">
-                💾 Simpan Seluruh Pengaturan
+            <button type="submit" class="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 hover:from-blue-500 hover:to-indigo-500 transition cursor-pointer flex items-center gap-2">
+                <i class="fa-solid fa-floppy-disk"></i> Simpan Seluruh Pengaturan
             </button>
         </div>
     </form>

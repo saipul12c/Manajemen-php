@@ -38,8 +38,8 @@ if ($start_ts !== null && $now_ts < $start_ts) {
     require_once __DIR__ . "/../includes/header.php";
     ?>
     <div class="max-w-xl mx-auto my-12 rounded-3xl border border-amber-500/30 bg-slate-900/90 p-8 text-center shadow-2xl space-y-5">
-        <div class="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-amber-500/10 border border-amber-500/20 text-4xl shadow-inner">
-            ⏳
+        <div class="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-amber-500/10 border border-amber-500/20 text-3xl shadow-inner text-amber-400">
+            <i class="fa-regular fa-clock"></i>
         </div>
         <div class="space-y-2">
             <span class="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
@@ -50,12 +50,12 @@ if ($start_ts !== null && $now_ts < $start_ts) {
                 Ujian ini baru dapat diakses pada jadwal yang telah ditetapkan oleh Guru Pengawas:
             </p>
             <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-semibold text-amber-300 inline-block">
-                📅 <?= date('d M Y, H:i', $start_ts) ?> WIB
+                <i class="fa-regular fa-calendar mr-1.5"></i><?= date('d M Y, H:i', $start_ts) ?> WIB
             </div>
         </div>
         <div class="pt-4">
-            <a href="exams.php" class="rounded-xl bg-slate-800 hover:bg-slate-700 px-6 py-2.5 text-xs font-bold text-white transition inline-block">
-                ← Kembali ke Daftar Ujian
+            <a href="exams.php" class="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-6 py-2.5 text-xs font-bold text-white transition">
+                <i class="fa-solid fa-arrow-left"></i> Kembali ke Daftar Ujian
             </a>
         </div>
     </div>
@@ -70,8 +70,8 @@ if ($due_ts !== null && $now_ts > $due_ts) {
     require_once __DIR__ . "/../includes/header.php";
     ?>
     <div class="max-w-xl mx-auto my-12 rounded-3xl border border-rose-500/30 bg-slate-900/90 p-8 text-center shadow-2xl space-y-5">
-        <div class="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-rose-500/10 border border-rose-500/20 text-4xl shadow-inner">
-            🛑
+        <div class="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-rose-500/10 border border-rose-500/20 text-3xl shadow-inner text-rose-400">
+            <i class="fa-solid fa-ban"></i>
         </div>
         <div class="space-y-2">
             <span class="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs font-bold text-rose-300">
@@ -82,12 +82,12 @@ if ($due_ts !== null && $now_ts > $due_ts) {
                 Batas akhir pengumpulan untuk modul ini telah lewat pada:
             </p>
             <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-semibold text-rose-300 inline-block">
-                📅 <?= date('d M Y, H:i', $due_ts) ?> WIB
+                <i class="fa-regular fa-calendar mr-1.5"></i><?= date('d M Y, H:i', $due_ts) ?> WIB
             </div>
         </div>
         <div class="pt-4">
-            <a href="exams.php" class="rounded-xl bg-slate-800 hover:bg-slate-700 px-6 py-2.5 text-xs font-bold text-white transition inline-block">
-                ← Kembali ke Daftar Ujian
+            <a href="exams.php" class="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-6 py-2.5 text-xs font-bold text-white transition">
+                <i class="fa-solid fa-arrow-left"></i> Kembali ke Daftar Ujian
             </a>
         </div>
     </div>
@@ -172,12 +172,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($is_token_required && !$is_unlocked) {
     $page_title = "Verifikasi Token - " . $exam['title'];
     require_once __DIR__ . "/../includes/header.php";
-    $cat_info = EXAM_CATEGORIES[$exam['category']] ?? ['label' => $exam['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '📝'];
+    $cat_info = EXAM_CATEGORIES[$exam['category']] ?? ['label' => $exam['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
     ?>
     <div class="max-w-lg mx-auto my-10 space-y-6">
         <div class="rounded-3xl border border-white/15 bg-slate-900/90 p-8 shadow-2xl text-center space-y-6">
-            <div class="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-blue-600/10 border border-blue-500/20 text-4xl shadow-inner">
-                🔑
+            <div class="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-blue-600/10 border border-blue-500/20 text-3xl shadow-inner text-blue-400">
+                <i class="fa-solid fa-key"></i>
             </div>
 
             <div>
@@ -190,15 +190,15 @@ if ($is_token_required && !$is_unlocked) {
                     Mapel: <strong class="text-white"><?= htmlspecialchars($exam['subject']) ?></strong> | Guru: <strong class="text-white"><?= htmlspecialchars($exam['teacher_name']) ?></strong>
                 </p>
                 <?php if ($is_remedial_attempt): ?>
-                    <span class="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-extrabold text-amber-300 mt-2">
-                        ⚠️ Sesi Remedial Diizinkan
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-extrabold text-amber-300 mt-2">
+                        <i class="fa-solid fa-rotate"></i> Sesi Remedial Diizinkan
                     </span>
                 <?php endif; ?>
             </div>
 
             <?php if (!empty($token_error)): ?>
                 <div class="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-xs text-rose-300 text-left flex items-start gap-2.5">
-                    <span>⚠️</span>
+                    <i class="fa-solid fa-triangle-exclamation text-rose-400 mt-0.5"></i>
                     <span><?= htmlspecialchars($token_error) ?></span>
                 </div>
             <?php endif; ?>
@@ -224,11 +224,11 @@ if ($is_token_required && !$is_unlocked) {
 
                 <div class="pt-2 flex flex-col gap-2.5">
                     <button type="submit" 
-                            class="w-full rounded-2xl bg-blue-600 hover:bg-blue-500 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-blue-500/25 transition cursor-pointer">
-                        Buka & Mulai Ujian 🚀
+                            class="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 hover:bg-blue-500 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-blue-500/25 transition cursor-pointer">
+                        <span>Buka & Mulai Ujian</span> <i class="fa-solid fa-arrow-right text-xs"></i>
                     </button>
-                    <a href="exams.php" class="w-full text-center py-2.5 text-xs font-semibold text-slate-400 hover:text-white transition">
-                        ← Kembali ke Daftar Ujian
+                    <a href="exams.php" class="w-full inline-flex items-center justify-center gap-1.5 text-center py-2.5 text-xs font-semibold text-slate-400 hover:text-white transition">
+                        <i class="fa-solid fa-arrow-left"></i> Kembali ke Daftar Ujian
                     </a>
                 </div>
             </form>
@@ -328,7 +328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 $page_title = "Pengerjaan - " . $exam['title'];
 require_once __DIR__ . "/../includes/header.php";
 
-$cat_info = EXAM_CATEGORIES[$exam['category']] ?? ['label' => $exam['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '📝'];
+$cat_info = EXAM_CATEGORIES[$exam['category']] ?? ['label' => $exam['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
 $duration_minutes = (int) $exam['duration_minutes'];
 $is_timed = ($duration_minutes > 0);
 ?>
@@ -336,8 +336,8 @@ $is_timed = ($duration_minutes > 0);
 <!-- MODAL PERINGATAN KECURANGAN (ANTI-CHEAT DETEKTOR TAB SWITCH) -->
 <div id="cheatWarningModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
     <div class="max-w-md w-full rounded-3xl border border-rose-500/50 bg-slate-900 p-6 sm:p-7 shadow-2xl text-center space-y-4">
-        <div class="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-500/20 border border-rose-500/40 text-3xl animate-bounce">
-            ⚠️
+        <div class="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-500/20 border border-rose-500/40 text-2xl text-rose-400 animate-bounce">
+            <i class="fa-solid fa-triangle-exclamation"></i>
         </div>
         <div class="space-y-1.5">
             <span class="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/20 px-3 py-0.5 text-xs font-extrabold text-rose-300 uppercase tracking-wider">
@@ -373,12 +373,12 @@ $is_timed = ($duration_minutes > 0);
                     <span class="text-xs text-slate-400 font-semibold"><?= htmlspecialchars($exam['subject']) ?></span>
                     <?php if (!empty($exam['randomize_questions'])): ?>
                         <span class="text-[10px] text-cyan-300 font-bold bg-cyan-500/10 border border-cyan-500/30 px-1.5 py-0.5 rounded">
-                            🔀 Soal Diacak
+                            <i class="fa-solid fa-shuffle mr-1"></i>Soal Diacak
                         </span>
                     <?php endif; ?>
                     <!-- Autosave Status Badge -->
                     <span id="autosaveBadge" class="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 transition-opacity duration-300">
-                        <span>💾</span> <span>Autosave Aktif</span>
+                        <i class="fa-solid fa-floppy-disk mr-1"></i><span>Autosave Aktif</span>
                     </span>
                 </div>
                 <h1 class="text-base sm:text-lg font-bold text-white line-clamp-1">
@@ -390,7 +390,7 @@ $is_timed = ($duration_minutes > 0);
             <div class="flex items-center gap-3">
                 <?php if ($is_timed): ?>
                     <div class="flex items-center gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-amber-300 shadow-inner">
-                        <span class="text-lg animate-pulse">⏱️</span>
+                        <span class="text-base text-amber-400 animate-pulse"><i class="fa-regular fa-clock"></i></span>
                         <div>
                             <span class="block text-[10px] uppercase tracking-wider text-amber-400/80 font-bold">Sisa Waktu:</span>
                             <span id="countdownDisplay" class="text-lg font-extrabold tracking-wider font-mono">
@@ -400,7 +400,7 @@ $is_timed = ($duration_minutes > 0);
                     </div>
                 <?php else: ?>
                     <div class="flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-emerald-300">
-                        <span class="text-lg">⚡</span>
+                        <span class="text-base text-emerald-400"><i class="fa-solid fa-bolt"></i></span>
                         <div>
                             <span class="block text-[10px] uppercase tracking-wider font-bold">Mode Fleksibel</span>
                             <span class="text-xs font-semibold text-emerald-200">Tanpa Batas Waktu</span>
@@ -410,8 +410,8 @@ $is_timed = ($duration_minutes > 0);
 
                 <!-- Tombol Pintas Selesai -->
                 <button type="button" onclick="triggerSubmit()" 
-                        class="rounded-2xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-emerald-500/25 transition cursor-pointer shrink-0">
-                    ✅ Kumpulkan
+                        class="inline-flex items-center gap-1.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-emerald-500/25 transition cursor-pointer shrink-0">
+                    <i class="fa-solid fa-check"></i> Kumpulkan
                 </button>
             </div>
         </div>
@@ -420,7 +420,7 @@ $is_timed = ($duration_minutes > 0);
     <!-- Alert Sesi Remedial (Jika Sedang Remedial) -->
     <?php if ($is_remedial_attempt): ?>
         <div class="rounded-3xl border border-amber-500/40 bg-gradient-to-r from-amber-950/50 to-slate-900 p-5 text-amber-200 shadow-xl flex items-start gap-3.5">
-            <span class="text-2xl">🔄</span>
+            <span class="text-xl text-amber-400 mt-0.5"><i class="fa-solid fa-rotate"></i></span>
             <div class="text-xs sm:text-sm">
                 <strong class="text-white block font-bold text-sm">Anda Sedang Mengerjakan Sesi Remedial</strong>
                 <span>Nilai ujian sebelumnya: <strong class="text-rose-400"><?= number_format($existing_submission['score'], 0) ?></strong>. Target standar KKM: <strong class="text-emerald-400"><?= $exam['passing_grade'] ?></strong>. Nilai baru hasil remedial akan memperbarui rekap nilai Anda.</span>
@@ -436,7 +436,7 @@ $is_timed = ($duration_minutes > 0);
 
             <!-- Petunjuk Pengerjaan -->
             <div class="rounded-2xl border border-white/10 bg-slate-900/40 p-4 text-xs text-slate-300 flex items-start gap-3">
-                <span class="text-xl">ℹ️</span>
+                <span class="text-base text-blue-400 mt-0.5"><i class="fa-solid fa-circle-info"></i></span>
                 <div>
                     <strong class="text-white block mb-0.5">Petunjuk Pengerjaan:</strong>
                     <?= !empty($exam['description']) ? htmlspecialchars($exam['description']) : 'Pilihlah salah satu jawaban yang paling tepat. Gunakan tombol Ragu-Ragu jika belum yakin. Jawaban tersimpan otomatis secara real-time.' ?>
@@ -460,11 +460,11 @@ $is_timed = ($duration_minutes > 0);
                                 <span class="text-xs text-slate-400 font-semibold">Soal No. <?= $idx + 1 ?> dari <?= $total_q ?></span>
                                 <?php if (($q['question_type'] ?? 'multiple_choice') === 'essay'): ?>
                                     <span class="rounded-full border border-purple-500/30 bg-purple-500/10 px-2.5 py-0.5 text-[11px] font-extrabold text-purple-300">
-                                        📝 Soal Esai / Uraian (Maks. <?= (int)($q['max_score'] ?: 10) ?> Poin)
+                                        <i class="fa-solid fa-pen-nib mr-1"></i>Soal Esai / Uraian (Maks. <?= (int)($q['max_score'] ?: 10) ?> Poin)
                                     </span>
                                 <?php else: ?>
                                     <span class="rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 text-[11px] font-bold text-blue-300">
-                                        🔘 Pilihan Ganda (Maks. <?= (int)($q['max_score'] ?: 10) ?> Poin)
+                                        <i class="fa-regular fa-circle-dot mr-1"></i>Pilihan Ganda (Maks. <?= (int)($q['max_score'] ?: 10) ?> Poin)
                                     </span>
                                 <?php endif; ?>
                             </div>
@@ -475,7 +475,7 @@ $is_timed = ($duration_minutes > 0);
                                        id="doubt-<?= $idx + 1 ?>" 
                                        onchange="toggleDoubt(<?= $idx + 1 ?>, <?= $q['id'] ?>)" 
                                        class="h-4 w-4 rounded border-white/20 bg-slate-950 text-amber-500 focus:ring-amber-400">
-                                <span>⚠️ Ragu-Ragu</span>
+                                <span><i class="fa-regular fa-flag mr-1"></i>Ragu-Ragu</span>
                             </label>
                         </div>
 
@@ -500,7 +500,7 @@ $is_timed = ($duration_minutes > 0);
                             <div class="space-y-2 pt-1">
                                 <div class="flex items-center justify-between text-xs text-slate-400 font-semibold">
                                     <label for="essay-<?= $q['id'] ?>" class="flex items-center gap-1.5 text-purple-400 font-bold">
-                                        <span>✍️</span> Tulis Jawaban / Uraian Lengkap Anda:
+                                        <i class="fa-solid fa-pen-fancy"></i> Tulis Jawaban / Uraian Lengkap Anda:
                                     </label>
                                     <span class="text-[11px] text-slate-400">Tersimpan otomatis saat Anda mengetik</span>
                                 </div>
@@ -559,8 +559,8 @@ $is_timed = ($duration_minutes > 0);
                                 </button>
                             <?php else: ?>
                                 <button type="button" onclick="triggerSubmit()" 
-                                        class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-white font-bold transition">
-                                    Periksa & Kumpulkan ✅
+                                        class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-white font-bold transition inline-flex items-center gap-1.5">
+                                    Periksa & Kumpulkan <i class="fa-solid fa-check"></i>
                                 </button>
                             <?php endif; ?>
                         </div>
@@ -581,8 +581,8 @@ $is_timed = ($duration_minutes > 0);
                             Batalkan
                         </a>
                         <button type="submit" onclick="return confirmSubmit();" 
-                                class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-emerald-500/25 transition cursor-pointer">
-                            ✅ Kumpulkan Jawaban Ujian
+                                class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-6 py-3 text-sm font-extrabold text-white shadow-lg shadow-emerald-500/25 transition cursor-pointer inline-flex items-center gap-2">
+                            <i class="fa-solid fa-circle-check"></i> Kumpulkan Jawaban Ujian
                         </button>
                     </div>
                 </div>
@@ -594,12 +594,11 @@ $is_timed = ($duration_minutes > 0);
         <!-- KOLOM KANAN: PALET NOMOR CBT INTERAKTIF (4 Kolom) -->
         <div class="lg:col-span-4 sticky top-44 space-y-4">
 
-            <div class="rounded-3xl border border-white/10 bg-slate-900/90 backdrop-blur p-5 shadow-2xl space-y-5">
-                
+            <div class="rounded-3xl border border-white/10 bg-slate-900/90 p-5 space-y-4 shadow-2xl backdrop-blur-xl">
                 <!-- Palette Header & Ringkasan -->
                 <div class="flex items-center justify-between border-b border-white/10 pb-3">
                     <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                        <span>📋</span> Palet Nomor Soal
+                        <i class="fa-solid fa-table-cells text-blue-400"></i> Palet Nomor Soal
                     </h3>
                     <span class="text-xs font-bold text-blue-400">Total <?= $total_q ?></span>
                 </div>
@@ -614,7 +613,7 @@ $is_timed = ($duration_minutes > 0);
                         <span class="block text-[10px] uppercase tracking-wider text-amber-400 font-bold">Ragu</span>
                         <span id="countDoubt" class="text-lg font-black text-white">0</span>
                     </div>
-                    <div class="rounded-2xl border border-white/10 bg-white/5 p-2.5">
+                    <div class="rounded-2xl border border-white/5 bg-white/5 p-2.5">
                         <span class="block text-[10px] uppercase tracking-wider text-slate-400 font-bold">Belum</span>
                         <span id="countUnanswered" class="text-lg font-black text-white"><?= $total_q ?></span>
                     </div>
@@ -639,7 +638,7 @@ $is_timed = ($duration_minutes > 0);
                         <button type="button" 
                                 id="palette-btn-<?= $n ?>" 
                                 onclick="jumpToQuestion(<?= $n ?>)" 
-                                class="h-10 rounded-xl border border-white/10 bg-slate-800 text-xs font-bold text-slate-300 hover:border-blue-500 transition shadow-sm">
+                                class="h-10 rounded-xl border border-white/10 bg-slate-800 text-xs font-bold text-slate-300 hover:border-blue-500 transition shadow-sm cursor-pointer">
                             <?= $n ?>
                         </button>
                     <?php endfor; ?>
@@ -648,8 +647,8 @@ $is_timed = ($duration_minutes > 0);
                 <!-- Tombol Submit di Palette -->
                 <div class="pt-2 border-t border-white/10">
                     <button type="button" onclick="triggerSubmit()" 
-                            class="w-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 py-3 text-xs font-extrabold text-white shadow-lg shadow-emerald-500/20 transition cursor-pointer">
-                        ✅ Kumpulkan Ujian
+                            class="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 py-3 text-xs font-extrabold text-white shadow-lg shadow-emerald-500/20 transition cursor-pointer">
+                        <i class="fa-solid fa-check"></i> Kumpulkan Ujian
                     </button>
                 </div>
 
@@ -710,9 +709,9 @@ $is_timed = ($duration_minutes > 0);
                 // Flash badge pulih
                 autosaveBadge.classList.remove('text-emerald-400');
                 autosaveBadge.classList.add('text-blue-400');
-                autosaveBadge.innerHTML = '<span>💾</span> <span>Draft Dipulihkan</span>';
+                autosaveBadge.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i><span>Draft Dipulihkan</span>';
                 setTimeout(() => {
-                    autosaveBadge.innerHTML = '<span>💾</span> <span>Autosave Aktif</span>';
+                    autosaveBadge.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i><span>Autosave Aktif</span>';
                     autosaveBadge.classList.remove('text-blue-400');
                     autosaveBadge.classList.add('text-emerald-400');
                 }, 3000);

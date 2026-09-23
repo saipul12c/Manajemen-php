@@ -30,8 +30,16 @@ CREATE TABLE IF NOT EXISTS `announcements` (
     `title` VARCHAR(200) NOT NULL,
     `content` TEXT NOT NULL,
     `target_role` ENUM('semua', 'guru', 'siswa', 'orang_tua', 'staf') NOT NULL DEFAULT 'semua',
+    `class_id` INT DEFAULT NULL,
+    `category` ENUM('umum', 'akademik', 'kegiatan', 'penting', 'darurat') NOT NULL DEFAULT 'umum',
+    `is_pinned` TINYINT(1) NOT NULL DEFAULT 0,
+    `attachment_url` VARCHAR(255) DEFAULT NULL,
+    `status` ENUM('draft', 'published') NOT NULL DEFAULT 'published',
+    `expires_at` DATETIME DEFAULT NULL,
+    `event_id` INT DEFAULT NULL,
     `author_id` INT NOT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT `fk_announcements_author` FOREIGN KEY (`author_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -42,18 +50,23 @@ CREATE TABLE IF NOT EXISTS `assignments` (
     `title` VARCHAR(200) NOT NULL,
     `description` TEXT NOT NULL,
     `due_date` DATE NOT NULL,
+    `attachment_url` VARCHAR(255) DEFAULT NULL,
     `teacher_id` INT NOT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_assignments_teacher` FOREIGN KEY (`teacher_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 4. Tabel `assignment_submissions` (Status Pengerjaan Tugas oleh Siswa)
+-- 4. Tabel `assignment_submissions` (Status Pengerjaan Tugas & Pengumpulan Berkas oleh Siswa)
 CREATE TABLE IF NOT EXISTS `assignment_submissions` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `assignment_id` INT NOT NULL,
     `student_id` INT NOT NULL,
     `status` ENUM('belum', 'selesai') NOT NULL DEFAULT 'belum',
     `notes` TEXT DEFAULT NULL,
+    `file_url` VARCHAR(255) DEFAULT NULL,
+    `score` DECIMAL(5,2) DEFAULT NULL,
+    `feedback` TEXT DEFAULT NULL,
+    `submitted_at` DATETIME DEFAULT NULL,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY `uk_student_assignment` (`assignment_id`, `student_id`),
     CONSTRAINT `fk_sub_assignment` FOREIGN KEY (`assignment_id`) REFERENCES `assignments` (`id`) ON DELETE CASCADE,
@@ -336,5 +349,316 @@ INSERT INTO `school_settings` (`setting_key`, `setting_value`) VALUES
 ('academic_year', '2026/2027 Ganjil'),
 ('school_logo', '⚡')
 ON DUPLICATE KEY UPDATE `setting_value`=VALUES(`setting_value`);
+
+-- =========================================================
+-- 9. Tabel Mata Pelajaran (subjects)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `subjects` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(100) NOT NULL,
+    `code` VARCHAR(20) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `subjects` (`id`, `name`, `code`) VALUES
+(1, 'Matematika', 'MTK'),
+(2, 'Bahasa Indonesia', 'BIN'),
+(3, 'Bahasa Inggris', 'BIG'),
+(4, 'Fisika', 'FIS'),
+(5, 'Biologi', 'BIO'),
+(6, 'Kimia', 'KIM'),
+(7, 'Sejarah Indonesia', 'SEJ'),
+(8, 'PJOK / Penjas', 'PJK'),
+(9, 'Pendidikan Agama Islam', 'PAI'),
+(10, 'Seni Budaya', 'SNB')
+ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
+
+-- =========================================================
+-- 10. Tabel Jadwal Pelajaran Mingguan (timetables)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `timetables` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `class_id` INT NOT NULL,
+    `subject_id` INT DEFAULT NULL,
+    `subject_name` VARCHAR(100) NOT NULL,
+    `teacher_id` INT NOT NULL,
+    `day` ENUM('Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu') NOT NULL,
+    `start_time` TIME NOT NULL,
+    `end_time` TIME NOT NULL,
+    `room` VARCHAR(50) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `timetables` (`class_id`, `subject_id`, `subject_name`, `teacher_id`, `day`, `start_time`, `end_time`, `room`) VALUES
+(1, 1, 'Matematika', 3, 'Senin', '07:30:00', '09:00:00', 'R. 101'),
+(1, 4, 'Fisika', 3, 'Senin', '09:15:00', '10:45:00', 'Lab Fisika'),
+(1, 2, 'Bahasa Indonesia', 3, 'Selasa', '07:30:00', '09:00:00', 'R. 101'),
+(1, 3, 'Bahasa Inggris', 3, 'Selasa', '09:15:00', '10:45:00', 'R. 101'),
+(1, 5, 'Biologi', 3, 'Rabu', '07:30:00', '09:30:00', 'Lab Biologi'),
+(1, 6, 'Kimia', 3, 'Rabu', '09:45:00', '11:15:00', 'Lab Kimia'),
+(1, 7, 'Sejarah Indonesia', 3, 'Kamis', '07:30:00', '09:00:00', 'R. 101'),
+(1, 9, 'Pendidikan Agama Islam', 3, 'Kamis', '09:15:00', '10:45:00', 'R. 101'),
+(1, 8, 'PJOK / Penjas', 3, 'Jumat', '07:00:00', '08:30:00', 'Lapangan Utama'),
+(1, 10, 'Seni Budaya', 3, 'Sabtu', '08:00:00', '09:30:00', 'Studio Seni')
+ON DUPLICATE KEY UPDATE `subject_name`=VALUES(`subject_name`);
+
+-- =========================================================
+-- 11. Tabel Materi Pembelajaran & E-Learning (learning_materials)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `learning_materials` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `title` VARCHAR(200) NOT NULL,
+    `subject` VARCHAR(100) NOT NULL,
+    `class_id` INT DEFAULT NULL,
+    `teacher_id` INT NOT NULL,
+    `description` TEXT DEFAULT NULL,
+    `file_url` VARCHAR(255) DEFAULT NULL,
+    `link_url` VARCHAR(255) DEFAULT NULL,
+    `file_type` VARCHAR(50) DEFAULT 'document',
+    `download_count` INT DEFAULT 0,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `learning_materials` (`title`, `subject`, `class_id`, `teacher_id`, `description`, `file_url`, `link_url`, `file_type`, `download_count`) VALUES
+('Modul Mandiri Aljabar & Fungsi Kuadrat Lengkap', 'Matematika', 1, 3, 'Bahan ajar materi fungsi kuadrat, grafik parabola, dan latihan soal persiapan UTS.', NULL, 'https://drive.google.com', 'document', 14),
+('Video Pembelajaran: Dinamika Gerak & Hukum II Newton', 'Fisika', 1, 3, 'Penjelasan konsep gaya dan percepatan benda beserta contoh fenomena sehari-hari.', NULL, 'https://www.youtube.com/watch?v=kKKM8Y-u7ds', 'video', 28),
+('Slide Presentasi Struktur Teks Eksplanasi & Debat', 'Bahasa Indonesia', 1, 3, 'Materi panduan menyusun argumen dalam debat ilmiah dan struktur teks negosiasi.', NULL, 'https://drive.google.com', 'document', 19)
+ON DUPLICATE KEY UPDATE `title`=VALUES(`title`);
+
+-- =========================================================
+-- 12. Tabel Jenis Tagihan Keuangan (payment_types)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `payment_types` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(150) NOT NULL,
+    `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `description` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `payment_types` (`id`, `name`, `amount`, `description`) VALUES
+(1, 'SPP Bulanan Semester Ganjil', 350000.00, 'Iuran penyelenggaraan pendidikan rutin setiap bulan.'),
+(2, 'Uang Kegiatan & Ekstrakurikuler', 150000.00, 'Iuran operasional perlombaan dan kegiatan siswa tahunan.'),
+(3, 'Sumbangan Pengembangan Sarana Gedung', 500000.00, 'Biaya perawatan laboratorium dan fasilitas belajar digital.')
+ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
+
+-- =========================================================
+-- 13. Tabel Tagihan Siswa (student_bills)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `student_bills` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `student_id` INT NOT NULL,
+    `payment_type_id` INT DEFAULT NULL,
+    `title` VARCHAR(200) NOT NULL,
+    `amount` DECIMAL(12,2) NOT NULL,
+    `due_date` DATE NOT NULL,
+    `month_period` VARCHAR(30) DEFAULT NULL,
+    `academic_year` VARCHAR(30) DEFAULT '2026/2027',
+    `status` ENUM('belum_lunas', 'menunggu_verifikasi', 'lunas') NOT NULL DEFAULT 'belum_lunas',
+    `notes` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `student_bills` (`id`, `student_id`, `payment_type_id`, `title`, `amount`, `due_date`, `month_period`, `status`, `notes`) VALUES
+(1, 5, 1, 'SPP Bulanan - September 2026', 350000.00, '2026-09-10', 'September 2026', 'lunas', 'Lunas dibayar tepat waktu.'),
+(2, 5, 1, 'SPP Bulanan - Oktober 2026', 350000.00, '2026-10-10', 'Oktober 2026', 'belum_lunas', 'Jatuh tempo tanggal 10 setiap bulan.'),
+(3, 5, 2, 'Uang Kegiatan Siswa Ganjil 2026/2027', 150000.00, '2026-09-30', 'Semester Ganjil', 'lunas', 'Termasuk atribut lomba dan ekstrakurikuler.')
+ON DUPLICATE KEY UPDATE `title`=VALUES(`title`);
+
+-- =========================================================
+-- 14. Tabel Transaksi Pembayaran Tagihan (bill_payments)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `bill_payments` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `bill_id` INT NOT NULL,
+    `student_id` INT NOT NULL,
+    `amount_paid` DECIMAL(12,2) NOT NULL,
+    `payment_method` ENUM('transfer_bank', 'tunai', 'qris') NOT NULL DEFAULT 'transfer_bank',
+    `payment_date` DATE NOT NULL,
+    `proof_url` VARCHAR(255) DEFAULT NULL,
+    `status` ENUM('menunggu', 'diterima', 'ditolak') NOT NULL DEFAULT 'menunggu',
+    `notes` TEXT DEFAULT NULL,
+    `verified_by` INT DEFAULT NULL,
+    `verified_at` DATETIME DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `bill_payments` (`id`, `bill_id`, `student_id`, `amount_paid`, `payment_method`, `payment_date`, `proof_url`, `status`, `notes`, `verified_by`, `verified_at`) VALUES
+(1, 1, 5, 350000.00, 'transfer_bank', '2026-09-08', NULL, 'diterima', 'Pembayaran via Bank Transfer BCA telah terverifikasi.', 2, NOW()),
+(2, 3, 5, 150000.00, 'tunai', '2026-09-12', NULL, 'diterima', 'Pembayaran langsung di loket Tata Usaha sekolah.', 2, NOW())
+ON DUPLICATE KEY UPDATE `status`=VALUES(`status`);
+
+-- =========================================================
+-- 15. Tabel Bimbingan Konseling (BK) (counseling_records)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `counseling_records` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `student_id` INT NOT NULL,
+    `type` ENUM('pelanggaran', 'prestasi') NOT NULL,
+    `category` VARCHAR(100) NOT NULL,
+    `title` VARCHAR(200) NOT NULL,
+    `points` INT NOT NULL DEFAULT 0,
+    `action_taken` TEXT DEFAULT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `recorded_by` INT NOT NULL,
+    `date` DATE NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `counseling_records` (`student_id`, `type`, `category`, `title`, `points`, `action_taken`, `notes`, `recorded_by`, `date`) VALUES
+(5, 'prestasi', 'Akademik', 'Juara 2 Olimpiade Sains Matematika Tingkat Kota', 25, 'Diberikan piagam penghargaan dan apresiasi beasiswa prestasi.', 'Siswa berprestasi mengharumkan nama sekolah di ajang OSN.', 3, CURRENT_DATE()),
+(5, 'pelanggaran', 'Kedisiplinan', 'Terlambat Masuk Jam Pertama Sekolah (15 Menit)', 5, 'Peringatan lisan dan pembinaan tata tertib oleh guru piket.', 'Terlambat karena kendala transportasi di perjalanan.', 3, DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY))
+ON DUPLICATE KEY UPDATE `title`=VALUES(`title`);
+
+-- =========================================================
+-- 16. Tabel Pesan & Konsultasi Internal (messages)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `messages` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `sender_id` INT NOT NULL,
+    `receiver_id` INT NOT NULL,
+    `message` TEXT NOT NULL,
+    `attachment_url` VARCHAR(255) DEFAULT NULL,
+    `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `messages` (`sender_id`, `receiver_id`, `message`, `is_read`, `created_at`) VALUES
+(4, 3, 'Selamat pagi Ibu Dewi, mohon konfirmasi untuk materi praktikum biologi anak kami Ahmad Fauzi pekan depan.', 1, DATE_SUB(NOW(), INTERVAL 2 HOUR)),
+(3, 4, 'Selamat pagi Pak Hendra. Praktikum akan fokus pada materi sistem ekskresi, seluruh alat lab sudah dipersiapkan sekolah.', 1, DATE_SUB(NOW(), INTERVAL 1 HOUR)),
+(5, 3, 'Selamat siang Ibu Dewi, apakah tugas matematika halaman 45 nomor 10 dikumpulkan dalam bentuk softcopy atau buku tulis?', 0, DATE_SUB(NOW(), INTERVAL 20 MINUTE));
+
+-- =========================================================
+-- 17. Tabel PPDB Online (ppdb_registrations)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `ppdb_registrations` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `registration_no` VARCHAR(50) NOT NULL UNIQUE,
+    `full_name` VARCHAR(150) NOT NULL,
+    `nisn` VARCHAR(20) NOT NULL,
+    `nik` VARCHAR(30) DEFAULT NULL,
+    `gender` ENUM('L', 'P') NOT NULL,
+    `birth_place` VARCHAR(100) NOT NULL,
+    `birth_date` DATE NOT NULL,
+    `religion` VARCHAR(50) DEFAULT 'Islam',
+    `phone` VARCHAR(30) NOT NULL,
+    `email` VARCHAR(100) NOT NULL,
+    `address` TEXT NOT NULL,
+    `previous_school` VARCHAR(150) NOT NULL,
+    `chosen_major` VARCHAR(100) NOT NULL DEFAULT 'Umum',
+    `parent_name` VARCHAR(150) NOT NULL,
+    `parent_phone` VARCHAR(30) NOT NULL,
+    `parent_job` VARCHAR(100) DEFAULT NULL,
+    `report_card_doc` VARCHAR(255) DEFAULT NULL,
+    `birth_cert_doc` VARCHAR(255) DEFAULT NULL,
+    `family_card_doc` VARCHAR(255) DEFAULT NULL,
+    `photo_doc` VARCHAR(255) DEFAULT NULL,
+    `status` ENUM('menunggu_verifikasi', 'diverifikasi', 'lulus_seleksi', 'tidak_lulus', 'diterima') NOT NULL DEFAULT 'menunggu_verifikasi',
+    `selection_score` DECIMAL(5,2) DEFAULT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `user_id` INT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `ppdb_registrations` 
+(`registration_no`, `full_name`, `nisn`, `nik`, `gender`, `birth_place`, `birth_date`, `religion`, `phone`, `email`, `address`, `previous_school`, `chosen_major`, `parent_name`, `parent_phone`, `parent_job`, `status`, `selection_score`, `notes`, `created_at`) 
+VALUES
+('PPDB-2026-0001', 'Rian Pratama', '0081234567', '3201011203080001', 'L', 'Jakarta', '2009-04-12', 'Islam', '081234567890', 'rian.pratama@gmail.com', 'Jl. Kenanga No. 15, Jakarta Selatan', 'SMP Negeri 1 Jakarta', 'MIPA (Matematika & IPA)', 'Budi Santoso', '081298765432', 'Wiraswasta', 'lulus_seleksi', 88.50, 'Nilai rapor semester 1-5 sangat memuaskan.', DATE_SUB(NOW(), INTERVAL 5 DAY)),
+('PPDB-2026-0002', 'Siti Nur Aisyah', '0087654321', '3201015607080002', 'P', 'Bandung', '2009-07-25', 'Islam', '081345678901', 'siti.aisyah@gmail.com', 'Jl. Melati No. 8, Bandung', 'SMP IT Al-Falah', 'IPS (Ilmu Pengetahuan Sosial)', 'Ahmad Hidayat', '081387654321', 'PNS', 'menunggu_verifikasi', NULL, 'Menunggu verifikasi kartu keluarga.', DATE_SUB(NOW(), INTERVAL 2 DAY)),
+('PPDB-2026-0003', 'Bayu Anggara', '0089988776', '3201012309080003', 'L', 'Bogor', '2009-09-18', 'Islam', '081456789012', 'bayu.anggara@gmail.com', 'Jl. Flamboyan No. 22, Bogor', 'SMP Budi Mulia', 'Bahasa & Budaya', 'Hendra Gunawan', '081476543210', 'Karyawan Swasta', 'diverifikasi', 82.00, 'Berkas lengkap, dijadwalkan tes wawancara.', DATE_SUB(NOW(), INTERVAL 1 DAY))
+ON DUPLICATE KEY UPDATE `full_name`=VALUES(`full_name`);
+
+-- =========================================================
+-- 18. Tabel Buku Perpustakaan (library_books)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `library_books` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `code` VARCHAR(50) NOT NULL UNIQUE,
+    `isbn` VARCHAR(50) DEFAULT NULL,
+    `title` VARCHAR(200) NOT NULL,
+    `author` VARCHAR(150) NOT NULL,
+    `publisher` VARCHAR(150) DEFAULT NULL,
+    `year` INT DEFAULT NULL,
+    `category` VARCHAR(100) NOT NULL DEFAULT 'Umum',
+    `stock_total` INT NOT NULL DEFAULT 1,
+    `stock_available` INT NOT NULL DEFAULT 1,
+    `shelf_location` VARCHAR(100) DEFAULT 'Rak A-1',
+    `cover_image` VARCHAR(255) DEFAULT NULL,
+    `ebook_file` VARCHAR(255) DEFAULT NULL,
+    `description` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `library_books` 
+(`code`, `isbn`, `title`, `author`, `publisher`, `year`, `category`, `stock_total`, `stock_available`, `shelf_location`, `description`) 
+VALUES
+('BK-001', '978-602-01-2345-1', 'Fisika Dasar untuk SMA/MA Kelas X', 'Prof. Bambang Subagyo', 'Erlangga', 2023, 'Sains & Teknologi', 10, 9, 'Rak Sains A-1', 'Buku teks fisika kurikulum terbaru mencakup kinematika gerak, dinamika, dan energi kinetik.'),
+('BK-002', '978-979-3062-79-2', 'Laskar Pelangi', 'Andrea Hirata', 'Bentang Pustaka', 2008, 'Novel & Sastra', 5, 5, 'Rak Sastra B-2', 'Kisah inspiratif tentang 10 anak di Pulau Belitung yang berjuang menuntut ilmu di tengah keterbatasan.'),
+('BK-003', '978-979-22-3841-5', 'Kamus Lengkap Inggris - Indonesia', 'John M. Echols & Hassan Shadily', 'Gramedia Pustaka Utama', 2021, 'Referensi & Bahasa', 4, 3, 'Rak Referensi R-1', 'Kamus standar acuan utama untuk pembelajaran bahasa Inggris di sekolah dan perguruan tinggi.'),
+('BK-004', '978-979-407-123-4', 'Sejarah Perjuangan Kemerdekaan Indonesia', 'Dr. Nugroho Notosusanto', 'Balai Pustaka', 2019, 'IPS & Sejarah', 6, 6, 'Rak Sejarah C-1', 'Rangkuman kronologis diplomasi dan revolusi fisik kemerdekaan Republik Indonesia 1945-1949.'),
+('BK-005', '978-623-00-1122-3', 'Pemrograman Web Modern dengan PHP & MySQL', 'Dr. Budi Raharjo', 'Informatika Bandung', 2024, 'Teknologi & Komputer', 8, 8, 'Rak IT D-1', 'Panduan aplikatif pembuatan aplikasi web interaktif enterprise menggunakan PHP 8+ dan PDO.')
+ON DUPLICATE KEY UPDATE `title`=VALUES(`title`);
+
+-- =========================================================
+-- 19. Tabel Sirkulasi Peminjaman Buku (library_loans)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `library_loans` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `book_id` INT NOT NULL,
+    `user_id` INT NOT NULL,
+    `borrow_date` DATE NOT NULL,
+    `due_date` DATE NOT NULL,
+    `return_date` DATE DEFAULT NULL,
+    `fine_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `status` ENUM('dipinjam', 'kembali', 'hilang') NOT NULL DEFAULT 'dipinjam',
+    `notes` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `library_loans` 
+(`book_id`, `user_id`, `borrow_date`, `due_date`, `return_date`, `fine_amount`, `status`, `notes`) 
+VALUES
+(1, 5, DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 2 DAY), NULL, 0.00, 'dipinjam', 'Peminjaman untuk tugas kelompok Fisika.'),
+(3, 5, DATE_SUB(CURRENT_DATE(), INTERVAL 20 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 13 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 12 DAY), 0.00, 'kembali', 'Dikembalikan tepat waktu dalam kondisi baik.')
+ON DUPLICATE KEY UPDATE `status`=VALUES(`status`);
+
+-- =========================================================
+-- 20. Tabel Konfirmasi Baca Pengumuman (announcement_reads)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `announcement_reads` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `announcement_id` INT NOT NULL,
+    `user_id` INT NOT NULL,
+    `read_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_announcement_user` (`announcement_id`, `user_id`),
+    CONSTRAINT `fk_reads_announcement` FOREIGN KEY (`announcement_id`) REFERENCES `announcements` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_reads_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- 21. Tabel Catatan Wali Kelas & Ekstrakurikuler Rapor (student_report_notes)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `student_report_notes` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `student_id` INT NOT NULL,
+    `academic_year` VARCHAR(50) NOT NULL DEFAULT '2026/2027',
+    `semester` VARCHAR(20) NOT NULL DEFAULT 'Ganjil',
+    `homeroom_notes` TEXT DEFAULT NULL,
+    `extracurricular` TEXT DEFAULT NULL,
+    `created_by` INT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_student_report_period` (`student_id`, `academic_year`, `semester`),
+    CONSTRAINT `fk_srn_student` FOREIGN KEY (`student_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `student_report_notes` (`student_id`, `academic_year`, `semester`, `homeroom_notes`, `extracurricular`, `created_by`) VALUES
+(5, '2026/2027', 'Ganjil', 'Ahmad menunjukkan ketekunan belajar yang sangat baik, terutama pada bidang sains dan matematika. Tingkatkan rasa percaya diri saat presentasi di depan kelas.', 'Pramuka (A - Sangat Aktif), Kelompok Ilmiah Remaja/KIR (A - Ketua Tim Penelitian)', 3)
+ON DUPLICATE KEY UPDATE `homeroom_notes`=VALUES(`homeroom_notes`);
+
+
+
+
 
 

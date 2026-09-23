@@ -59,8 +59,8 @@ require_once __DIR__ . "/../includes/header.php";
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
         <div class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 text-xl border border-amber-500/30 shadow-lg shadow-amber-500/10">
-                📑
+            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 text-lg border border-amber-500/30 shadow-lg shadow-amber-500/10">
+                <i class="fa-solid fa-file-invoice"></i>
             </span>
             <div>
                 <h1 class="text-2xl font-bold text-white tracking-tight">Laporan Rekapitulasi Presensi Sekolah</h1>
@@ -70,11 +70,17 @@ require_once __DIR__ . "/../includes/header.php";
     </div>
 
     <div class="flex items-center gap-2">
-        <button onclick="window.print()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5">
-            <span>🖨️</span> Cetak Laporan
-        </button>
-        <a href="../surat/requests.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition">
-            📋 Layanan Surat
+        <a href="attendance_export.php?month=<?= urlencode($selected_month) ?>&year=<?= urlencode($selected_year) ?>" 
+           class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-300 transition flex items-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-file-excel"></i> Export Excel (.csv)
+        </a>
+        <a href="attendance_print.php?month=<?= urlencode($selected_month) ?>&year=<?= urlencode($selected_year) ?>" 
+           target="_blank"
+           class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5">
+            <i class="fa-solid fa-print"></i> Cetak PDF Laporan
+        </a>
+        <a href="../surat/requests.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition flex items-center gap-1.5">
+            <i class="fa-solid fa-envelope-open-text"></i> Layanan Surat
         </a>
     </div>
 </div>

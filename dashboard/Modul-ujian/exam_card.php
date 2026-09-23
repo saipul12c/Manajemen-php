@@ -34,7 +34,20 @@ $stmt_stu->execute([$target_student_id]);
 $student = $stmt_stu->fetch();
 
 if (!$student) {
-    die("Data siswa tidak ditemukan.");
+    $page_title = "Data Tidak Ditemukan";
+    require_once __DIR__ . "/../includes/header.php";
+    ?>
+    <div class="max-w-md mx-auto my-12 rounded-3xl border border-rose-500/30 bg-slate-900/90 p-8 text-center shadow-2xl">
+        <i class="fa-solid fa-triangle-exclamation text-rose-400 text-4xl"></i>
+        <h2 class="text-lg font-bold text-white mt-3">Data Siswa Tidak Ditemukan</h2>
+        <p class="text-sm text-slate-400 mt-2">ID siswa yang dicari tidak tersedia atau bukan berstatus siswa.</p>
+        <a href="../index.php" class="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-6 py-2 text-xs font-bold text-white transition">
+            <i class="fa-solid fa-arrow-left"></i> Kembali ke Dashboard
+        </a>
+    </div>
+    <?php
+    require_once __DIR__ . "/../includes/footer.php";
+    exit;
 }
 
 // Hitung presensi
@@ -56,6 +69,7 @@ $page_title = "Kartu Peserta Ujian - " . htmlspecialchars($student['name']);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $page_title ?></title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css">
     <style>
         @media print {
             body { background: white !important; color: black !important; }
@@ -68,11 +82,11 @@ $page_title = "Kartu Peserta Ujian - " . htmlspecialchars($student['name']);
 
     <!-- Action Bar -->
     <div class="no-print w-full max-w-2xl mb-6 flex items-center justify-between">
-        <a href="../index.php" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition">
-            ← Kembali ke Dashboard
+        <a href="../index.php" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition inline-flex items-center gap-1.5">
+            <i class="fa-solid fa-arrow-left"></i> Kembali ke Dashboard
         </a>
         <button onclick="window.print()" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition flex items-center gap-2">
-            <span>🖨️</span> Cetak Kartu Ujian
+            <i class="fa-solid fa-print"></i> Cetak Kartu Ujian
         </button>
     </div>
 
@@ -82,8 +96,8 @@ $page_title = "Kartu Peserta Ujian - " . htmlspecialchars($student['name']);
         <!-- Header Kop Kartu -->
         <div class="flex items-center justify-between border-b-2 border-white/10 pb-6 mb-6">
             <div class="flex items-center gap-4">
-                <span class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white text-3xl font-extrabold shadow-lg shadow-blue-500/30">
-                    <?= htmlspecialchars($school_info['school_logo'] ?? '⚡') ?>
+                <span class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white text-2xl font-extrabold shadow-lg shadow-blue-500/30">
+                    <i class="fa-solid fa-graduation-cap"></i>
                 </span>
                 <div>
                     <h2 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-white">
@@ -131,7 +145,7 @@ $page_title = "Kartu Peserta Ujian - " . htmlspecialchars($student['name']);
             <!-- Pas Foto / QR Code Box -->
             <div class="flex flex-col items-center justify-center p-3 rounded-2xl border border-white/10 bg-slate-950/80">
                 <div class="h-24 w-20 rounded-xl bg-gradient-to-b from-blue-600/30 to-slate-800 border border-blue-500/30 flex flex-col items-center justify-center text-center p-2 mb-2">
-                    <span class="text-2xl">👨‍🎓</span>
+                    <i class="fa-solid fa-user-graduate text-3xl text-blue-400"></i>
                     <span class="text-[9px] text-slate-400 mt-1 uppercase font-bold">Foto Siswa</span>
                 </div>
                 <span class="font-mono text-[9px] text-slate-500">VERIFIED-ID-<?= $student['id'] ?></span>

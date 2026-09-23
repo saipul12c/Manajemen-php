@@ -11,21 +11,26 @@ $message_type = "";
 // -------------------------------------------------------------
 // 1. HAPUS PENGGUNA
 // -------------------------------------------------------------
-if (isset($_GET['action']) && $_GET['action'] === 'delete') {
-    $delete_id = (int) ($_GET['id'] ?? 0);
-
-    if ($delete_id === (int) $_SESSION['user_id']) {
-        $message = "Anda tidak dapat menghapus akun Anda sendiri!";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POST['form_type'] === 'delete_user') {
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
         $message_type = "error";
     } else {
-        try {
-            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
-            $stmt->execute([$delete_id]);
-            $message = "Pengguna berhasil dihapus dari sistem.";
-            $message_type = "success";
-        } catch (PDOException $e) {
-            $message = "Gagal menghapus pengguna: " . $e->getMessage();
+        $delete_id = (int) ($_POST['user_id'] ?? 0);
+
+        if ($delete_id === (int) $_SESSION['user_id']) {
+            $message = "Anda tidak dapat menghapus akun Anda sendiri!";
             $message_type = "error";
+        } else {
+            try {
+                $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+                $stmt->execute([$delete_id]);
+                $message = "Pengguna berhasil dihapus dari sistem.";
+                $message_type = "success";
+            } catch (PDOException $e) {
+                $message = "Gagal menghapus pengguna: " . $e->getMessage();
+                $message_type = "error";
+            }
         }
     }
 }
@@ -34,6 +39,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete') {
 // 2. SIMPAN TAMBAH PENGGUNA
 // -------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POST['form_type'] === 'create_user') {
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -68,12 +77,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POS
             $message_type = "success";
         }
     }
+    } // end CSRF check
 }
 
 // -------------------------------------------------------------
 // 3. SIMPAN EDIT PENGGUNA
 // -------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POST['form_type'] === 'edit_user') {
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
     $edit_id = (int) ($_POST['user_id'] ?? 0);
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
@@ -86,7 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POS
         $role = 'siswa';
     }
 
-    if ($name === '' || $email === '') {
+    // Cegah admin mengubah role diri sendiri
+    if ($edit_id === (int) $_SESSION['user_id'] && $role !== $_SESSION['user_role']) {
+        $message = "Anda tidak dapat mengubah role akun Anda sendiri!";
+        $message_type = "error";
+    } elseif ($name === '' || $email === '') {
         $message = "Nama dan email wajib diisi.";
         $message_type = "error";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -122,10 +140,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POS
             if ($edit_id === (int) $_SESSION['user_id']) {
                 $_SESSION['user_name'] = $name;
                 $_SESSION['user_email'] = $email;
-                $_SESSION['user_role'] = $role;
             }
         }
     }
+    } // end CSRF check
 }
 
 // -------------------------------------------------------------
@@ -173,7 +191,7 @@ require_once __DIR__ . "/../includes/header.php";
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
         <h1 class="text-2xl sm:text-3xl font-extrabold text-white flex items-center gap-2">
-            <span>👥</span> Manajemen Pengguna
+            <i class="fa-solid fa-users text-blue-400"></i> Manajemen Pengguna
         </h1>
         <p class="mt-1 text-sm text-slate-400">
             Kelola data akun, peran akses, dan kredensial 5 role dalam sistem.
@@ -182,8 +200,8 @@ require_once __DIR__ . "/../includes/header.php";
 
     <div>
         <button onclick="document.getElementById('modalCreate').classList.remove('hidden')" 
-                class="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
-            <span>➕</span> Tambah Pengguna
+                class="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition cursor-pointer">
+            <i class="fa-solid fa-plus"></i> Tambah Pengguna
         </button>
     </div>
 </div>
@@ -192,10 +210,10 @@ require_once __DIR__ . "/../includes/header.php";
 <?php if ($message !== ''): ?>
     <div class="mb-6 rounded-2xl border p-4 text-sm flex items-center justify-between <?= $message_type === 'success' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/20 bg-rose-500/10 text-rose-300' ?>">
         <div class="flex items-center gap-3">
-            <span><?= $message_type === 'success' ? '✅' : '⚠️' ?></span>
+            <span><?= $message_type === 'success' ? '<i class="fa-solid fa-circle-check text-emerald-400"></i>' : '<i class="fa-solid fa-triangle-exclamation text-rose-400"></i>' ?></span>
             <span><?= htmlspecialchars($message) ?></span>
         </div>
-        <button onclick="this.parentElement.remove()" class="text-xs opacity-70 hover:opacity-100">✕</button>
+        <button onclick="this.parentElement.remove()" class="text-xs opacity-70 hover:opacity-100 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
     </div>
 <?php endif; ?>
 
@@ -224,8 +242,8 @@ require_once __DIR__ . "/../includes/header.php";
         </div>
 
         <div class="flex gap-2">
-            <button type="submit" class="rounded-xl bg-slate-800 hover:bg-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition">
-                🔍 Filter
+            <button type="submit" class="rounded-xl bg-slate-800 hover:bg-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition flex items-center gap-2 cursor-pointer">
+                <i class="fa-solid fa-magnifying-glass text-xs"></i> Filter
             </button>
             <?php if ($search !== '' || $filter_role !== ''): ?>
                 <a href="users.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-2 text-sm font-semibold text-slate-400 transition">
@@ -292,15 +310,18 @@ require_once __DIR__ . "/../includes/header.php";
                             <td class="px-6 py-4 text-right">
                                 <div class="inline-flex items-center gap-2">
                                     <a href="users.php?action=edit&id=<?= $u['id'] ?>" 
-                                       class="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition">
-                                        ✏️ Edit
+                                       class="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition inline-flex items-center gap-1.5">
+                                        <i class="fa-solid fa-pen-to-square text-xs"></i> Edit
                                     </a>
                                     <?php if ($u['id'] !== (int)$_SESSION['user_id']): ?>
-                                        <a href="users.php?action=delete&id=<?= $u['id'] ?>" 
-                                           onclick="return confirm('Yakin ingin menghapus pengguna <?= addslashes(htmlspecialchars($u['name'])) ?>? Data yang dihapus tidak dapat dipulihkan!');"
-                                           class="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition">
-                                            🗑️ Hapus
-                                        </a>
+                                        <form method="POST" class="inline" onsubmit="return confirm('Yakin ingin menghapus pengguna <?= addslashes(htmlspecialchars($u['name'])) ?>? Data yang dihapus tidak dapat dipulihkan!');">
+                                            <input type="hidden" name="form_type" value="delete_user">
+                                            <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
+                                            <?= csrfField() ?>
+                                            <button type="submit" class="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition inline-flex items-center gap-1.5 cursor-pointer">
+                                                <i class="fa-solid fa-trash text-xs"></i> Hapus
+                                            </button>
+                                        </form>
                                     <?php endif; ?>
                                 </div>
                             </td>
@@ -319,13 +340,14 @@ require_once __DIR__ . "/../includes/header.php";
     <div class="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900 p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
             <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                <span>➕</span> Tambah Pengguna Baru
+                <i class="fa-solid fa-user-plus text-blue-400"></i> Tambah Pengguna Baru
             </h3>
-            <button onclick="document.getElementById('modalCreate').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg">✕</button>
+            <button onclick="document.getElementById('modalCreate').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
         <form method="POST" class="space-y-4">
             <input type="hidden" name="form_type" value="create_user">
+            <?= csrfField() ?>
 
             <div>
                 <label class="mb-1 block text-xs font-medium text-slate-300">Nama Lengkap *</label>
@@ -364,10 +386,10 @@ require_once __DIR__ . "/../includes/header.php";
             </div>
 
             <div class="mt-6 flex justify-end gap-3 pt-4 border-t border-white/10">
-                <button type="button" onclick="document.getElementById('modalCreate').classList.add('hidden')" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
+                <button type="button" onclick="document.getElementById('modalCreate').classList.add('hidden')" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10 cursor-pointer">
                     Batal
                 </button>
-                <button type="submit" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2 text-sm font-semibold text-white transition">
+                <button type="submit" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2 text-sm font-semibold text-white transition cursor-pointer">
                     Simpan Pengguna
                 </button>
             </div>
@@ -383,14 +405,15 @@ require_once __DIR__ . "/../includes/header.php";
     <div class="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900 p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
             <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                <span>✏️</span> Edit Pengguna: <?= htmlspecialchars($editing_user['name']) ?>
+                <i class="fa-solid fa-user-pen text-blue-400"></i> Edit Pengguna: <?= htmlspecialchars($editing_user['name']) ?>
             </h3>
-            <a href="users.php" class="text-slate-400 hover:text-white text-lg">✕</a>
+            <a href="users.php" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></a>
         </div>
 
         <form method="POST" class="space-y-4">
             <input type="hidden" name="form_type" value="edit_user">
             <input type="hidden" name="user_id" value="<?= $editing_user['id'] ?>">
+            <?= csrfField() ?>
 
             <div>
                 <label class="mb-1 block text-xs font-medium text-slate-300">Nama Lengkap *</label>

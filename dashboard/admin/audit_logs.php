@@ -21,8 +21,8 @@ require_once __DIR__ . "/../includes/header.php";
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
         <div class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400 text-xl border border-rose-500/30 shadow-lg shadow-rose-500/10">
-                🛡️
+            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400 text-lg border border-rose-500/30 shadow-lg shadow-rose-500/10">
+                <i class="fa-solid fa-shield-halved"></i>
             </span>
             <div>
                 <h1 class="text-2xl font-bold text-white tracking-tight">Audit Trail & Log Aktivitas Sistem</h1>
@@ -32,8 +32,8 @@ require_once __DIR__ . "/../includes/header.php";
     </div>
 
     <div class="flex items-center gap-2">
-        <a href="settings.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition">
-            ⚙️ Pengaturan Sekolah
+        <a href="settings.php" class="inline-flex items-center rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition">
+            <i class="fa-solid fa-gear mr-1.5"></i>Pengaturan Sekolah
         </a>
     </div>
 </div>

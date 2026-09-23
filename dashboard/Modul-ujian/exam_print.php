@@ -111,6 +111,7 @@ $doc_number = sprintf("421.5 / %03d / BA-CBT / %s / %s", $exam['id'], date('m'),
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Berita Acara & Nilai - <?= htmlspecialchars($exam['title']) ?></title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css">
     <style>
         * {
             box-sizing: border-box;
@@ -387,15 +388,15 @@ $doc_number = sprintf("421.5 / %03d / BA-CBT / %s / %s", $exam['id'], date('m'),
     <!-- Toolbar Navigasi Aksi (Hanya tampil di layar monitor) -->
     <div class="toolbar">
         <div style="display: flex; align-items: center; gap: 8px;">
-            <span>📄</span>
+            <i class="fa-regular fa-file-lines text-slate-300"></i>
             <strong>Mode Cetak Berita Acara & Daftar Nilai</strong>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
             <a href="exam_results.php?id=<?= $exam['id'] ?>" class="btn-back">
-                ← Kembali ke Rekap
+                <i class="fa-solid fa-arrow-left"></i> Kembali ke Rekap
             </a>
             <button onclick="window.print()" class="btn-print">
-                🖨️ Cetak Dokumen / Simpan PDF
+                <i class="fa-solid fa-print"></i> Cetak Dokumen / Simpan PDF
             </button>
         </div>
     </div>
@@ -405,7 +406,7 @@ $doc_number = sprintf("421.5 / %03d / BA-CBT / %s / %s", $exam['id'], date('m'),
         <!-- KOP SURAT RESMI -->
         <div class="kop-surat">
             <div class="kop-logo">
-                🎓
+                <i class="fa-solid fa-graduation-cap"></i>
             </div>
             <div class="kop-header">
                 <h4>PEMERINTAH DAERAH PROVINSI PENDIDIKAN & KEBUDAYAAN</h4>

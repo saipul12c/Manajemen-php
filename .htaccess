@@ -1,0 +1,20 @@
+# Konfigurasi Apache Server - Manajemen-PHP
+
+# Mencegah Directory Listing
+Options -Indexes
+
+# Custom Error Pages
+ErrorDocument 400 /error/400.php
+ErrorDocument 401 /error/401.php
+ErrorDocument 403 /error/403.php
+ErrorDocument 404 /error/404.php
+ErrorDocument 500 /error/500.php
+ErrorDocument 503 /error/503.php
+
+# Keamanan Header Tambahan
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

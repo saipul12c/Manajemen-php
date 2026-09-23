@@ -1,20 +1,69 @@
 <?php
 session_start();
 
-// Handle Logout
-if (isset($_GET["logout"])) {
-    session_unset();
-    session_destroy();
-    header("Location: ../index.php");
-    exit;
+// BUG-07 fix: Handle Logout via POST with CSRF validation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'logout') {
+    if (isset($_SESSION['csrf_token']) && isset($_POST['csrf_token']) && hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        session_unset();
+        session_destroy();
+        header("Location: ../index.php");
+        exit;
+    }
+}
+
+// Verifikasi Wajib Login
+require_once __DIR__ . "/../config/database.php";
+requireLogin();
+
+// Handle konfirmasi baca pengumuman darurat dari pop-up modal (Fase 1 & Fase 2)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'ack_announcement') {
+    if (validateCsrfToken()) {
+        $ack_id = (int) ($_POST['announcement_id'] ?? 0);
+        $curr_uid = (int) $_SESSION['user_id'];
+        if ($ack_id > 0) {
+            $stmt_ack = $pdo->prepare("INSERT IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?, ?)");
+            $stmt_ack->execute([$ack_id, $curr_uid]);
+            logActivity($pdo, 'ack_announcement', "Konfirmasi baca pengumuman darurat ID: $ack_id");
+            header("Location: index.php?msg=ack_success");
+            exit;
+        }
+    }
 }
 
 $page_title = "Dashboard";
 require_once __DIR__ . "/includes/header.php";
 
 // -------------------------------------------------------------
-// PENGAMBILAN DATA DINAMIS BERDASARKAN ROLE
+// PENGAMBILAN DATA DINAMIS BERDASARKAN ROLE & KELAS (Fase 1)
 // -------------------------------------------------------------
+$class_filter_sql = "";
+$class_params = [];
+if ($user_role === 'siswa') {
+    $std_class = $pdo->query("SELECT class_id FROM users WHERE id = $user_id")->fetchColumn();
+    if ($std_class) {
+        $class_filter_sql = " AND (a.class_id IS NULL OR a.class_id = ?)";
+        $class_params[] = (int) $std_class;
+    } else {
+        $class_filter_sql = " AND a.class_id IS NULL";
+    }
+} elseif ($user_role === 'orang_tua') {
+    $stmt_pck = $pdo->prepare("
+        SELECT DISTINCT u.class_id 
+        FROM parent_students ps 
+        JOIN users u ON ps.student_id = u.id 
+        WHERE ps.parent_id = ? AND u.class_id IS NOT NULL
+    ");
+    $stmt_pck->execute([$user_id]);
+    $p_classes = $stmt_pck->fetchAll(PDO::FETCH_COLUMN);
+    if (!empty($p_classes)) {
+        $in_cl = implode(',', array_fill(0, count($p_classes), '?'));
+        $class_filter_sql = " AND (a.class_id IS NULL OR a.class_id IN ($in_cl))";
+        foreach ($p_classes as $pcl) { $class_params[] = (int) $pcl; }
+    } else {
+        $class_filter_sql = " AND a.class_id IS NULL";
+    }
+}
+
 // 1. Pengumuman Terkait
 $stmt_ann = $pdo->prepare("
     SELECT a.*, u.name as author_name 
@@ -23,9 +72,10 @@ $stmt_ann = $pdo->prepare("
     WHERE a.status = 'published'
       AND (a.expires_at IS NULL OR a.expires_at > NOW())
       AND a.target_role IN ('semua', ?) 
+      $class_filter_sql
     ORDER BY a.is_pinned DESC, a.id DESC LIMIT 5
 ");
-$stmt_ann->execute([$user_role]);
+$stmt_ann->execute(array_merge([$user_role], $class_params));
 $latest_announcements = $stmt_ann->fetchAll();
 
 // Ambil pengumuman darurat/penting yang di-pin untuk alert banner
@@ -37,10 +87,29 @@ $stmt_urgent = $pdo->prepare("
       AND (a.expires_at IS NULL OR a.expires_at > NOW())
       AND a.target_role IN ('semua', ?) 
       AND (a.category IN ('darurat', 'penting') OR a.is_pinned = 1)
+      $class_filter_sql
     ORDER BY FIELD(a.category, 'darurat', 'penting') ASC, a.id DESC LIMIT 3
 ");
-$stmt_urgent->execute([$user_role]);
+$stmt_urgent->execute(array_merge([$user_role], $class_params));
 $urgent_announcements = $stmt_urgent->fetchAll();
+
+// Cek Pengumuman Darurat yang BELUM dibaca untuk Auto Pop-up Modal saat login (Fase 2)
+$unread_emergency_announcement = null;
+$stmt_em = $pdo->prepare("
+    SELECT a.*, u.name as author_name 
+    FROM announcements a
+    JOIN users u ON a.author_id = u.id
+    LEFT JOIN announcement_reads ar ON ar.announcement_id = a.id AND ar.user_id = ?
+    WHERE a.status = 'published'
+      AND (a.expires_at IS NULL OR a.expires_at > NOW())
+      AND a.target_role IN ('semua', ?)
+      AND a.category IN ('darurat', 'penting')
+      AND ar.id IS NULL
+      $class_filter_sql
+    ORDER BY FIELD(a.category, 'darurat', 'penting') ASC, a.id DESC LIMIT 1
+");
+$stmt_em->execute(array_merge([$user_id, $user_role], $class_params));
+$unread_emergency_announcement = $stmt_em->fetch();
 
 // 2. Data Khusus Admin
 $total_users = 0;
@@ -161,10 +230,7 @@ if (in_array($user_role, ['siswa', 'orang_tua'], true)) {
             $linked_child = $stmt_child->fetch();
         } catch (Exception $e) {}
 
-        if (!$linked_child) {
-            $stmt_fallback = $pdo->query("SELECT u.id, u.name, u.nisn, u.gender, c.name as class_name FROM users u LEFT JOIN classes c ON u.class_id = c.id WHERE u.role = 'siswa' LIMIT 1");
-            $linked_child = $stmt_fallback->fetch();
-        }
+        // BUG-12 fix: Jangan fallback ke siswa random — tampilkan pesan bahwa belum ada siswa terhubung
         if ($linked_child) {
             $att_student_id = (int)$linked_child['id'];
         }
@@ -248,12 +314,95 @@ try {
     ");
     $dash_upcoming = $stmt_up_dash->fetchAll();
 } catch (Exception $e) {}
+
+// Data Tambahan Modul Baru untuk Dashboard
+$days_id_map = [
+    'Monday' => 'Senin', 'Tuesday' => 'Selasa', 'Wednesday' => 'Rabu',
+    'Thursday' => 'Kamis', 'Friday' => 'Jumat', 'Saturday' => 'Sabtu', 'Sunday' => 'Minggu'
+];
+$today_id_name = $days_id_map[date('l')] ?? 'Senin';
+
+$dash_today_schedules = [];
+try {
+    if ($user_role === 'guru') {
+        $stmt_tt_dash = $pdo->prepare("
+            SELECT t.*, c.name as class_name 
+            FROM timetables t
+            JOIN classes c ON t.class_id = c.id
+            WHERE t.teacher_id = ? AND t.day = ?
+            ORDER BY t.start_time ASC
+        ");
+        $stmt_tt_dash->execute([$user_id, $today_id_name]);
+        $dash_today_schedules = $stmt_tt_dash->fetchAll();
+    } elseif (in_array($user_role, ['siswa', 'orang_tua'], true)) {
+        $target_cl_id = null;
+        if ($user_role === 'siswa') {
+            $stmt_cl_s = $pdo->prepare("SELECT class_id FROM users WHERE id = ?");
+            $stmt_cl_s->execute([$user_id]);
+            $target_cl_id = $stmt_cl_s->fetchColumn();
+        } elseif ($linked_child) {
+            $target_cl_id = $linked_child['id'] ? $pdo->query("SELECT class_id FROM users WHERE id = {$linked_child['id']}")->fetchColumn() : null;
+        }
+        if ($target_cl_id) {
+            $stmt_tt_dash = $pdo->prepare("
+                SELECT t.*, u.name as teacher_name 
+                FROM timetables t
+                JOIN users u ON t.teacher_id = u.id
+                WHERE t.class_id = ? AND t.day = ?
+                ORDER BY t.start_time ASC
+            ");
+            $stmt_tt_dash->execute([$target_cl_id, $today_id_name]);
+            $dash_today_schedules = $stmt_tt_dash->fetchAll();
+        }
+    }
+} catch (Exception $e) {}
+
+// Ringkasan Tagihan Keuangan Belum Lunas
+$dash_unpaid_bills = [];
+$dash_total_unpaid = 0;
+if (in_array($user_role, ['siswa', 'orang_tua'], true) && isset($att_student_id)) {
+    try {
+        $stmt_ub = $pdo->prepare("SELECT * FROM student_bills WHERE student_id = ? AND status != 'lunas' ORDER BY due_date ASC LIMIT 3");
+        $stmt_ub->execute([$att_student_id]);
+        $dash_unpaid_bills = $stmt_ub->fetchAll();
+        foreach ($dash_unpaid_bills as $ub) {
+            $dash_total_unpaid += (float)$ub['amount'];
+        }
+    } catch (Exception $e) {}
+}
+
+// Poin BK & Prestasi
+$dash_counseling_points = ['reward' => 0, 'penalty' => 0];
+if (in_array($user_role, ['siswa', 'orang_tua'], true) && isset($att_student_id)) {
+    try {
+        $stmt_cp = $pdo->prepare("
+            SELECT 
+                SUM(CASE WHEN type = 'prestasi' THEN points ELSE 0 END) as reward,
+                SUM(CASE WHEN type = 'pelanggaran' THEN points ELSE 0 END) as penalty
+            FROM counseling_records WHERE student_id = ?
+        ");
+        $stmt_cp->execute([$att_student_id]);
+        $cp_row = $stmt_cp->fetch();
+        if ($cp_row) {
+            $dash_counseling_points['reward'] = (int)($cp_row['reward'] ?? 0);
+            $dash_counseling_points['penalty'] = (int)($cp_row['penalty'] ?? 0);
+        }
+    } catch (Exception $e) {}
+}
+
+// Data Modul Perpustakaan & PPDB untuk Quick Stats
+$dash_book_count = 0;
+$dash_ppdb_pending = 0;
+try {
+    $dash_book_count = (int)$pdo->query("SELECT COUNT(*) FROM `library_books`")->fetchColumn();
+    $dash_ppdb_pending = (int)$pdo->query("SELECT COUNT(*) FROM `ppdb_registrations` WHERE `status` = 'menunggu_verifikasi'")->fetchColumn();
+} catch (Exception $e) {}
 ?>
 
 <?php if (isset($_GET['error']) && $_GET['error'] === 'unauthorized'): ?>
     <div class="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300 flex items-center justify-between">
         <div class="flex items-center gap-3">
-            <span class="text-xl">⛔</span>
+            <span class="text-xl"><i class="fa-solid fa-ban text-rose-400"></i></span>
             <span>Akses ditolak! Anda tidak memiliki izin untuk membuka halaman tersebut.</span>
         </div>
         <a href="index.php" class="text-xs font-semibold text-rose-400 hover:underline">Tutup</a>
@@ -269,7 +418,7 @@ try {
                 <span><?= htmlspecialchars(getRoleLabel($user_role)) ?></span>
             </div>
             <h1 class="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white">
-                Selamat Datang, <?= htmlspecialchars($user_name) ?>! 👋
+                Selamat Datang, <?= htmlspecialchars($user_name) ?>!
             </h1>
             <p class="mt-2 text-sm sm:text-base text-slate-400 max-w-2xl">
                 Anda berada di portal sistem manajemen sekolah. Semua fitur di bawah ini aktif dan terhubung secara langsung antar peran.
@@ -277,57 +426,243 @@ try {
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-            <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5">
-                <span>📅</span> Presensi
+            <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                <i class="fa-solid fa-calendar-check text-emerald-400"></i> Presensi
             </a>
-            <a href="akademik/calendar.php" class="rounded-xl border border-cyan-500/30 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5">
-                <span>🗓️</span> Kalender
+            <a href="akademik/calendar.php" class="rounded-xl border border-cyan-500/30 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                <i class="fa-solid fa-calendar-days text-cyan-400"></i> Kalender
             </a>
-            <a href="Modul-ujian/exams.php" class="rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5">
-                <span>📝</span> Ujian & Latihan
+            <a href="Modul-ujian/exams.php" class="rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                <i class="fa-solid fa-file-pen text-blue-400"></i> Ujian & Latihan
             </a>
-            <a href="informasi/announcements.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-sm font-semibold transition">
-                📢 Pengumuman
+            <a href="informasi/announcements.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                <i class="fa-solid fa-bullhorn text-slate-300"></i> Pengumuman
             </a>
             <?php if ($user_role === 'administrator'): ?>
-                <a href="admin/users.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
-                    👥 Kelola Pengguna
+                <a href="admin/users.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-users"></i> Kelola Pengguna
                 </a>
-                <a href="admin/classes.php" class="rounded-xl border border-indigo-500/30 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 px-4 py-2.5 text-sm font-semibold transition">
-                    🏫 Rombel & Kelas
+                <a href="admin/classes.php" class="rounded-xl border border-indigo-500/30 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-school"></i> Rombel & Kelas
                 </a>
             <?php elseif ($user_role === 'guru'): ?>
-                <a href="akademik/assignments.php" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition">
-                    ➕ Buat Tugas
+                <a href="akademik/assignments.php" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-plus"></i> Buat Tugas
                 </a>
-                <a href="akademik/gradebook.php" class="rounded-xl border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 px-4 py-2.5 text-sm font-semibold transition">
-                    📚 Buku Nilai
+                <a href="akademik/gradebook.php" class="rounded-xl border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-book-open"></i> Buku Nilai
+                </a>
+                <a href="akademik/report_card.php" class="rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-chart-line"></i> E-Rapor
                 </a>
             <?php elseif ($user_role === 'siswa'): ?>
-                <a href="Modul-ujian/exam_card.php" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-sm font-semibold transition">
-                    🪪 Kartu Ujian
+                <a href="Modul-ujian/exam_card.php" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-id-card"></i> Kartu Ujian
                 </a>
-                <a href="akademik/report_card.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
-                    📈 E-Rapor
+                <a href="akademik/report_card.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-chart-line"></i> E-Rapor
                 </a>
             <?php elseif ($user_role === 'orang_tua'): ?>
-                <a href="akademik/report_card.php<?= $linked_child ? '?student_id='.$linked_child['id'] : '' ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
-                    📈 Rapor Anak
+                <a href="akademik/report_card.php<?= $linked_child ? '?student_id='.$linked_child['id'] : '' ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-chart-line"></i> Rapor Anak
                 </a>
-                <a href="surat/requests.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition">
-                    📋 Izin / Sakit
+                <a href="surat/requests.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-file-lines"></i> Izin / Sakit
                 </a>
             <?php elseif ($user_role === 'staf'): ?>
-                <a href="surat/requests.php" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition">
-                    📋 Surat Masuk
+                <a href="surat/requests.php" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-inbox"></i> Surat Masuk
                 </a>
-                <a href="presensi/attendance_report.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition">
-                    📊 Rekap Presensi
+                <a href="presensi/attendance_report.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-chart-pie"></i> Rekap Presensi
                 </a>
             <?php endif; ?>
         </div>
     </div>
 </div>
+
+<!-- Grid Modul & Akses Cepat -->
+<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
+    <a href="akademik/timetable.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-blue-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+        <div>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-base text-blue-400 group-hover:scale-110 transition">
+                <i class="fa-solid fa-calendar-days"></i>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Jadwal KBM</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Hari <?= $today_id_name ?></p>
+        </div>
+        <span class="text-[10px] sm:text-[11px] font-semibold text-blue-400 mt-2 block truncate">
+            <?= count($dash_today_schedules) > 0 ? count($dash_today_schedules) . ' Sesi Kelas' : 'Lihat Jadwal →' ?>
+        </span>
+    </a>
+
+    <a href="akademik/materials.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-emerald-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+        <div>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-base text-emerald-400 group-hover:scale-110 transition">
+                <i class="fa-solid fa-book-open-reader"></i>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Bahan Ajar</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Modul & Video</p>
+        </div>
+        <span class="text-[10px] sm:text-[11px] font-semibold text-emerald-400 mt-2 block">E-Learning →</span>
+    </a>
+
+    <a href="perpustakaan/books.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-teal-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+        <div>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/10 text-base text-teal-400 group-hover:scale-110 transition">
+                <i class="fa-solid fa-book"></i>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Perpustakaan</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Katalog & E-Book</p>
+        </div>
+        <span class="text-[10px] sm:text-[11px] font-semibold text-teal-400 mt-2 block">
+            <?= $dash_book_count > 0 ? $dash_book_count . ' Judul Buku' : 'Buka Perpus →' ?>
+        </span>
+    </a>
+
+    <a href="keuangan/payments.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-amber-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+        <div>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-base text-amber-400 group-hover:scale-110 transition">
+                <i class="fa-solid fa-wallet"></i>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Keuangan SPP</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Iuran Siswa</p>
+        </div>
+        <span class="text-[10px] sm:text-[11px] font-semibold text-amber-400 mt-2 block truncate">
+            <?= in_array($user_role, ['siswa', 'orang_tua'], true) ? ($dash_total_unpaid > 0 ? formatRupiah($dash_total_unpaid) : 'Lunas <i class="fa-solid fa-check text-emerald-400 ml-1"></i>') : 'Kelola Kas →' ?>
+        </span>
+    </a>
+
+    <a href="bk/counseling.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-purple-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+        <div>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/10 text-base text-purple-400 group-hover:scale-110 transition">
+                <i class="fa-solid fa-scale-balanced"></i>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Bimbingan BK</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Prestasi & Disiplin</p>
+        </div>
+        <span class="text-[10px] sm:text-[11px] font-semibold text-purple-400 mt-2 block">
+            <?= in_array($user_role, ['siswa', 'orang_tua'], true) ? '+' . $dash_counseling_points['reward'] . ' Poin' : 'Rekam Kasus →' ?>
+        </span>
+    </a>
+
+    <a href="pesan/messages.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-cyan-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+        <div>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/10 text-base text-cyan-400 group-hover:scale-110 transition">
+                <i class="fa-solid fa-comments"></i>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Konsultasi</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Pesan Internal</p>
+        </div>
+        <span class="text-[10px] sm:text-[11px] font-semibold text-cyan-400 mt-2 block truncate">
+            <?= $unread_msg_count > 0 ? $unread_msg_count . ' Pesan Baru <i class="fa-solid fa-bell text-cyan-400 ml-1"></i>' : 'Buka Obrolan →' ?>
+        </span>
+    </a>
+
+    <a href="<?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'presensi/scan_qr.php' : 'presensi/qr_card.php' ?>" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-indigo-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+        <div>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-base text-indigo-400 group-hover:scale-110 transition">
+                <i class="fa-solid <?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'fa-qrcode' : 'fa-id-card' ?>"></i>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">
+                <?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'Scan QR' : 'Kartu QR' ?>
+            </h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Presensi Cepat</p>
+        </div>
+        <span class="text-[10px] sm:text-[11px] font-semibold text-indigo-400 mt-2 block">
+            <?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'Kamera Absen →' : 'Lihat Kartu →' ?>
+        </span>
+    </a>
+
+    <a href="<?= in_array($user_role, ['administrator', 'staf'], true) ? 'admin/ppdb.php' : '../ppdb.php' ?>" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-rose-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+        <div>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-500/10 text-base text-rose-400 group-hover:scale-110 transition">
+                <i class="fa-solid fa-graduation-cap"></i>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">PPDB Online</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">Siswa Baru</p>
+        </div>
+        <span class="text-[10px] sm:text-[11px] font-semibold text-rose-400 mt-2 block truncate">
+            <?= in_array($user_role, ['administrator', 'staf'], true) ? ($dash_ppdb_pending > 0 ? $dash_ppdb_pending . ' Menunggu' : 'Panitia PPDB →') : 'Portal PPDB →' ?>
+        </span>
+    </a>
+</div>
+
+<!-- Modal Pop-up Pengumuman Darurat Otomatis Saat Login (Fase 2) -->
+<?php if (!empty($unread_emergency_announcement)): ?>
+<div id="modalEmergencyPopup" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
+    <div class="w-full max-w-xl rounded-3xl border border-rose-500/40 bg-slate-900 p-6 sm:p-8 shadow-2xl ring-1 ring-rose-500/20">
+        
+        <div class="flex items-center gap-3 pb-4 border-b border-rose-500/20">
+            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400 text-lg">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </span>
+            <div>
+                <span class="inline-flex items-center rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 text-xs font-black uppercase tracking-wider text-rose-300">
+                    PEMBERITAHUAN MENDESAK (<?= strtoupper($unread_emergency_announcement['category']) ?>)
+                </span>
+                <p class="text-xs text-slate-400 mt-0.5">Wajib dibaca dan dikonfirmasi oleh penerima informasi</p>
+            </div>
+        </div>
+
+        <div class="py-5 space-y-3">
+            <h2 class="text-xl font-extrabold text-white">
+                <?= htmlspecialchars($unread_emergency_announcement['title']) ?>
+            </h2>
+
+            <div class="text-xs text-slate-400 flex items-center gap-3">
+                <span><i class="fa-solid fa-user text-slate-400 mr-1"></i> <?= htmlspecialchars($unread_emergency_announcement['author_name']) ?></span>
+                <span><i class="fa-solid fa-calendar-day text-slate-400 mr-1"></i> <?= date('d M Y, H:i', strtotime($unread_emergency_announcement['created_at'])) ?></span>
+            </div>
+
+            <div class="max-h-60 overflow-y-auto rounded-2xl border border-white/5 bg-slate-950/60 p-4 text-sm text-slate-200 leading-relaxed announcement-rendered-content">
+                <?= sanitizeAnnouncementHtml($unread_emergency_announcement['content']) ?>
+            </div>
+
+            <?php if (!empty($unread_emergency_announcement['attachment_url'])): ?>
+                <div class="p-3 rounded-xl border border-white/10 bg-slate-950/40 flex items-center justify-between text-xs">
+                    <span class="text-slate-300 truncate"><i class="fa-solid fa-paperclip text-slate-400 mr-1"></i> Lampiran: <?= htmlspecialchars($unread_emergency_announcement['attachment_url']) ?></span>
+                    <a href="../uploads/announcements/<?= htmlspecialchars($unread_emergency_announcement['attachment_url']) ?>" target="_blank" download class="text-blue-400 hover:underline shrink-0">
+                        Unduh Berkas <i class="fa-solid fa-download ml-1"></i>
+                    </a>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <div class="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <a href="informasi/print_announcement.php?id=<?= $unread_emergency_announcement['id'] ?>" target="_blank" class="w-full sm:w-auto text-center px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 transition">
+                <i class="fa-solid fa-print mr-1"></i> Cetak Dokumen Resmi
+            </a>
+
+            <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button type="button" onclick="document.getElementById('modalEmergencyPopup').remove()" class="px-3.5 py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer">
+                    Tutup Sementara
+                </button>
+                <form method="POST" class="inline">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="ack_announcement">
+                    <input type="hidden" name="announcement_id" value="<?= $unread_emergency_announcement['id'] ?>">
+                    <button type="submit" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-extrabold text-white transition shadow-lg shadow-rose-600/30 cursor-pointer">
+                        <i class="fa-solid fa-check mr-1"></i> Saya Sudah Membaca
+                    </button>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+<?php endif; ?>
+
+<!-- Flash Message Konfirmasi Baca -->
+<?php if (isset($_GET['msg']) && $_GET['msg'] === 'ack_success'): ?>
+    <div class="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+            <span>Terima kasih! Pengumuman mendesak telah Anda konfirmasi sebagai sudah dibaca & dipahami.</span>
+        </div>
+        <button onclick="this.parentElement.remove()" class="text-xs opacity-70 hover:opacity-100 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+<?php endif; ?>
 
 <!-- Banner Pengumuman Penting / Darurat -->
 <?php if (!empty($urgent_announcements)): ?>
@@ -338,7 +673,7 @@ try {
         if ($is_darurat) {
             $banner_border = 'border-rose-500/40';
             $banner_bg = 'bg-gradient-to-r from-rose-950/30 via-rose-900/20 to-slate-900/30';
-            $banner_icon = '🚨';
+            $banner_icon = '<i class="fa-solid fa-triangle-exclamation"></i>';
             $banner_label = 'DARURAT';
             $banner_label_cls = 'text-rose-400';
             $banner_text = 'text-rose-200';
@@ -347,7 +682,7 @@ try {
         } elseif ($is_penting) {
             $banner_border = 'border-amber-500/40';
             $banner_bg = 'bg-gradient-to-r from-amber-950/30 via-amber-900/15 to-slate-900/30';
-            $banner_icon = '⚡';
+            $banner_icon = '<i class="fa-solid fa-bolt"></i>';
             $banner_label = 'PENTING';
             $banner_label_cls = 'text-amber-400';
             $banner_text = 'text-amber-200';
@@ -356,7 +691,7 @@ try {
         } else {
             $banner_border = 'border-blue-500/30';
             $banner_bg = 'bg-gradient-to-r from-blue-950/20 via-slate-900/40 to-slate-900/30';
-            $banner_icon = '📌';
+            $banner_icon = '<i class="fa-solid fa-thumbtack"></i>';
             $banner_label = 'DISEMATKAN';
             $banner_label_cls = 'text-blue-400';
             $banner_text = 'text-blue-200';
@@ -366,7 +701,7 @@ try {
     ?>
         <div class="p-4 rounded-2xl border <?= $banner_border ?> <?= $banner_bg ?> <?= $banner_text ?> flex flex-col sm:flex-row sm:items-center justify-between gap-3 <?= $animate ?>">
             <div class="flex items-center gap-3 min-w-0">
-                <span class="text-2xl flex-shrink-0"><?= $banner_icon ?></span>
+                <span class="text-xl flex-shrink-0"><?= $banner_icon ?></span>
                 <div class="min-w-0">
                     <p class="text-[10px] font-black uppercase tracking-widest <?= $banner_label_cls ?>"><?= $banner_label ?></p>
                     <h4 class="text-sm font-bold text-white truncate"><?= htmlspecialchars($ua['title']) ?></h4>
@@ -421,7 +756,9 @@ try {
     <!-- Role Distribution & Modul Links -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-            <h3 class="text-base font-bold text-white mb-4">👥 Distribusi 5 Role Akun</h3>
+            <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-users text-blue-400"></i> Distribusi 5 Role Akun
+            </h3>
             <div class="space-y-3">
                 <?php foreach (ROLES as $k => $lbl): ?>
                     <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-white/5 text-xs">
@@ -437,7 +774,9 @@ try {
 
         <div class="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-6">
             <div class="flex items-center justify-between mb-4">
-                <h3 class="text-base font-bold text-white">📢 Pengumuman Sekolah Terkini</h3>
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-bullhorn text-blue-400"></i> Pengumuman Sekolah Terkini
+                </h3>
                 <a href="informasi/announcements.php" class="text-xs text-blue-400 hover:underline">Semua →</a>
             </div>
             <div class="space-y-3">
@@ -448,14 +787,14 @@ try {
                         <div class="flex items-center justify-between gap-2 mb-1">
                             <div class="flex items-center gap-2 min-w-0">
                                 <?php if (!empty($a['is_pinned'])): ?>
-                                    <span class="text-amber-400 text-xs flex-shrink-0">📌</span>
+                                    <span class="text-amber-400 text-xs flex-shrink-0"><i class="fa-solid fa-thumbtack"></i></span>
                                 <?php endif; ?>
                                 <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold <?= $a_cat['badge'] ?> flex-shrink-0"><?= $a_cat['icon'] ?> <?= $a_cat['label'] ?></span>
                                 <h4 class="text-sm font-bold text-white truncate"><?= htmlspecialchars($a['title']) ?></h4>
                             </div>
                             <div class="flex items-center gap-1.5 flex-shrink-0">
                                 <?php if (!empty($a['attachment_url'])): ?>
-                                    <span class="text-[10px] text-slate-400">📎</span>
+                                    <span class="text-[10px] text-slate-400"><i class="fa-solid fa-paperclip"></i></span>
                                 <?php endif; ?>
                                 <span class="text-[10px] text-slate-400"><?= date('d M Y', strtotime($a['created_at'])) ?></span>
                             </div>
@@ -478,7 +817,7 @@ try {
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>📋</span> Permohonan Surat yang Butuh Diproses
+                        <i class="fa-solid fa-file-lines text-amber-400"></i> Permohonan Surat yang Butuh Diproses
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">Surat yang baru diajukan oleh siswa atau orang tua.</p>
                 </div>
@@ -488,8 +827,8 @@ try {
             </div>
 
             <?php if (empty($pending_requests)): ?>
-                <div class="p-8 text-center text-slate-400 text-xs">
-                    ✅ Semua permohonan surat sudah diproses. Tidak ada antrean baru.
+                <div class="p-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-circle-check text-emerald-400"></i> Semua permohonan surat sudah diproses. Tidak ada antrean baru.
                 </div>
             <?php else: ?>
                 <div class="space-y-3">
@@ -499,15 +838,26 @@ try {
                                 <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($req['request_type']) ?></h4>
                                 <p class="text-xs text-slate-400">Pemohon: <strong class="text-slate-300"><?= htmlspecialchars($req['applicant_name']) ?></strong> (<?= htmlspecialchars(getRoleLabel($req['applicant_role'])) ?>)</p>
                             </div>
+                            <!-- BUG-08 fix: Form POST dengan CSRF untuk quick update status surat -->
                             <div class="flex items-center gap-2">
-                                <a href="surat/requests.php?update_id=<?= $req['id'] ?>&new_status=diproses" 
-                                   class="rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition">
-                                    Proses
-                                </a>
-                                <a href="surat/requests.php?update_id=<?= $req['id'] ?>&new_status=selesai" 
-                                   class="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition">
-                                    Selesai
-                                </a>
+                                <form method="POST" action="surat/requests.php" class="inline">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="action" value="update_request_status">
+                                    <input type="hidden" name="update_id" value="<?= $req['id'] ?>">
+                                    <input type="hidden" name="new_status" value="diproses">
+                                    <button type="submit" class="rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition cursor-pointer">
+                                        Proses
+                                    </button>
+                                </form>
+                                <form method="POST" action="surat/requests.php" class="inline">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="action" value="update_request_status">
+                                    <input type="hidden" name="update_id" value="<?= $req['id'] ?>">
+                                    <input type="hidden" name="new_status" value="selesai">
+                                    <button type="submit" class="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition cursor-pointer">
+                                        Selesai
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -518,15 +868,19 @@ try {
         <!-- Shortcut & Pengumuman -->
         <div class="space-y-6">
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <h3 class="text-base font-bold text-white mb-2">📢 Buat Pengumuman Sekolah</h3>
+                <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-bullhorn text-blue-400"></i> Buat Pengumuman Sekolah
+                </h3>
                 <p class="text-xs text-slate-400 mb-4">Terbitkan informasi resmi untuk guru, siswa, atau wali murid.</p>
-                <a href="informasi/announcements.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white transition">
-                    ➕ Tulis Pengumuman Baru
+                <a href="informasi/announcements.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white transition">
+                    <i class="fa-solid fa-plus"></i> Tulis Pengumuman Baru
                 </a>
             </div>
 
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <h3 class="text-base font-bold text-white mb-3">📌 Layanan Tata Usaha</h3>
+                <h3 class="text-base font-bold text-white mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-briefcase text-blue-400"></i> Layanan Tata Usaha
+                </h3>
                 <div class="space-y-2 text-xs text-slate-400">
                     <div>• Pembuatan Surat Keterangan Aktif Siswa</div>
                     <div>• Legalisir Rapor & Ijazah Digital</div>
@@ -547,7 +901,7 @@ try {
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>📚</span> Tugas Pembelajaran yang Anda Buat
+                        <i class="fa-solid fa-book-open text-emerald-400"></i> Tugas Pembelajaran yang Anda Buat
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">Daftar tugas yang sedang aktif dan dikerjakan oleh siswa.</p>
                 </div>
@@ -584,7 +938,7 @@ try {
                 <div class="flex items-center justify-between mb-4">
                     <div>
                         <h3 class="text-base font-bold text-white flex items-center gap-2">
-                            <span>📝</span> Paket Ujian & Latihan yang Anda Buat
+                            <i class="fa-solid fa-file-pen text-blue-400"></i> Paket Ujian & Latihan yang Anda Buat
                         </h3>
                         <p class="text-xs text-slate-400 mt-0.5">Asesmen UTS, UKK, Ujian Harian Fleksibel, & Latihan Siswa.</p>
                     </div>
@@ -600,7 +954,7 @@ try {
                 <?php else: ?>
                     <div class="space-y-3">
                         <?php foreach ($my_exams as $ex): 
-                            $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '📝'];
+                            $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
                         ?>
                             <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div>
@@ -634,33 +988,37 @@ try {
         <!-- Pengumuman untuk Guru -->
         <div class="space-y-6">
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <h3 class="text-base font-bold text-white mb-2">⚡ Pintasan Cepat Guru</h3>
+                <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-bolt text-amber-400"></i> Pintasan Cepat Guru
+                </h3>
                 <p class="text-xs text-slate-400 mb-4">Buat soal ujian formal atau latihan harian/mingguan untuk siswa.</p>
                 <div class="space-y-2.5">
-                    <a href="Modul-ujian/exams.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white shadow-lg shadow-blue-500/25 transition">
-                        ➕ Buat Ujian / Latihan Baru
+                    <a href="Modul-ujian/exams.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white shadow-lg shadow-blue-500/25 transition">
+                        <i class="fa-solid fa-plus"></i> Buat Ujian / Latihan Baru
                     </a>
-                    <a href="akademik/assignments.php" class="block w-full py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-center text-xs font-semibold text-emerald-300 transition">
-                        📚 Buat Tugas Belajar
+                    <a href="akademik/assignments.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-center text-xs font-semibold text-emerald-300 transition">
+                        <i class="fa-solid fa-book-open"></i> Buat Tugas Belajar
                     </a>
-                    <a href="akademik/gradebook.php" class="block w-full py-2.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-center text-xs font-semibold text-amber-300 transition">
-                        📊 Rekap Nilai Gabungan
+                    <a href="akademik/gradebook.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-center text-xs font-semibold text-amber-300 transition">
+                        <i class="fa-solid fa-chart-column"></i> Rekap Nilai Gabungan
                     </a>
                 </div>
             </div>
 
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <h3 class="text-base font-bold text-white mb-3">📢 Pengumuman Guru Terkini</h3>
+                <h3 class="text-base font-bold text-white mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-bullhorn text-blue-400"></i> Pengumuman Guru Terkini
+                </h3>
                 <div class="space-y-3">
                     <?php foreach ($latest_announcements as $an): 
                         $an_cat = ANNOUNCEMENT_CATEGORIES[$an['category'] ?? 'umum'] ?? ANNOUNCEMENT_CATEGORIES['umum'];
                     ?>
                         <div class="p-3 rounded-xl bg-slate-900/60 border <?= !empty($an['is_pinned']) ? 'border-amber-500/30' : 'border-white/5' ?>">
                             <div class="flex items-center gap-1.5 mb-1">
-                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400">📌</span><?php endif; ?>
+                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400"><i class="fa-solid fa-thumbtack"></i></span><?php endif; ?>
                                 <span class="rounded px-1 py-0.5 text-[9px] font-semibold <?= $an_cat['badge'] ?>"><?= $an_cat['icon'] ?></span>
                                 <h4 class="text-xs font-bold text-white truncate"><?= htmlspecialchars($an['title']) ?></h4>
-                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto">📎</span><?php endif; ?>
+                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto"><i class="fa-solid fa-paperclip"></i></span><?php endif; ?>
                             </div>
                             <p class="text-[11px] text-slate-400 line-clamp-2"><?= htmlspecialchars($an['content']) ?></p>
                         </div>
@@ -679,8 +1037,8 @@ try {
         <!-- Profil Siswa yang Dipantau -->
         <div class="mb-6 rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 via-slate-900/60 to-purple-950/30 p-6 backdrop-blur flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-xl">
             <div class="flex items-center gap-4">
-                <div class="h-14 w-14 rounded-2xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-3xl shadow-inner">
-                    👨‍🎓
+                <div class="h-14 w-14 rounded-2xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-2xl text-indigo-400 shadow-inner">
+                    <i class="fa-solid fa-user-graduate"></i>
                 </div>
                 <div>
                     <div class="flex items-center gap-2 mb-1">
@@ -697,14 +1055,25 @@ try {
             </div>
             <div class="flex flex-wrap items-center gap-2.5">
                 <a href="akademik/report_card.php?student_id=<?= $linked_child['id'] ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
-                    <span>📈</span> Rapor Digital Anak
+                    <i class="fa-solid fa-chart-line"></i> Rapor Digital Anak
                 </a>
                 <a href="Modul-ujian/exam_card.php?student_id=<?= $linked_child['id'] ?>" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-xs font-bold transition flex items-center gap-2">
-                    <span>🪪</span> Kartu Peserta Ujian
+                    <i class="fa-solid fa-id-card"></i> Kartu Peserta Ujian
                 </a>
                 <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-xs font-bold transition flex items-center gap-2">
-                    <span>📅</span> Riwayat Presensi
+                    <i class="fa-solid fa-calendar-check"></i> Riwayat Presensi
                 </a>
+            </div>
+        </div>
+    <?php else: ?>
+        <!-- Info: Belum Ada Siswa Terhubung -->
+        <div class="mb-6 rounded-3xl border border-amber-500/30 bg-amber-500/10 p-6 backdrop-blur flex items-center gap-4 text-amber-200 shadow-xl">
+            <div class="h-12 w-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-xl text-amber-400 shrink-0">
+                <i class="fa-solid fa-circle-info"></i>
+            </div>
+            <div>
+                <h4 class="font-bold text-white text-base">Belum Ada Siswa Terhubung</h4>
+                <p class="text-xs text-amber-300/80 mt-0.5">Akun orang tua ini belum terhubung dengan data siswa manapun. Silakan hubungi administrator sekolah untuk menghubungkan akun Anda dengan data ananda.</p>
             </div>
         </div>
     <?php endif; ?>
@@ -715,7 +1084,7 @@ try {
             <?php if ($child_alpa_today): ?>
                 <div class="p-4 rounded-2xl border border-rose-500/40 bg-rose-500/15 text-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-pulse">
                     <div class="flex items-center gap-3">
-                        <span class="text-2xl">⚠️</span>
+                        <span class="text-xl text-rose-400"><i class="fa-solid fa-triangle-exclamation"></i></span>
                         <div>
                             <p class="text-xs font-black uppercase tracking-wider text-rose-400">Peringatan Presensi Hari Ini</p>
                             <p class="text-sm">Ananda <strong><?= htmlspecialchars($linked_child['name'] ?? 'Siswa') ?></strong> tercatat <strong>ALPA (Tidak Masuk Tanpa Keterangan)</strong> pada presensi hari ini!</p>
@@ -730,7 +1099,7 @@ try {
             <?php if (!empty($child_remedial_exams)): ?>
                 <div class="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div class="flex items-center gap-3">
-                        <span class="text-2xl">📝</span>
+                        <span class="text-xl text-amber-400"><i class="fa-solid fa-file-pen"></i></span>
                         <div>
                             <p class="text-xs font-bold uppercase tracking-wider text-amber-400">Pemberitahuan Remedial Ujian</p>
                             <p class="text-sm">Ananda perlu mengikuti perbaikan nilai (remedial) untuk: 
@@ -749,7 +1118,7 @@ try {
             <?php if (!empty($child_due_assignments)): ?>
                 <div class="p-4 rounded-2xl border border-blue-500/30 bg-blue-500/10 text-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div class="flex items-center gap-3">
-                        <span class="text-2xl">⏰</span>
+                        <span class="text-xl text-blue-400"><i class="fa-solid fa-clock"></i></span>
                         <div>
                             <p class="text-xs font-bold uppercase tracking-wider text-blue-400">Pengingat Tugas Mendekati Deadline</p>
                             <p class="text-sm">Ananda memiliki tugas belum diserahkan yang mendekati tenggat waktu:
@@ -773,7 +1142,7 @@ try {
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>🎓</span> Pemantauan Tugas Pembelajaran Anak
+                        <i class="fa-solid fa-book-open text-purple-400"></i> Pemantauan Tugas Pembelajaran Anak
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">Daftar tugas pelajaran aktif dari guru untuk siswa.</p>
                 </div>
@@ -804,7 +1173,7 @@ try {
                 <div class="flex items-center justify-between mb-4">
                     <div>
                         <h3 class="text-base font-bold text-white flex items-center gap-2">
-                            <span>📝</span> Pemantauan Ujian & Latihan Anak
+                            <i class="fa-solid fa-file-pen text-purple-400"></i> Pemantauan Ujian & Latihan Anak
                         </h3>
                         <p class="text-xs text-slate-400 mt-0.5">Jadwal UTS, UKK, Ujian Harian, dan Latihan Rutin.</p>
                     </div>
@@ -815,7 +1184,7 @@ try {
 
                 <div class="space-y-3">
                     <?php foreach ($active_exams as $ex): 
-                        $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '📝'];
+                        $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
                     ?>
                         <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
@@ -843,7 +1212,7 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>📅</span> Presensi Kehadiran Anak
+                        <i class="fa-solid fa-calendar-check text-emerald-400"></i> Presensi Kehadiran Anak
                     </h3>
                     <a href="presensi/attendance.php" class="text-xs font-semibold text-emerald-400 hover:underline">
                         Rincian →
@@ -883,7 +1252,7 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>🗓️</span> Agenda Terdekat
+                        <i class="fa-solid fa-calendar-days text-blue-400"></i> Agenda Terdekat
                     </h3>
                     <a href="akademik/calendar.php" class="text-xs font-semibold text-blue-400 hover:underline">
                         Kalender →
@@ -894,7 +1263,7 @@ try {
                         <div class="p-2.5 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-between gap-2">
                             <div class="truncate">
                                 <p class="text-xs font-semibold text-white truncate"><?= htmlspecialchars($du['title']) ?></p>
-                                <span class="text-[10px] text-slate-400 font-mono">📅 <?= date('d M Y', strtotime($du['date'])) ?></span>
+                                <span class="text-[10px] text-slate-400 font-mono"><i class="fa-solid fa-calendar text-xs text-slate-400 mr-1"></i><?= date('d M Y', strtotime($du['date'])) ?></span>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -903,25 +1272,29 @@ try {
             <?php endif; ?>
 
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <h3 class="text-base font-bold text-white mb-2">📋 Layanan Surat Sekolah</h3>
+                <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-file-lines text-blue-400"></i> Layanan Surat Sekolah
+                </h3>
                 <p class="text-xs text-slate-400 mb-4">Ajukan surat izin dispensasi atau permohonan dokumen untuk putra/putri Anda.</p>
-                <a href="surat/requests.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white transition">
-                    ➕ Ajukan Permohonan Surat
+                <a href="surat/requests.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-semibold text-white transition">
+                    <i class="fa-solid fa-plus"></i> Ajukan Permohonan Surat
                 </a>
             </div>
 
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <h3 class="text-base font-bold text-white mb-3">📢 Pengumuman Wali Murid</h3>
+                <h3 class="text-base font-bold text-white mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-bullhorn text-blue-400"></i> Pengumuman Wali Murid
+                </h3>
                 <div class="space-y-3">
                     <?php foreach ($latest_announcements as $an): 
                         $an_cat = ANNOUNCEMENT_CATEGORIES[$an['category'] ?? 'umum'] ?? ANNOUNCEMENT_CATEGORIES['umum'];
                     ?>
                         <div class="p-3 rounded-xl bg-slate-900/60 border <?= !empty($an['is_pinned']) ? 'border-amber-500/30' : 'border-white/5' ?>">
                             <div class="flex items-center gap-1.5 mb-1">
-                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400">📌</span><?php endif; ?>
+                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400"><i class="fa-solid fa-thumbtack"></i></span><?php endif; ?>
                                 <span class="rounded px-1 py-0.5 text-[9px] font-semibold <?= $an_cat['badge'] ?>"><?= $an_cat['icon'] ?></span>
                                 <h4 class="text-xs font-bold text-white truncate"><?= htmlspecialchars($an['title']) ?></h4>
-                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto">📎</span><?php endif; ?>
+                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto"><i class="fa-solid fa-paperclip"></i></span><?php endif; ?>
                             </div>
                             <p class="text-[11px] text-slate-400 line-clamp-2"><?= htmlspecialchars($an['content']) ?></p>
                         </div>
@@ -942,7 +1315,7 @@ try {
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>📖</span> Tugas Belajar Aktif Anda
+                        <i class="fa-solid fa-book-open-reader text-blue-400"></i> Tugas Belajar Aktif Anda
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">Kerjakan dan tandai tugas yang sudah Anda selesaikan.</p>
                 </div>
@@ -952,8 +1325,8 @@ try {
             </div>
 
             <?php if (empty($active_assignments)): ?>
-                <div class="p-8 text-center text-slate-400 text-xs">
-                    🎉 Tidak ada tugas aktif saat ini.
+                <div class="p-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-circle-check text-emerald-400"></i> Tidak ada tugas aktif saat ini.
                 </div>
             <?php else: ?>
                 <div class="space-y-3">
@@ -971,7 +1344,7 @@ try {
                             <div>
                                 <a href="akademik/assignments.php?toggle_id=<?= $asg['id'] ?>" 
                                    class="inline-flex items-center justify-center gap-1.5 py-1.5 px-3.5 rounded-xl text-xs font-semibold transition <?= $is_done ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white' ?>">
-                                    <?= $is_done ? '✅ Selesai' : '📌 Tandai Selesai' ?>
+                                    <i class="fa-solid fa-check text-xs"></i> <?= $is_done ? 'Selesai' : 'Tandai Selesai' ?>
                                 </a>
                             </div>
                         </div>
@@ -984,7 +1357,7 @@ try {
                 <div class="flex items-center justify-between mb-4">
                     <div>
                         <h3 class="text-base font-bold text-white flex items-center gap-2">
-                            <span>📝</span> Ujian & Latihan Belajar Anda
+                            <i class="fa-solid fa-file-pen text-blue-400"></i> Ujian & Latihan Belajar Anda
                         </h3>
                         <p class="text-xs text-slate-400 mt-0.5">Penilaian UTS, UKK, Ujian Harian, serta Latihan Harian/Mingguan/Bulanan.</p>
                     </div>
@@ -995,7 +1368,7 @@ try {
 
                 <div class="space-y-3">
                     <?php foreach ($active_exams as $ex): 
-                        $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '📝'];
+                        $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
                         $sub_info = $my_exam_subs[$ex['id']] ?? null;
                         $already_done = ($sub_info !== null);
                         $my_score = $already_done ? (float) $sub_info['score'] : 0;
@@ -1009,12 +1382,12 @@ try {
                                     </span>
                                     <span class="text-xs font-semibold text-blue-400"><?= htmlspecialchars($ex['subject']) ?></span>
                                     <?php if ($ex['duration_minutes'] == 0): ?>
-                                        <span class="text-[10px] text-emerald-400 font-semibold">⚡ Fleksibel</span>
+                                        <span class="text-[10px] text-emerald-400 font-semibold"><i class="fa-solid fa-bolt mr-1"></i>Fleksibel</span>
                                     <?php else: ?>
-                                        <span class="text-[10px] text-amber-400 font-semibold">⏱️ <?= $ex['duration_minutes'] ?> Menit</span>
+                                        <span class="text-[10px] text-amber-400 font-semibold"><i class="fa-solid fa-stopwatch mr-1"></i><?= $ex['duration_minutes'] ?> Menit</span>
                                     <?php endif; ?>
                                     <?php if (!empty($ex['token'])): ?>
-                                        <span class="text-[10px] text-amber-300 font-mono font-bold bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">🔒 Token</span>
+                                        <span class="text-[10px] text-amber-300 font-mono font-bold bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded"><i class="fa-solid fa-lock text-[9px] mr-1"></i>Token</span>
                                     <?php endif; ?>
                                 </div>
                                 <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($ex['title']) ?></h4>
@@ -1023,15 +1396,15 @@ try {
                             <div>
                                 <?php if ($remedial_ready): ?>
                                     <a href="Modul-ujian/exam_take.php?id=<?= $ex['id'] ?>&remedial=1" class="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3.5 py-1.5 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/25 transition">
-                                        <span>🔄 Kerjakan Remedial</span>
+                                        <i class="fa-solid fa-rotate mr-1"></i> Kerjakan Remedial
                                     </a>
                                 <?php elseif ($already_done): ?>
                                     <a href="Modul-ujian/exam_results.php?id=<?= $ex['id'] ?>" class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 transition">
-                                        <span>Nilai: <?= number_format($my_score, 0) ?></span> ➔
+                                        <span>Nilai: <?= number_format($my_score, 0) ?></span> <i class="fa-solid fa-arrow-right text-xs"></i>
                                     </a>
                                 <?php else: ?>
                                     <a href="Modul-ujian/exam_take.php?id=<?= $ex['id'] ?>" class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition">
-                                        <span>✍️ Kerjakan</span>
+                                        <i class="fa-solid fa-pen mr-1"></i> Kerjakan
                                     </a>
                                 <?php endif; ?>
                             </div>
@@ -1047,7 +1420,7 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>📅</span> Presensi Kehadiran
+                        <i class="fa-solid fa-calendar-check text-emerald-400"></i> Presensi Kehadiran
                     </h3>
                     <a href="presensi/attendance.php" class="text-xs font-semibold text-emerald-400 hover:underline">
                         Riwayat →
@@ -1087,7 +1460,7 @@ try {
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <span>🗓️</span> Agenda Terdekat
+                        <i class="fa-solid fa-calendar-days text-blue-400"></i> Agenda Terdekat
                     </h3>
                     <a href="akademik/calendar.php" class="text-xs font-semibold text-blue-400 hover:underline">
                         Kalender →
@@ -1098,7 +1471,7 @@ try {
                         <div class="p-2.5 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-between gap-2">
                             <div class="truncate">
                                 <p class="text-xs font-semibold text-white truncate"><?= htmlspecialchars($du['title']) ?></p>
-                                <span class="text-[10px] text-slate-400 font-mono">📅 <?= date('d M Y', strtotime($du['date'])) ?></span>
+                                <span class="text-[10px] text-slate-400 font-mono"><i class="fa-solid fa-calendar text-xs text-slate-400 mr-1"></i><?= date('d M Y', strtotime($du['date'])) ?></span>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -1107,36 +1480,40 @@ try {
             <?php endif; ?>
 
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <h3 class="text-base font-bold text-white mb-2">⚡ Pintasan Cepat Siswa</h3>
+                <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-bolt text-amber-400"></i> Pintasan Cepat Siswa
+                </h3>
                 <p class="text-xs text-slate-400 mb-4">Akses dokumen akademik dan layanan permohonan surat tata usaha.</p>
                 <div class="space-y-2.5">
-                    <a href="Modul-ujian/exam_card.php" class="block w-full py-2.5 rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-center text-xs font-bold text-purple-300 transition">
-                        🪪 Cetak Kartu Peserta Ujian
+                    <a href="Modul-ujian/exam_card.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-center text-xs font-bold text-purple-300 transition">
+                        <i class="fa-solid fa-id-card"></i> Cetak Kartu Peserta Ujian
                     </a>
-                    <a href="akademik/report_card.php" class="block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition">
-                        📈 Cetak / Unduh E-Rapor Digital
+                    <a href="akademik/report_card.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-center text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition">
+                        <i class="fa-solid fa-chart-line"></i> Cetak / Unduh E-Rapor Digital
                     </a>
-                    <a href="Modul-ujian/exams.php" class="block w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-center text-xs font-semibold text-slate-300 transition">
-                        📝 Buka Ujian & Latihan
+                    <a href="Modul-ujian/exams.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-center text-xs font-semibold text-slate-300 transition">
+                        <i class="fa-solid fa-file-pen"></i> Buka Ujian & Latihan
                     </a>
-                    <a href="surat/requests.php" class="block w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-center text-xs font-semibold text-white transition">
-                        📋 Ajukan Surat Keterangan / Izin
+                    <a href="surat/requests.php" class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-center text-xs font-semibold text-white transition">
+                        <i class="fa-solid fa-file-lines"></i> Ajukan Surat Keterangan / Izin
                     </a>
                 </div>
             </div>
 
             <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <h3 class="text-base font-bold text-white mb-3">📢 Pengumuman Sekolah</h3>
+                <h3 class="text-base font-bold text-white mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-bullhorn text-blue-400"></i> Pengumuman Sekolah
+                </h3>
                 <div class="space-y-3">
                     <?php foreach ($latest_announcements as $an): 
                         $an_cat = ANNOUNCEMENT_CATEGORIES[$an['category'] ?? 'umum'] ?? ANNOUNCEMENT_CATEGORIES['umum'];
                     ?>
                         <div class="p-3 rounded-xl bg-slate-900/60 border <?= !empty($an['is_pinned']) ? 'border-amber-500/30' : 'border-white/5' ?>">
                             <div class="flex items-center gap-1.5 mb-1">
-                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400">📌</span><?php endif; ?>
+                                <?php if (!empty($an['is_pinned'])): ?><span class="text-[10px] text-amber-400"><i class="fa-solid fa-thumbtack"></i></span><?php endif; ?>
                                 <span class="rounded px-1 py-0.5 text-[9px] font-semibold <?= $an_cat['badge'] ?>"><?= $an_cat['icon'] ?></span>
                                 <h4 class="text-xs font-bold text-white truncate"><?= htmlspecialchars($an['title']) ?></h4>
-                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto">📎</span><?php endif; ?>
+                                <?php if (!empty($an['attachment_url'])): ?><span class="text-[10px] text-slate-400 ml-auto"><i class="fa-solid fa-paperclip"></i></span><?php endif; ?>
                             </div>
                             <p class="text-[11px] text-slate-400 line-clamp-2"><?= htmlspecialchars($an['content']) ?></p>
                         </div>

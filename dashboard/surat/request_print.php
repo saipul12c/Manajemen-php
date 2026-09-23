@@ -9,7 +9,8 @@ $user_role = $_SESSION['user_role'] ?? 'siswa';
 $req_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if ($req_id <= 0) {
-    die("ID permohonan surat tidak valid.");
+    header("Location: requests.php?error=invalid_id");
+    exit;
 }
 
 $school_info = getSchoolSettings($pdo);
@@ -28,12 +29,14 @@ $stmt->execute([$req_id]);
 $req = $stmt->fetch();
 
 if (!$req) {
-    die("Data permohonan surat tidak ditemukan.");
+    header("Location: requests.php?error=not_found");
+    exit;
 }
 
 // Cek hak akses: hanya pemilik atau staf/admin yang boleh buka
 if (!in_array($user_role, ['staf', 'administrator'], true) && $req['user_id'] != $user_id) {
-    die("Akses ditolak: Anda tidak memiliki izin untuk melihat dokumen ini.");
+    header("Location: requests.php?error=unauthorized");
+    exit;
 }
 
 $letter_number = "421.3/" . sprintf('%03d', $req['id']) . "/SMA-BBN/" . date('m/Y', strtotime($req['created_at']));
@@ -45,6 +48,7 @@ $page_title = "Surat Resmi - " . htmlspecialchars($req['request_type']);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $page_title ?></title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         @media print {
@@ -58,11 +62,11 @@ $page_title = "Surat Resmi - " . htmlspecialchars($req['request_type']);
 
     <!-- Action Bar -->
     <div class="no-print w-full max-w-3xl mb-6 flex items-center justify-between font-sans">
-        <a href="requests.php" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition">
-            ← Kembali ke Daftar Surat
+        <a href="requests.php" class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition">
+            <i class="fa-solid fa-arrow-left"></i> Kembali ke Daftar Surat
         </a>
-        <button onclick="window.print()" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition flex items-center gap-2">
-            <span>🖨️</span> Cetak / Simpan PDF
+        <button onclick="window.print()" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition inline-flex items-center gap-2 cursor-pointer">
+            <i class="fa-solid fa-print"></i> Cetak / Simpan PDF
         </button>
     </div>
 
@@ -72,9 +76,9 @@ $page_title = "Surat Resmi - " . htmlspecialchars($req['request_type']);
         <!-- KOP SURAT DINAS / RESMI -->
         <div class="text-center relative pb-4 mb-6 border-b-4 border-slate-900" style="border-bottom-style: double;">
             <div class="flex items-center justify-center gap-4 mb-2">
-                <span class="text-4xl">🏛️</span>
-                <div>
-                    <h3 class="text-xs font-sans font-bold uppercase tracking-widest text-slate-600">Pemerintah Provinsi DKI Jakarta • Dinas Pendidikan</h3>
+                <span class="text-3xl text-slate-800"><i class="fa-solid fa-building-columns"></i></span>
+                    <!-- BUG-18 fix: Ganti alamat duplikat dengan instansi penaung -->
+                    <h3 class="text-xs font-sans font-bold uppercase tracking-widest text-slate-600">DINAS PENDIDIKAN DAN KEBUDAYAAN</h3>
                     <h1 class="text-2xl sm:text-3xl font-black uppercase tracking-tight text-slate-900 font-sans">
                         <?= htmlspecialchars($school_info['school_name']) ?>
                     </h1>
@@ -109,11 +113,11 @@ $page_title = "Surat Resmi - " . htmlspecialchars($req['request_type']);
                 </div>
                 <div class="grid grid-cols-4">
                     <span class="text-slate-600">NISN / No. Induk</span>
-                    <span class="col-span-3 font-mono text-slate-900">: <?= htmlspecialchars($req['nisn'] ?: '0081234567') ?></span>
+                    <span class="col-span-3 font-mono text-slate-900">: <?= htmlspecialchars($req['nisn'] ?: 'Belum diisi') ?></span>
                 </div>
                 <div class="grid grid-cols-4">
                     <span class="text-slate-600">Kelas / Rombel</span>
-                    <span class="col-span-3 text-slate-900">: <?= htmlspecialchars($req['class_name'] ?? 'X MIPA 1') ?></span>
+                    <span class="col-span-3 text-slate-900">: <?= htmlspecialchars($req['class_name'] ?? 'Belum ditentukan') ?></span>
                 </div>
                 <div class="grid grid-cols-4">
                     <span class="text-slate-600">Alamat Tempat Tinggal</span>
@@ -145,7 +149,7 @@ $page_title = "Surat Resmi - " . htmlspecialchars($req['request_type']);
         <!-- TANDA TANGAN KEPALA SEKOLAH & QR VALIDASI -->
         <div class="grid grid-cols-2 gap-8 pt-10 mt-6 border-t border-slate-200 font-sans text-xs">
             <div class="flex flex-col items-center justify-center p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center">
-                <span class="text-3xl mb-1">📱</span>
+                <span class="text-2xl mb-1 text-slate-600"><i class="fa-solid fa-qrcode"></i></span>
                 <span class="font-mono text-[10px] text-slate-600 font-bold">DIGITAL-SIGNATURE-VERIFIED</span>
                 <span class="text-[9px] text-slate-400 mt-0.5 font-mono">DOC-HASH: <?= strtoupper(substr(md5($req['id'] . $req['created_at']), 0, 12)) ?></span>
             </div>

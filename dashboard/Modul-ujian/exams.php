@@ -20,6 +20,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         header("Location: exams.php?error=unauthorized");
         exit;
     }
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
 
     $title = trim($_POST['title'] ?? '');
     $subject = trim($_POST['subject'] ?? '');
@@ -57,24 +61,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         header("Location: exam_questions.php?id=" . $new_exam_id . "&created=1");
         exit;
     }
+    } // end CSRF check
 }
 
 // -------------------------------------------------------------
 // 2. HAPUS UJIAN / LATIHAN (Guru Pembuat / Administrator)
 // -------------------------------------------------------------
-if (isset($_GET['delete_id']) && $can_manage) {
-    $del_id = (int) $_GET['delete_id'];
-    $sql_del = "DELETE FROM exams WHERE id = ?";
-    $params_del = [$del_id];
-    if ($user_role === 'guru') {
-        $sql_del .= " AND teacher_id = ?";
-        $params_del[] = $user_id;
-    }
-    $stmt_del = $pdo->prepare($sql_del);
-    $stmt_del->execute($params_del);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_exam' && $can_manage) {
+    if (validateCsrfToken()) {
+        $del_id = (int) ($_POST['delete_id'] ?? 0);
+        $sql_del = "DELETE FROM exams WHERE id = ?";
+        $params_del = [$del_id];
+        if ($user_role === 'guru') {
+            $sql_del .= " AND teacher_id = ?";
+            $params_del[] = $user_id;
+        }
+        $stmt_del = $pdo->prepare($sql_del);
+        $stmt_del->execute($params_del);
 
-    $message = "Paket ujian/latihan berhasil dihapus.";
-    $message_type = "success";
+        $message = "Paket ujian/latihan berhasil dihapus.";
+        $message_type = "success";
+    }
 }
 
 // -------------------------------------------------------------
@@ -137,7 +144,7 @@ require_once __DIR__ . "/../includes/header.php";
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
             <h1 class="text-2xl sm:text-3xl font-extrabold text-white flex items-center gap-2">
-                <span>📝</span> Modul Ujian & Latihan
+                <i class="fa-solid fa-file-pen text-blue-400"></i> Modul Ujian & Latihan
             </h1>
             <p class="mt-1 text-sm text-slate-400">
                 Sistem terintegrasi untuk Penilaian UTS, UKK, Ujian Harian Fleksibel, dan Latihan Belajar.
@@ -147,7 +154,7 @@ require_once __DIR__ . "/../includes/header.php";
         <?php if ($can_manage): ?>
             <button onclick="document.getElementById('createExamModal').classList.remove('hidden')" 
                     class="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition cursor-pointer">
-                <span>➕</span> Buat Ujian / Latihan
+                <i class="fa-solid fa-plus"></i> Buat Ujian / Latihan
             </button>
         <?php endif; ?>
     </div>
@@ -163,8 +170,8 @@ require_once __DIR__ . "/../includes/header.php";
     <div class="rounded-3xl border border-white/10 bg-gradient-to-r from-blue-950/40 via-slate-900 to-slate-900/90 p-5 sm:p-6 shadow-xl">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4 mb-4">
             <div class="flex items-center gap-3">
-                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600/20 border border-blue-500/30 text-xl text-blue-400 shrink-0">
-                    💡
+                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600/20 border border-blue-500/30 text-lg text-blue-400 shrink-0">
+                    <i class="fa-solid fa-lightbulb text-amber-400"></i>
                 </span>
                 <div>
                     <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
@@ -180,8 +187,8 @@ require_once __DIR__ . "/../includes/header.php";
             </div>
 
             <button type="button" onclick="document.getElementById('allRolesGuideModal').classList.remove('hidden')" 
-                    class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3.5 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5 shrink-0">
-                <span>📖</span> Baca Panduan Semua Role
+                    class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3.5 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5 shrink-0 cursor-pointer">
+                <i class="fa-solid fa-book-open"></i> Baca Panduan Semua Role
             </button>
         </div>
 
@@ -190,7 +197,7 @@ require_once __DIR__ . "/../includes/header.php";
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>🔑</span> 1. Masuk & Token Ujian
+                        <i class="fa-solid fa-key text-amber-400"></i> 1. Masuk & Token Ujian
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Jika ujian bertoken, tanyakan kode resmi kepada guru pengawas Anda di kelas untuk membuka soal.
@@ -198,7 +205,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>💾</span> 2. Autosave & Navigasi
+                        <i class="fa-solid fa-floppy-disk text-emerald-400"></i> 2. Autosave & Navigasi
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Jawaban tersimpan otomatis. Gunakan tombol kuning <strong>Ragu-Ragu</strong> dan palet nomor di sebelah kanan.
@@ -206,7 +213,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>🛑</span> 3. Jangan Pindah Tab
+                        <i class="fa-solid fa-ban text-rose-400"></i> 3. Jangan Pindah Tab
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Sistem mendeteksi perpindahan tab browser atau aplikasi lain sebagai pelanggaran integritas ujian.
@@ -214,7 +221,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>🔄</span> 4. Sesi Remedial
+                        <i class="fa-solid fa-rotate text-blue-400"></i> 4. Sesi Remedial
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Jika nilai di bawah KKM dan guru memberi izin, Anda dapat menekan tombol <strong>Kerjakan Remedial</strong>.
@@ -226,7 +233,7 @@ require_once __DIR__ . "/../includes/header.php";
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>➕</span> 1. Pembuatan Paket
+                        <i class="fa-solid fa-plus text-blue-400"></i> 1. Pembuatan Paket
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Pilih 1 dari 6 kategori asesmen, atur token CBT, jadwal jam mulai, dan centang opsi acak soal (shuffle).
@@ -234,7 +241,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>📥</span> 2. Impor Soal Massal
+                        <i class="fa-solid fa-file-arrow-up text-blue-400"></i> 2. Impor Soal Massal
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Unduh format template CSV di menu Kelola Soal untuk mengunggah puluhan butir soal sekaligus.
@@ -242,7 +249,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>🔄</span> 3. Izin Remedial Siswa
+                        <i class="fa-solid fa-rotate text-indigo-400"></i> 3. Izin Remedial Siswa
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Pada tabel Rekap Nilai, klik <strong>Izinkan Remedial</strong> untuk siswa yang belum tuntas mencapai KKM.
@@ -250,7 +257,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>📊</span> 4. Ekspor Nilai ke Excel
+                        <i class="fa-solid fa-file-excel text-emerald-400"></i> 4. Ekspor Nilai ke Excel
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Gunakan tombol <strong>Unduh CSV / Excel</strong> untuk mengunduh rekapitulasi nilai rapor kelas.
@@ -262,7 +269,7 @@ require_once __DIR__ . "/../includes/header.php";
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>📊</span> 1. Pantau Nilai Transparan
+                        <i class="fa-solid fa-chart-column text-emerald-400"></i> 1. Pantau Nilai Transparan
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Lihat perolehan skor nilai dan status kelulusan KKM putra/putri Anda pada setiap paket ujian & latihan.
@@ -270,7 +277,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>🔍</span> 2. Evaluasi Pembahasan
+                        <i class="fa-solid fa-magnifying-glass text-blue-400"></i> 2. Evaluasi Pembahasan
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Buka rincian soal untuk melihat jawaban anak dan pembahasan kunci jawaban yang benar dari guru.
@@ -278,7 +285,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>📈</span> 3. Kemajuan Remedial
+                        <i class="fa-solid fa-chart-line text-purple-400"></i> 3. Kemajuan Remedial
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Pantau perbandingan nilai awal dan nilai baru setelah anak Anda menyelesaikan sesi remedial.
@@ -291,7 +298,7 @@ require_once __DIR__ . "/../includes/header.php";
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>🛡️</span> 1. Pengawasan Asesmen
+                        <i class="fa-solid fa-shield-halved text-rose-400"></i> 1. Pengawasan Asesmen
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Supervisi seluruh pelaksanaan UTS, UKK, Ujian Harian, dan Latihan siswa di semua dewan guru.
@@ -299,7 +306,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>📋</span> 2. Rekapitulasi Sekolah
+                        <i class="fa-solid fa-clipboard-list text-blue-400"></i> 2. Rekapitulasi Sekolah
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Pantau tingkat kelulusan KKM dan ekspor rekap nilai semua mata pelajaran ke format spreadsheet Excel.
@@ -307,7 +314,7 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <div class="rounded-2xl border border-white/5 bg-white/5 p-3.5 space-y-1.5">
                     <strong class="text-white flex items-center gap-1.5 font-bold">
-                        <span>⚙️</span> 3. Manajemen Paket & Soal
+                        <i class="fa-solid fa-gear text-amber-400"></i> 3. Manajemen Paket & Soal
                     </strong>
                     <p class="text-slate-300 text-[11px] leading-relaxed">
                         Bantu guru dalam pengelolaan bank soal, pengaturan jadwal ujian, dan pengelolaan token akses.
@@ -345,11 +352,11 @@ require_once __DIR__ . "/../includes/header.php";
             </a>
             <a href="exams.php?tab=ujian" 
                class="rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap transition <?= $tab === 'ujian' ? 'bg-purple-600/30 text-purple-300 border border-purple-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
-                📑 Ujian Resmi (UTS, UKK, UH)
+                <i class="fa-solid fa-file-lines mr-1.5"></i>Ujian Resmi (UTS, UKK, UH)
             </a>
             <a href="exams.php?tab=latihan" 
                class="rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap transition <?= $tab === 'latihan' ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
-                🎯 Latihan (Harian, Mingguan, Bulanan)
+                <i class="fa-solid fa-bullseye mr-1.5"></i>Latihan (Harian, Mingguan, Bulanan)
             </a>
         </div>
 
@@ -373,7 +380,7 @@ require_once __DIR__ . "/../includes/header.php";
     <!-- Exam Cards List -->
     <?php if (empty($exams_list)): ?>
         <div class="rounded-3xl border border-white/10 bg-slate-900/40 p-12 text-center">
-            <span class="text-4xl block mb-3">📭</span>
+            <span class="text-4xl block mb-3 text-slate-600"><i class="fa-solid fa-inbox"></i></span>
             <h3 class="text-lg font-bold text-white">Belum Ada Ujian / Latihan</h3>
             <p class="text-sm text-slate-400 mt-1 max-w-md mx-auto">
                 Tidak ada data asesmen yang sesuai dengan filter saat ini.
@@ -386,7 +393,7 @@ require_once __DIR__ . "/../includes/header.php";
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             <?php foreach ($exams_list as $e): ?>
                 <?php 
-                    $cat_info = EXAM_CATEGORIES[$e['category']] ?? ['label' => $e['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '📝'];
+                    $cat_info = EXAM_CATEGORIES[$e['category']] ?? ['label' => $e['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
                     $is_submitted = ($user_role === 'siswa' && isset($e['student_submitted_at']) && $e['student_submitted_at'] !== null);
                     $has_passed = ($is_submitted && $e['student_score'] >= $e['passing_grade']);
                     $is_flexible = ($e['duration_minutes'] == 0);
@@ -414,34 +421,34 @@ require_once __DIR__ . "/../includes/header.php";
                                 <?php if (!empty($e['token'])): ?>
                                     <?php if ($can_manage): ?>
                                         <span class="rounded-lg border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-bold text-purple-300" title="Token Akses Siswa">
-                                            🔑 Token: <?= htmlspecialchars($e['token']) ?>
+                                            <i class="fa-solid fa-key mr-1"></i>Token: <?= htmlspecialchars($e['token']) ?>
                                         </span>
                                     <?php else: ?>
                                         <span class="rounded-lg border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-semibold text-purple-300">
-                                            🔒 Wajib Token
+                                            <i class="fa-solid fa-lock mr-1"></i>Wajib Token
                                         </span>
                                     <?php endif; ?>
                                 <?php endif; ?>
 
                                 <?php if ($is_flexible): ?>
                                     <span class="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
-                                        ⚡ Fleksibel
+                                        <i class="fa-solid fa-bolt mr-1"></i>Fleksibel
                                     </span>
                                 <?php else: ?>
                                     <span class="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300">
-                                        ⏱️ <?= $e['duration_minutes'] ?> Mnt
+                                        <i class="fa-regular fa-clock mr-1"></i><?= $e['duration_minutes'] ?> Mnt
                                     </span>
                                 <?php endif; ?>
 
                                 <?php if (!empty($e['randomize_questions'])): ?>
                                     <span class="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[11px] font-semibold text-cyan-300" title="Soal Diacak Otomatis">
-                                        🔀 Acak
+                                        <i class="fa-solid fa-shuffle mr-1"></i>Acak
                                     </span>
                                 <?php endif; ?>
 
                                 <?php if (!empty($e['hide_answers_until_due'])): ?>
                                     <span class="rounded-lg border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-semibold text-purple-300" title="Kunci Dirahasiakan Hingga Due Date">
-                                        🔒 Kunci Dirahasiakan
+                                        <i class="fa-solid fa-lock mr-1"></i>Kunci Dirahasiakan
                                     </span>
                                 <?php endif; ?>
                             </div>
@@ -451,15 +458,15 @@ require_once __DIR__ . "/../includes/header.php";
                         <div class="mb-2">
                             <?php if ($is_upcoming): ?>
                                 <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-                                    ⏰ Dibuka: <?= date('d M Y, H:i', $start_ts) ?> WIB
+                                    <i class="fa-regular fa-clock mr-1"></i>Dibuka: <?= date('d M Y, H:i', $start_ts) ?> WIB
                                 </span>
                             <?php elseif ($is_expired): ?>
                                 <span class="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-300">
-                                    ⛔ Batas Waktu Berakhir
+                                    <i class="fa-solid fa-circle-xmark mr-1"></i>Batas Waktu Berakhir
                                 </span>
                             <?php else: ?>
                                 <span class="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                                    🟢 Sedang Berlangsung
+                                    <i class="fa-solid fa-circle text-emerald-400 text-[8px] mr-1"></i>Sedang Berlangsung
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -503,7 +510,7 @@ require_once __DIR__ . "/../includes/header.php";
                             <?php if ($has_remedial_permission): ?>
                                 <div class="mt-4 rounded-2xl border border-amber-500/40 bg-amber-500/15 p-3 text-xs text-amber-200">
                                     <div class="flex items-center gap-2">
-                                        <span class="text-lg">🔄</span>
+                                        <span class="text-base text-amber-400"><i class="fa-solid fa-rotate"></i></span>
                                         <div>
                                             <p class="font-bold text-white">Izin Remedial Diberikan Guru!</p>
                                             <p class="text-[10px] text-amber-300/90">
@@ -515,7 +522,7 @@ require_once __DIR__ . "/../includes/header.php";
                             <?php else: ?>
                                 <div class="mt-4 rounded-2xl border p-3 text-xs flex items-center justify-between <?= $is_submitted ? ($has_passed ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300') : 'border-blue-500/30 bg-blue-500/10 text-blue-300' ?>">
                                     <div class="flex items-center gap-2">
-                                        <span class="text-base"><?= $is_submitted ? ($has_passed ? '🎉' : '⚠️') : '📌' ?></span>
+                                        <span class="text-base"><?= $is_submitted ? ($has_passed ? '<i class="fa-solid fa-circle-check text-emerald-400"></i>' : '<i class="fa-solid fa-triangle-exclamation text-rose-400"></i>') : '<i class="fa-solid fa-thumbtack text-slate-400"></i>' ?></span>
                                         <div>
                                             <p class="font-bold">
                                                 <?= $is_submitted ? 'Sudah Dikerjakan' : 'Belum Dikerjakan' ?>
@@ -542,57 +549,59 @@ require_once __DIR__ . "/../includes/header.php";
                             <!-- Guru / Admin Actions -->
                             <div class="flex items-center gap-2 w-full sm:w-auto">
                                 <a href="exam_questions.php?id=<?= $e['id'] ?>" 
-                                   class="flex-1 sm:flex-none text-center rounded-xl bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-semibold text-white transition">
-                                    📝 Soal (<?= $e['question_count'] ?>)
+                                   class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-semibold text-white transition">
+                                    <i class="fa-solid fa-list-ol"></i> Soal (<?= $e['question_count'] ?>)
                                 </a>
                                 <a href="exam_results.php?id=<?= $e['id'] ?>" 
-                                   class="flex-1 sm:flex-none text-center rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-3 py-1.5 text-xs font-semibold text-blue-300 transition">
-                                    📊 Nilai (<?= $e['submission_count'] ?>)
+                                   class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-3 py-1.5 text-xs font-semibold text-blue-300 transition">
+                                    <i class="fa-solid fa-chart-column"></i> Nilai (<?= $e['submission_count'] ?>)
                                 </a>
                             </div>
-                            <a href="exams.php?delete_id=<?= $e['id'] ?>" 
-                               onclick="return confirm('Apakah Anda yakin ingin menghapus paket ujian/latihan ini beserta semua soalnya?');" 
-                               class="rounded-xl border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 p-2 text-xs font-semibold text-red-400 transition" 
-                               title="Hapus">
-                                🗑️
-                            </a>
+                            <form method="POST" class="inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus paket ujian/latihan ini beserta semua soalnya?');">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="delete_exam">
+                                <input type="hidden" name="delete_id" value="<?= $e['id'] ?>">
+                                <button type="submit" class="rounded-xl border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 p-2 text-xs font-semibold text-red-400 transition cursor-pointer" title="Hapus">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </form>
                         <?php elseif ($user_role === 'siswa'): ?>
                             <!-- Siswa Actions -->
                             <?php if ($has_remedial_permission): ?>
                                 <a href="exam_take.php?id=<?= $e['id'] ?>&remedial=1" 
-                                   class="w-full text-center rounded-xl bg-amber-600 hover:bg-amber-500 shadow-lg shadow-amber-500/25 px-4 py-2 text-xs font-extrabold text-white transition">
-                                    🔄 Kerjakan Remedial Sekarang
+                                   class="w-full inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-amber-600 hover:bg-amber-500 shadow-lg shadow-amber-500/25 px-4 py-2 text-xs font-extrabold text-white transition cursor-pointer">
+                                    <i class="fa-solid fa-rotate"></i> Kerjakan Remedial Sekarang
                                 </a>
                             <?php elseif ($is_submitted): ?>
                                 <a href="exam_results.php?id=<?= $e['id'] ?>" 
-                                   class="w-full text-center rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 px-4 py-2 text-xs font-bold text-emerald-300 transition">
-                                    🔍 Lihat Nilai & Pembahasan Soal
+                                   class="w-full inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 px-4 py-2 text-xs font-bold text-emerald-300 transition">
+                                    <i class="fa-solid fa-magnifying-glass"></i> Lihat Nilai & Pembahasan Soal
                                 </a>
                             <?php elseif ($is_upcoming): ?>
-                                <button disabled class="w-full text-center rounded-xl bg-slate-800 text-slate-500 px-4 py-2 text-xs font-semibold cursor-not-allowed">
-                                    ⏳ Belum Dimulai (<?= date('H:i', $start_ts) ?> WIB)
+                                <button disabled class="w-full inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-slate-800 text-slate-500 px-4 py-2 text-xs font-semibold cursor-not-allowed">
+                                    <i class="fa-regular fa-clock"></i> Belum Dimulai (<?= date('H:i', $start_ts) ?> WIB)
                                 </button>
                             <?php elseif ($is_expired): ?>
-                                <button disabled class="w-full text-center rounded-xl bg-slate-800 text-slate-500 px-4 py-2 text-xs font-semibold cursor-not-allowed">
-                                    ⛔ Waktu Ujian Berakhir
+                                <button disabled class="w-full inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-slate-800 text-slate-500 px-4 py-2 text-xs font-semibold cursor-not-allowed">
+                                    <i class="fa-solid fa-circle-xmark"></i> Waktu Ujian Berakhir
                                 </button>
                             <?php else: ?>
                                 <?php if ($e['question_count'] > 0): ?>
                                     <a href="exam_take.php?id=<?= $e['id'] ?>" 
-                                       class="w-full text-center rounded-xl bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/25 px-4 py-2 text-xs font-bold text-white transition">
-                                        ✍️ Mulai Kerjakan <?= !empty($e['token']) ? '🔒' : '' ?>
+                                       class="w-full inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/25 px-4 py-2 text-xs font-bold text-white transition cursor-pointer">
+                                        <i class="fa-solid fa-pen"></i> Mulai Kerjakan <?= !empty($e['token']) ? '<i class="fa-solid fa-lock ml-1 text-xs"></i>' : '' ?>
                                     </a>
                                 <?php else: ?>
-                                    <button disabled class="w-full text-center rounded-xl bg-slate-800 text-slate-500 px-4 py-2 text-xs font-semibold cursor-not-allowed">
-                                        ⏳ Soal Belum Tersedia
+                                    <button disabled class="w-full inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-slate-800 text-slate-500 px-4 py-2 text-xs font-semibold cursor-not-allowed">
+                                        <i class="fa-solid fa-hourglass-start"></i> Soal Belum Tersedia
                                     </button>
                                 <?php endif; ?>
                             <?php endif; ?>
                         <?php else: ?>
                             <!-- Orang Tua / Staf Actions -->
                             <a href="exam_results.php?id=<?= $e['id'] ?>" 
-                               class="w-full text-center rounded-xl bg-white/10 hover:bg-white/20 px-4 py-2 text-xs font-semibold text-slate-200 transition">
-                                📊 Lihat Rekap Nilai Siswa
+                               class="w-full inline-flex items-center justify-center gap-1.5 text-center rounded-xl bg-white/10 hover:bg-white/20 px-4 py-2 text-xs font-semibold text-slate-200 transition">
+                                <i class="fa-solid fa-chart-column"></i> Lihat Rekap Nilai Siswa
                             </a>
                         <?php endif; ?>
                     </div>
@@ -609,13 +618,16 @@ require_once __DIR__ . "/../includes/header.php";
     <div class="relative w-full max-w-xl rounded-3xl border border-white/15 bg-slate-900 p-6 sm:p-8 shadow-2xl">
         <div class="flex items-center justify-between mb-5 border-b border-white/10 pb-4">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <span>➕</span> Buat Paket Ujian / Latihan
+                <i class="fa-solid fa-plus text-blue-400"></i> Buat Paket Ujian / Latihan
             </h2>
             <button onclick="document.getElementById('createExamModal').classList.add('hidden')" 
-                    class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+                    class="rounded-lg p-1.5 text-slate-400 hover:text-white hover:bg-white/10 transition">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
         </div>
 
         <form method="POST" action="exams.php" class="space-y-4">
+            <?= csrfField() ?>
             <input type="hidden" name="action" value="create_exam">
 
             <!-- Kategori Asesmen (6 Pilihan) -->
@@ -625,12 +637,12 @@ require_once __DIR__ . "/../includes/header.php";
                 </label>
                 <select name="category" required 
                         class="w-full rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
-                    <optgroup label="📑 UJIAN FORMAL">
+                    <optgroup label="UJIAN FORMAL">
                         <option value="uts">Ujian Tengah Semester (UTS)</option>
                         <option value="ukk">Ujian Kenaikan Kelas (UKK)</option>
                         <option value="ujian_harian">Ujian Harian (Fleksibel)</option>
                     </optgroup>
-                    <optgroup label="🎯 LATIHAN & DRILL">
+                    <optgroup label="LATIHAN & DRILL">
                         <option value="latihan_harian">Latihan Harian</option>
                         <option value="latihan_mingguan">Latihan Mingguan</option>
                         <option value="latihan_bulanan">Latihan Bulanan</option>
@@ -678,9 +690,9 @@ require_once __DIR__ . "/../includes/header.php";
                         <input type="text" id="tokenInput" name="token" placeholder="Misal: UTS8A" maxlength="15"
                                class="w-full rounded-xl border border-white/10 bg-slate-800 px-3.5 py-2 text-sm text-white font-mono uppercase focus:border-blue-500 focus:outline-none">
                         <button type="button" onclick="generateRandomToken()" 
-                                class="shrink-0 rounded-xl bg-white/10 hover:bg-white/20 px-3 py-2 text-xs font-bold text-slate-200 transition" 
+                                class="shrink-0 rounded-xl bg-white/10 hover:bg-white/20 px-3 py-2 text-xs font-bold text-slate-200 transition cursor-pointer" 
                                 title="Generate Token Otomatis">
-                            🎲 Acak
+                            <i class="fa-solid fa-dice mr-1"></i>Acak
                         </button>
                     </div>
                     <span class="text-[10px] text-slate-400 mt-1 block">Kosongkan jika ujian bebas token.</span>
@@ -734,7 +746,7 @@ require_once __DIR__ . "/../includes/header.php";
                 <input type="checkbox" name="randomize_questions" id="randomize_questions" value="1" 
                        class="h-4 w-4 mt-0.5 rounded border-white/20 bg-slate-900 text-blue-600 focus:ring-blue-500">
                 <label for="randomize_questions" class="text-xs text-slate-300 cursor-pointer">
-                    <strong class="text-white block">🔀 Acak Urutan Soal (Shuffle)</strong>
+                    <strong class="text-white block"><i class="fa-solid fa-shuffle mr-1 text-blue-400"></i>Acak Urutan Soal (Shuffle)</strong>
                     Urutan nomor soal akan diacak otomatis untuk tiap siswa agar tidak dapat saling menyontek nomor jawaban.
                 </label>
             </div>
@@ -744,7 +756,7 @@ require_once __DIR__ . "/../includes/header.php";
                 <input type="checkbox" name="hide_answers_until_due" id="hide_answers_until_due" value="1" checked 
                        class="h-4 w-4 mt-0.5 rounded border-white/20 bg-slate-900 text-purple-600 focus:ring-purple-500">
                 <label for="hide_answers_until_due" class="text-xs text-slate-300 cursor-pointer">
-                    <strong class="text-white block">🔒 Rahasiakan Kunci Jawaban Hingga Batas Ujian Berakhir</strong>
+                    <strong class="text-white block"><i class="fa-solid fa-lock mr-1 text-purple-400"></i>Rahasiakan Kunci Jawaban Hingga Batas Ujian Berakhir</strong>
                     Siswa tidak dapat melihat kunci jawaban dan pembahasan sebelum batas waktu ujian (<em class="text-amber-300">due date</em>) resmi ditutup untuk mencegah kebocoran ke siswa lain.
                 </label>
             </div>
@@ -756,8 +768,8 @@ require_once __DIR__ . "/../includes/header.php";
                     Batal
                 </button>
                 <button type="submit" 
-                        class="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-500/30 transition">
-                    Lanjut Isi Butir Soal ➔
+                        class="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-500/30 transition inline-flex items-center gap-2">
+                    Lanjut Isi Butir Soal <i class="fa-solid fa-arrow-right"></i>
                 </button>
             </div>
         </form>
@@ -779,8 +791,8 @@ function generateRandomToken() {
     <div class="relative w-full max-w-3xl rounded-3xl border border-white/15 bg-slate-900 p-6 sm:p-8 shadow-2xl space-y-6">
         <div class="flex items-center justify-between border-b border-white/10 pb-4">
             <div class="flex items-center gap-3">
-                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600/20 border border-blue-500/30 text-xl text-blue-400">
-                    📖
+                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600/20 border border-blue-500/30 text-lg text-blue-400">
+                    <i class="fa-solid fa-book-open"></i>
                 </span>
                 <div>
                     <h2 class="text-lg sm:text-xl font-bold text-white">Panduan Lengkap Modul Ujian & Latihan</h2>
@@ -789,34 +801,34 @@ function generateRandomToken() {
             </div>
             <button type="button" onclick="document.getElementById('allRolesGuideModal').classList.add('hidden')" 
                     class="rounded-xl bg-white/5 hover:bg-white/10 p-2 text-slate-400 hover:text-white transition">
-                ✕
+                <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
 
         <!-- Role Tabs in Modal -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 border-b border-white/10 pb-3">
             <button type="button" onclick="switchModalGuideTab('siswa')" id="btnGuideSiswa" 
-                    class="rounded-xl py-2 px-3 text-xs font-bold transition bg-blue-600 text-white shadow-sm">
-                👨‍🎓 Siswa
+                    class="inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-bold transition bg-blue-600 text-white shadow-sm cursor-pointer">
+                <i class="fa-solid fa-user-graduate"></i> Siswa
             </button>
             <button type="button" onclick="switchModalGuideTab('guru')" id="btnGuideGuru" 
-                    class="rounded-xl py-2 px-3 text-xs font-bold transition text-slate-400 hover:text-white">
-                👨‍🏫 Guru
+                    class="inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer">
+                <i class="fa-solid fa-chalkboard-user"></i> Guru
             </button>
             <button type="button" onclick="switchModalGuideTab('ortu')" id="btnGuideOrtu" 
-                    class="rounded-xl py-2 px-3 text-xs font-bold transition text-slate-400 hover:text-white">
-                👪 Orang Tua
+                    class="inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer">
+                <i class="fa-solid fa-users"></i> Orang Tua
             </button>
             <button type="button" onclick="switchModalGuideTab('admin')" id="btnGuideAdmin" 
-                    class="rounded-xl py-2 px-3 text-xs font-bold transition text-slate-400 hover:text-white">
-                🛡️ Admin & Staf
+                    class="inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer">
+                <i class="fa-solid fa-shield-halved"></i> Admin & Staf
             </button>
         </div>
 
         <!-- Content Siswa -->
         <div id="guideContentSiswa" class="space-y-3 text-xs text-slate-300">
             <h4 class="text-sm font-bold text-white flex items-center gap-2">
-                <span>🎯</span> Langkah Pengerjaan Siswa
+                <i class="fa-solid fa-bullseye text-blue-400"></i> Langkah Pengerjaan Siswa
             </h4>
             <ul class="space-y-2.5 list-disc list-inside bg-white/5 p-4 rounded-2xl border border-white/5">
                 <li><strong class="text-white">Jadwal Ujian:</strong> Pastikan Anda masuk pada saat jam mulai ujian telah dibuka. Jika belum tiba, layar akan menampilkan countdown waktu pelaksanaan.</li>
@@ -831,7 +843,7 @@ function generateRandomToken() {
         <!-- Content Guru -->
         <div id="guideContentGuru" class="hidden space-y-3 text-xs text-slate-300">
             <h4 class="text-sm font-bold text-white flex items-center gap-2">
-                <span>📚</span> Langkah Pengelolaan Guru
+                <i class="fa-solid fa-book-open text-purple-400"></i> Langkah Pengelolaan Guru
             </h4>
             <ul class="space-y-2.5 list-disc list-inside bg-white/5 p-4 rounded-2xl border border-white/5">
                 <li><strong class="text-white">Membuat Paket Baru:</strong> Klik <em>+ Buat Ujian / Latihan</em>, pilih 1 dari 6 kategori asesmen, tentukan standar KKM, durasi menit (atau 0 untuk latihan santai), dan centang opsi acak soal (shuffle).</li>
@@ -845,7 +857,7 @@ function generateRandomToken() {
         <!-- Content Ortu -->
         <div id="guideContentOrtu" class="hidden space-y-3 text-xs text-slate-300">
             <h4 class="text-sm font-bold text-white flex items-center gap-2">
-                <span>👪</span> Pendampingan Belajar Wali Murid
+                <i class="fa-solid fa-users text-emerald-400"></i> Pendampingan Belajar Wali Murid
             </h4>
             <ul class="space-y-2.5 list-disc list-inside bg-white/5 p-4 rounded-2xl border border-white/5">
                 <li><strong class="text-white">Transparansi Skor:</strong> Wali murid dapat langsung memantau perolehan nilai putra/putrinya segera setelah ujian diselesaikan.</li>
@@ -858,7 +870,7 @@ function generateRandomToken() {
         <!-- Content Admin -->
         <div id="guideContentAdmin" class="hidden space-y-3 text-xs text-slate-300">
             <h4 class="text-sm font-bold text-white flex items-center gap-2">
-                <span>🛡️</span> Supervisi Asesmen Sekolah
+                <i class="fa-solid fa-shield-halved text-rose-400"></i> Supervisi Asesmen Sekolah
             </h4>
             <ul class="space-y-2.5 list-disc list-inside bg-white/5 p-4 rounded-2xl border border-white/5">
                 <li><strong class="text-white">Monitoring Menyeluruh:</strong> Memantau seluruh paket ujian UTS, UKK, dan latihan harian dari seluruh dewan guru.</li>

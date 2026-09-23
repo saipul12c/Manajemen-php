@@ -14,14 +14,21 @@ $message_type = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
+    // BUG-06 fix: Validate CSRF token
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid. Silakan coba lagi.";
+        $message_type = "error";
+    } else {
+
     $name = trim($_POST["name"] ?? "");
     $email = trim($_POST["email"] ?? "");
     $password = $_POST["password"] ?? "";
     $confirm_password = $_POST["confirm_password"] ?? "";
     $role = trim($_POST["role"] ?? "siswa");
 
-    // Validasi role valid
-    if (!array_key_exists($role, ROLES)) {
+    // BUG-17 fix: Hanya izinkan role 'siswa' dan 'orang_tua' untuk registrasi publik
+    $allowed_public_roles = ['siswa', 'orang_tua'];
+    if (!in_array($role, $allowed_public_roles, true)) {
         $role = "siswa";
     }
 
@@ -81,6 +88,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             exit;
         }
     }
+    } // end CSRF check
 }
 
 ?>
@@ -98,6 +106,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <title>Daftar Akun</title>
 
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css">
 
 </head>
 
@@ -110,8 +119,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         <div class="mb-8 text-center">
 
             <a href="../index.php"
-               class="text-2xl font-bold">
-                Manajemen-php
+               class="text-2xl font-bold inline-flex items-center gap-2">
+                <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white text-sm shadow-md shadow-blue-500/30">
+                    <i class="fa-solid fa-bolt"></i>
+                </span>
+                <span>Manajemen<span class="text-blue-500">-php</span></span>
             </a>
 
             <h1 class="mt-6 text-3xl font-bold">
@@ -135,6 +147,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         <div class="rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl">
 
             <form method="POST" class="space-y-5">
+                <?= csrfField() ?>
 
                 <div>
 
@@ -181,7 +194,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         required
                         class="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none transition focus:border-blue-500"
                     >
-                        <?php foreach (ROLES as $key => $label): ?>
+                        <?php 
+                        // BUG-17 fix: Hanya tampilkan role publik
+                        $public_roles = ['siswa' => 'Siswa', 'orang_tua' => 'Orang Tua'];
+                        foreach ($public_roles as $key => $label): ?>
                             <option value="<?= $key ?>" <?= (($_POST['role'] ?? 'siswa') === $key) ? 'selected' : '' ?>>
                                 <?= htmlspecialchars($label) ?>
                             </option>

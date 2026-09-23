@@ -18,11 +18,15 @@ $sql_students = "SELECT u.id, u.name, u.email, u.nisn, u.gender, c.name as class
                  FROM users u 
                  LEFT JOIN classes c ON u.class_id = c.id
                  WHERE u.role = 'siswa'";
+$params_students = [];
 if ($selected_class_id > 0) {
-    $sql_students .= " AND u.class_id = $selected_class_id";
+    $sql_students .= " AND u.class_id = ?";
+    $params_students[] = $selected_class_id;
 }
 $sql_students .= " ORDER BY u.name ASC";
-$students = $pdo->query($sql_students)->fetchAll();
+$stmt_students = $pdo->prepare($sql_students);
+$stmt_students->execute($params_students);
+$students = $stmt_students->fetchAll();
 
 // Kalkulasi nilai per siswa
 $gradebook_data = [];
@@ -44,11 +48,11 @@ foreach ($students as $stu) {
     $att_hadir = (int)($att_row['hadir'] ?? 0);
     $att_score = ($att_total > 0) ? round(($att_hadir / $att_total) * 100, 1) : 100.0;
 
-    // 2. Rata-rata Tugas
+    // 2. Rata-rata Tugas (hanya yang sudah dinilai)
     $stmt_as = $pdo->prepare("
-        SELECT AVG(COALESCE(score, 80)) as avg_score, COUNT(*) as count_done 
+        SELECT AVG(score) as avg_score, COUNT(*) as count_done 
         FROM assignment_submissions 
-        WHERE student_id = ? AND status = 'selesai'
+        WHERE student_id = ? AND status = 'selesai' AND score IS NOT NULL
     ");
     $stmt_as->execute([$s_id]);
     $as_row = $stmt_as->fetch();
@@ -126,8 +130,8 @@ require_once __DIR__ . "/../includes/header.php";
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
         <div class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/20 text-purple-400 text-xl border border-purple-500/30 shadow-lg shadow-purple-500/10">
-                📊
+            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/20 text-purple-400 text-lg border border-purple-500/30 shadow-lg shadow-purple-500/10">
+                <i class="fa-solid fa-chart-column"></i>
             </span>
             <div>
                 <h1 class="text-2xl font-bold text-white tracking-tight">Buku Rekap Nilai Gabungan</h1>
@@ -139,11 +143,17 @@ require_once __DIR__ . "/../includes/header.php";
     </div>
 
     <div class="flex items-center gap-2">
-        <button onclick="window.print()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition">
-            🖨️ Cetak Buku Nilai
-        </button>
-        <a href="assignments.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition">
-            📚 Kelola Tugas
+        <a href="gradebook_export.php?class_id=<?= $selected_class_id ?>" 
+           class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-300 transition flex items-center gap-1.5 shadow-sm">
+            <i class="fa-solid fa-file-excel text-emerald-400"></i> Export Excel (.csv)
+        </a>
+        <a href="gradebook_print.php?class_id=<?= $selected_class_id ?>" 
+           target="_blank"
+           class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5">
+            <i class="fa-solid fa-print"></i> Cetak Leger Resmi
+        </a>
+        <a href="assignments.php" class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition">
+            <i class="fa-solid fa-book-open"></i> Kelola Tugas
         </a>
     </div>
 </div>
@@ -239,8 +249,8 @@ require_once __DIR__ . "/../includes/header.php";
                             <td class="px-4 py-4 text-center">
                                 <a href="report_card.php?student_id=<?= $stu['id'] ?>" 
                                    target="_blank"
-                                   class="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-2.5 py-1 text-xs text-blue-400 font-semibold transition">
-                                    <span>📄</span> Rapor
+                                   class="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-2.5 py-1 text-xs text-blue-400 font-semibold transition">
+                                    <i class="fa-regular fa-file-lines"></i> Rapor
                                 </a>
                             </td>
                         </tr>

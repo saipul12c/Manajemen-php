@@ -25,12 +25,14 @@ $stmt_e->execute([$exam_id]);
 $exam = $stmt_e->fetch();
 
 if (!$exam) {
-    die("Ujian tidak ditemukan.");
+    header("Location: exams.php?error=not_found");
+    exit;
 }
 
 // Jika guru, pastikan hanya mengekspor ujian buatannya (kecuali admin/staf)
 if ($user_role === 'guru' && (int)$exam['teacher_id'] !== $user_id) {
-    die("Akses ditolak. Anda hanya dapat mengekspor nilai ujian yang Anda ampu.");
+    header("Location: exams.php?error=unauthorized");
+    exit;
 }
 
 // Ambil seluruh data submission siswa

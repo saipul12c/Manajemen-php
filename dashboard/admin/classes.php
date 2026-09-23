@@ -10,41 +10,56 @@ $message_type = "";
 
 // 1. TAMBAH KELAS BARU
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_class') {
-    $name = trim($_POST['name'] ?? '');
-    $grade_level = trim($_POST['grade_level'] ?? '10');
-    $academic_year = trim($_POST['academic_year'] ?? '2026/2027');
-
-    if ($name === '') {
-        $message = "Nama kelas wajib diisi.";
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
         $message_type = "error";
     } else {
-        $stmt = $pdo->prepare("INSERT INTO classes (name, grade_level, academic_year) VALUES (?, ?, ?)");
-        $stmt->execute([$name, $grade_level, $academic_year]);
-        logActivity($pdo, 'CREATE_CLASS', "Menambahkan kelas baru: $name");
-        $message = "Kelas $name berhasil ditambahkan!";
-        $message_type = "success";
+        $name = trim($_POST['name'] ?? '');
+        $grade_level = trim($_POST['grade_level'] ?? '10');
+        $academic_year = trim($_POST['academic_year'] ?? '2026/2027');
+
+        if ($name === '') {
+            $message = "Nama kelas wajib diisi.";
+            $message_type = "error";
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO classes (name, grade_level, academic_year) VALUES (?, ?, ?)");
+            $stmt->execute([$name, $grade_level, $academic_year]);
+            logActivity($pdo, 'CREATE_CLASS', "Menambahkan kelas baru: $name");
+            $message = "Kelas $name berhasil ditambahkan!";
+            $message_type = "success";
+        }
     }
 }
 
 // 2. HAPUS KELAS
-if (isset($_GET['delete_id'])) {
-    $del_id = (int) $_GET['delete_id'];
-    $pdo->prepare("UPDATE users SET class_id = NULL WHERE class_id = ?")->execute([$del_id]);
-    $pdo->prepare("DELETE FROM classes WHERE id = ?")->execute([$del_id]);
-    logActivity($pdo, 'DELETE_CLASS', "Menghapus kelas ID: $del_id");
-    $message = "Kelas berhasil dihapus.";
-    $message_type = "success";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_class') {
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
+        $del_id = (int) ($_POST['delete_id'] ?? 0);
+        $pdo->prepare("UPDATE users SET class_id = NULL WHERE class_id = ?")->execute([$del_id]);
+        $pdo->prepare("DELETE FROM classes WHERE id = ?")->execute([$del_id]);
+        logActivity($pdo, 'DELETE_CLASS', "Menghapus kelas ID: $del_id");
+        $message = "Kelas berhasil dihapus.";
+        $message_type = "success";
+    }
 }
 
 // 3. ASSIGN SISWA KE KELAS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'assign_student') {
-    $student_id = (int)($_POST['student_id'] ?? 0);
-    $target_class_id = (int)($_POST['target_class_id'] ?? 0);
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
+        $student_id = (int)($_POST['student_id'] ?? 0);
+        $target_class_id = (int)($_POST['target_class_id'] ?? 0);
 
-    if ($student_id > 0) {
-        $pdo->prepare("UPDATE users SET class_id = ? WHERE id = ? AND role = 'siswa'")->execute([$target_class_id ?: null, $student_id]);
-        $message = "Kelas siswa berhasil diperbarui.";
-        $message_type = "success";
+        if ($student_id > 0) {
+            $pdo->prepare("UPDATE users SET class_id = ? WHERE id = ? AND role = 'siswa'")->execute([$target_class_id ?: null, $student_id]);
+            $message = "Kelas siswa berhasil diperbarui.";
+            $message_type = "success";
+        }
     }
 }
 
@@ -66,8 +81,8 @@ require_once __DIR__ . "/../includes/header.php";
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
         <div class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-400 text-xl border border-blue-500/30 shadow-lg shadow-blue-500/10">
-                🏫
+            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-400 text-lg border border-blue-500/30 shadow-lg shadow-blue-500/10">
+                <i class="fa-solid fa-school"></i>
             </span>
             <div>
                 <h1 class="text-2xl font-bold text-white tracking-tight">Manajemen Kelas & Rombongan Belajar</h1>
@@ -77,15 +92,15 @@ require_once __DIR__ . "/../includes/header.php";
     </div>
 
     <button onclick="document.getElementById('modalAddClass').classList.remove('hidden')" 
-            class="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition">
-        <span>➕</span> Tambah Kelas Baru
+            class="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition cursor-pointer">
+        <i class="fa-solid fa-plus"></i> Tambah Kelas Baru
     </button>
 </div>
 
 <?php if ($message): ?>
     <div class="mb-6 rounded-2xl border p-4 text-sm flex items-center justify-between <?= $message_type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300' ?>">
         <span><?= htmlspecialchars($message) ?></span>
-        <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100">✕</button>
+        <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
     </div>
 <?php endif; ?>
 
@@ -98,11 +113,14 @@ require_once __DIR__ . "/../includes/header.php";
                     <span class="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-300">
                         Tingkat <?= htmlspecialchars($cl['grade_level']) ?>
                     </span>
-                    <a href="classes.php?delete_id=<?= $cl['id'] ?>" 
-                       onclick="return confirm('Hapus kelas ini? Siswa di dalamnya akan menjadi tanpa kelas.');"
-                       class="text-xs text-rose-400 hover:text-rose-300">
-                        🗑️ Hapus
-                    </a>
+                    <form method="POST" class="inline" onsubmit="return confirm('Hapus kelas ini? Siswa di dalamnya akan menjadi tanpa kelas.');">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="action" value="delete_class">
+                        <input type="hidden" name="delete_id" value="<?= $cl['id'] ?>">
+                        <button type="submit" class="text-xs text-rose-400 hover:text-rose-300 cursor-pointer inline-flex items-center gap-1">
+                            <i class="fa-solid fa-trash text-xs"></i> Hapus
+                        </button>
+                    </form>
                 </div>
                 <h3 class="text-xl font-bold text-white"><?= htmlspecialchars($cl['name']) ?></h3>
                 <p class="text-xs text-slate-400 mt-1">Tahun Ajaran: <?= htmlspecialchars($cl['academic_year']) ?></p>
@@ -150,6 +168,7 @@ require_once __DIR__ . "/../includes/header.php";
                         </td>
                         <td class="px-6 py-3 text-right">
                             <form method="POST" class="inline-flex items-center gap-2">
+                                <?= csrfField() ?>
                                 <input type="hidden" name="action" value="assign_student">
                                 <input type="hidden" name="student_id" value="<?= $stu['id'] ?>">
                                 <select name="target_class_id" class="rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-xs text-white">
@@ -160,7 +179,7 @@ require_once __DIR__ . "/../includes/header.php";
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <button type="submit" class="rounded-lg bg-blue-600 hover:bg-blue-500 px-2.5 py-1 text-xs font-semibold text-white">
+                                <button type="submit" class="rounded-lg bg-blue-600 hover:bg-blue-500 px-2.5 py-1 text-xs font-semibold text-white cursor-pointer">
                                     Simpan
                                 </button>
                             </form>
@@ -176,11 +195,14 @@ require_once __DIR__ . "/../includes/header.php";
 <div id="modalAddClass" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur p-4 hidden">
     <div class="w-full max-w-md rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
         <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
-            <h3 class="text-lg font-bold text-white">➕ Tambah Kelas / Rombel</h3>
-            <button onclick="document.getElementById('modalAddClass').classList.add('hidden')" class="text-slate-400 hover:text-white">✕</button>
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-plus text-blue-400"></i> Tambah Kelas / Rombel
+            </h3>
+            <button onclick="document.getElementById('modalAddClass').classList.add('hidden')" class="text-slate-400 hover:text-white cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
         <form method="POST" class="space-y-4">
+            <?= csrfField() ?>
             <input type="hidden" name="action" value="create_class">
             <div>
                 <label class="block text-xs font-semibold text-slate-300 mb-1">Nama Kelas *</label>

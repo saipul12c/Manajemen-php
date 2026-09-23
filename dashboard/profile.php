@@ -12,33 +12,38 @@ $message_type = "";
 // 1. UPDATE DATA DIRI
 // -------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_action']) && $_POST['form_action'] === 'update_profile') {
-    $name = trim($_POST['name'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
-    $address = trim($_POST['address'] ?? '');
-
-    if ($name === '' || $email === '') {
-        $message = "Nama dan email wajib diisi.";
-        $message_type = "error";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $message = "Format email tidak valid.";
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
         $message_type = "error";
     } else {
-        // Cek duplikasi email pada user lain
-        $stmt_check = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
-        $stmt_check->execute([$email, $user_id]);
-        if ($stmt_check->fetch()) {
-            $message = "Email sudah digunakan oleh akun lain.";
+        $name = trim($_POST['name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $phone = trim($_POST['phone'] ?? '');
+        $address = trim($_POST['address'] ?? '');
+
+        if ($name === '' || $email === '') {
+            $message = "Nama dan email wajib diisi.";
+            $message_type = "error";
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $message = "Format email tidak valid.";
             $message_type = "error";
         } else {
-            $stmt_up = $pdo->prepare("UPDATE users SET name = ?, email = ?, phone = ?, address = ? WHERE id = ?");
-            $stmt_up->execute([$name, $email, $phone, $address, $user_id]);
+            // Cek duplikasi email pada user lain
+            $stmt_check = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
+            $stmt_check->execute([$email, $user_id]);
+            if ($stmt_check->fetch()) {
+                $message = "Email sudah digunakan oleh akun lain.";
+                $message_type = "error";
+            } else {
+                $stmt_up = $pdo->prepare("UPDATE users SET name = ?, email = ?, phone = ?, address = ? WHERE id = ?");
+                $stmt_up->execute([$name, $email, $phone, $address, $user_id]);
 
-            $_SESSION['user_name'] = $name;
-            $_SESSION['user_email'] = $email;
+                $_SESSION['user_name'] = $name;
+                $_SESSION['user_email'] = $email;
 
-            $message = "Profil Anda berhasil diperbarui.";
-            $message_type = "success";
+                $message = "Profil Anda berhasil diperbarui.";
+                $message_type = "success";
+            }
         }
     }
 }
@@ -47,34 +52,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_action']) && $_P
 // 2. GANTI PASSWORD
 // -------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_action']) && $_POST['form_action'] === 'change_password') {
-    $current_password = $_POST['current_password'] ?? '';
-    $new_password = $_POST['new_password'] ?? '';
-    $confirm_password = $_POST['confirm_password'] ?? '';
-
-    if ($current_password === '' || $new_password === '') {
-        $message = "Password lama dan password baru wajib diisi.";
-        $message_type = "error";
-    } elseif (strlen($new_password) < 6) {
-        $message = "Password baru minimal 6 karakter.";
-        $message_type = "error";
-    } elseif ($new_password !== $confirm_password) {
-        $message = "Konfirmasi password baru tidak cocok.";
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
         $message_type = "error";
     } else {
-        $stmt_pwd = $pdo->prepare("SELECT password FROM users WHERE id = ?");
-        $stmt_pwd->execute([$user_id]);
-        $user_data = $stmt_pwd->fetch();
+        $current_password = $_POST['current_password'] ?? '';
+        $new_password = $_POST['new_password'] ?? '';
+        $confirm_password = $_POST['confirm_password'] ?? '';
 
-        if ($user_data && password_verify($current_password, $user_data['password'])) {
-            $hashed = password_hash($new_password, PASSWORD_DEFAULT);
-            $stmt_update_pwd = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
-            $stmt_update_pwd->execute([$hashed, $user_id]);
-
-            $message = "Password Anda berhasil diubah.";
-            $message_type = "success";
-        } else {
-            $message = "Password lama yang Anda masukkan salah.";
+        if ($current_password === '' || $new_password === '') {
+            $message = "Password lama dan password baru wajib diisi.";
             $message_type = "error";
+        } elseif (strlen($new_password) < 6) {
+            $message = "Password baru minimal 6 karakter.";
+            $message_type = "error";
+        } elseif ($new_password !== $confirm_password) {
+            $message = "Konfirmasi password baru tidak cocok.";
+            $message_type = "error";
+        } else {
+            $stmt_pwd = $pdo->prepare("SELECT password FROM users WHERE id = ?");
+            $stmt_pwd->execute([$user_id]);
+            $user_data = $stmt_pwd->fetch();
+
+            if ($user_data && password_verify($current_password, $user_data['password'])) {
+                $hashed = password_hash($new_password, PASSWORD_DEFAULT);
+                $stmt_update_pwd = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
+                $stmt_update_pwd->execute([$hashed, $user_id]);
+
+                $message = "Password Anda berhasil diubah.";
+                $message_type = "success";
+            } else {
+                $message = "Password lama yang Anda masukkan salah.";
+                $message_type = "error";
+            }
         }
     }
 }
@@ -96,7 +106,7 @@ require_once __DIR__ . "/includes/header.php";
 
 <div class="mb-8">
     <h1 class="text-2xl sm:text-3xl font-extrabold text-white flex items-center gap-2">
-        <span>👤</span> Profil Pengguna
+        <span class="text-blue-400"><i class="fa-solid fa-user-gear"></i></span> Profil Pengguna
     </h1>
     <p class="mt-1 text-sm text-slate-400">
         Kelola informasi akun pribadi dan kata sandi keamanan Anda.
@@ -107,10 +117,10 @@ require_once __DIR__ . "/includes/header.php";
 <?php if ($message !== ''): ?>
     <div class="mb-6 rounded-2xl border p-4 text-sm flex items-center justify-between <?= $message_type === 'success' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/20 bg-rose-500/10 text-rose-300' ?>">
         <div class="flex items-center gap-3">
-            <span><?= $message_type === 'success' ? '✅' : '⚠️' ?></span>
+            <span><i class="fa-solid <?= $message_type === 'success' ? 'fa-circle-check text-emerald-400' : 'fa-triangle-exclamation text-amber-400' ?>"></i></span>
             <span><?= htmlspecialchars($message) ?></span>
         </div>
-        <button onclick="this.parentElement.remove()" class="text-xs opacity-70 hover:opacity-100">✕</button>
+        <button onclick="this.parentElement.remove()" class="text-xs opacity-70 hover:opacity-100 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
     </div>
 <?php endif; ?>
 
@@ -147,7 +157,7 @@ require_once __DIR__ . "/includes/header.php";
         </div>
 
         <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
-            <h3 class="text-sm font-bold text-white mb-2">💡 Tips Keamanan</h3>
+            <h3 class="text-sm font-bold text-white mb-2 flex items-center gap-2"><i class="fa-regular fa-lightbulb text-amber-400"></i> Tips Keamanan</h3>
             <p class="text-xs text-slate-400 leading-relaxed">
                 Gunakan kombinasi huruf besar, angka, dan karakter khusus saat memperbarui kata sandi Anda agar akun Anda selalu terlindungi.
             </p>
@@ -160,11 +170,12 @@ require_once __DIR__ . "/includes/header.php";
         <!-- Form Data Diri -->
         <div class="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 shadow-2xl">
             <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">
-                <span>✏️</span> Perbarui Informasi Data Diri
+                <span class="text-blue-400"><i class="fa-solid fa-user-pen"></i></span> Perbarui Informasi Data Diri
             </h3>
             <p class="text-xs text-slate-400 mb-6">Ubah data nama, email kontak, dan informasi alamat Anda.</p>
 
             <form method="POST" class="space-y-4">
+                <?= csrfField() ?>
                 <input type="hidden" name="form_action" value="update_profile">
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -207,11 +218,12 @@ require_once __DIR__ . "/includes/header.php";
         <!-- Form Ganti Password -->
         <div class="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 shadow-2xl">
             <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">
-                <span>🔐</span> Ganti Kata Sandi (Password)
+                <span class="text-amber-400"><i class="fa-solid fa-key"></i></span> Ganti Kata Sandi (Password)
             </h3>
             <p class="text-xs text-slate-400 mb-6">Pastikan password baru Anda kuat dan tidak mudah ditebak.</p>
 
             <form method="POST" class="space-y-4">
+                <?= csrfField() ?>
                 <input type="hidden" name="form_action" value="change_password">
 
                 <div>

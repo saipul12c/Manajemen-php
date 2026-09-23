@@ -28,7 +28,7 @@ if (!$exam) {
     exit;
 }
 
-$cat_info = EXAM_CATEGORIES[$exam['category']] ?? ['label' => $exam['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '📝'];
+$cat_info = EXAM_CATEGORIES[$exam['category']] ?? ['label' => $exam['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-pen-to-square"></i>'];
 
 // Tentukan apakah user melihat sebagai pengajar/admin atau sebagai siswa/orang tua
 $can_view_all = in_array($user_role, ['guru', 'administrator', 'staf'], true);
@@ -48,6 +48,11 @@ $hide_answers = !empty($exam['hide_answers_until_due']) && !empty($exam['due_dat
 // AKSI GURU / ADMIN: SIMPAN NILAI KOREKSI ESAI
 // -------------------------------------------------------------
 if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_essay_grades') {
+    // BUG-04 fix: Validasi CSRF Token untuk penilaian esai
+    if (!validateCsrfToken()) {
+        header("Location: exam_results.php?id=$exam_id&error=invalid_csrf");
+        exit;
+    }
     $target_sub_id = (int) ($_POST['submission_id'] ?? 0);
     $submitted_essay_scores = $_POST['essay_scores'] ?? []; // [qid => score]
 
@@ -98,11 +103,15 @@ if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
 }
 
 // -------------------------------------------------------------
-// AKSI GURU / ADMIN: BERI ATAU BATALKAN IZIN REMEDIAL
+// AKSI GURU / ADMIN: BERI ATAU BATALKAN IZIN REMEDIAL (BUG-03 fix: POST + CSRF)
 // -------------------------------------------------------------
-if ($can_view_all && isset($_GET['action'])) {
-    $action = $_GET['action'];
-    $sub_id = (int) ($_GET['sub_id'] ?? 0);
+if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array($_POST['action'], ['grant_remedial', 'revoke_remedial'], true)) {
+    if (!validateCsrfToken()) {
+        header("Location: exam_results.php?id=$exam_id&error=invalid_csrf");
+        exit;
+    }
+    $action = $_POST['action'];
+    $sub_id = (int) ($_POST['sub_id'] ?? 0);
 
     if ($sub_id > 0) {
         if ($action === 'grant_remedial') {
@@ -194,12 +203,13 @@ require_once __DIR__ . "/../includes/header.php";
                 <span class="text-xs text-slate-400">KKM: <strong class="text-white"><?= $exam['passing_grade'] ?></strong></span>
                 <span class="text-xs text-slate-400">Guru: <strong class="text-white"><?= htmlspecialchars($exam['teacher_name']) ?></strong></span>
                 <?php if (!empty($exam['token'])): ?>
-                    <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-mono font-bold text-amber-300">
-                        🔑 Token: <?= htmlspecialchars($exam['token']) ?>
+                    <span class="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-mono font-bold text-amber-300">
+                        <i class="fa-solid fa-key"></i> Token: <?= htmlspecialchars($exam['token']) ?>
                     </span>
+                <?php endif; ?>
                 <?php if (!empty($exam['hide_answers_until_due'])): ?>
-                    <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300" title="Kunci jawaban dirahasiakan hingga batas akhir ujian">
-                        🔒 Kunci Dirahasiakan
+                    <span class="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300" title="Kunci jawaban dirahasiakan hingga batas akhir ujian">
+                        <i class="fa-solid fa-lock"></i> Kunci Dirahasiakan
                     </span>
                 <?php endif; ?>
             </div>
@@ -212,15 +222,15 @@ require_once __DIR__ . "/../includes/header.php";
             <?php if (in_array($user_role, ['guru', 'administrator', 'staf'], true)): ?>
                 <a href="exam_print.php?id=<?= $exam['id'] ?>" target="_blank"
                    class="rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-3.5 py-2 text-xs font-bold text-blue-300 transition flex items-center gap-1.5 shadow-sm">
-                    <span>🖨️</span> Cetak Berita Acara & Nilai
+                    <i class="fa-solid fa-print"></i> Cetak Berita Acara & Nilai
                 </a>
                 <a href="exam_export.php?id=<?= $exam['id'] ?>" 
                    class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3.5 py-2 text-xs font-bold text-emerald-300 transition flex items-center gap-1.5 shadow-sm">
-                    <span>📥</span> Unduh CSV / Excel
+                    <i class="fa-solid fa-file-arrow-down"></i> Unduh CSV / Excel
                 </a>
                 <a href="exam_questions.php?id=<?= $exam['id'] ?>" 
-                   class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-white transition">
-                    📝 Kelola Soal (<?= count($questions) ?>)
+                   class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-white transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-pen-to-square"></i> Kelola Soal (<?= count($questions) ?>)
                 </a>
             <?php endif; ?>
         </div>
@@ -229,7 +239,7 @@ require_once __DIR__ . "/../includes/header.php";
     <!-- Alert Sukses Submit Ujian Standar -->
     <?php if (isset($_GET['submitted'])): ?>
         <div class="rounded-3xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-emerald-200 shadow-xl flex items-center gap-4">
-            <span class="text-4xl">🎉</span>
+            <i class="fa-solid fa-circle-check text-emerald-400 text-3xl"></i>
             <div>
                 <h3 class="text-lg font-bold text-white">Ujian Berhasil Dikumpulkan!</h3>
                 <p class="text-xs sm:text-sm text-emerald-300/90 mt-0.5">
@@ -247,7 +257,7 @@ require_once __DIR__ . "/../includes/header.php";
     <!-- Alert Sukses Submit Remedial -->
     <?php if (isset($_GET['remedial_submitted'])): ?>
         <div class="rounded-3xl border border-purple-500/30 bg-purple-500/10 p-6 text-purple-200 shadow-xl flex items-center gap-4">
-            <span class="text-4xl">✨</span>
+            <i class="fa-solid fa-wand-magic-sparkles text-purple-400 text-3xl"></i>
             <div>
                 <h3 class="text-lg font-bold text-white">Sesi Remedial Berhasil Dikumpulkan!</h3>
                 <p class="text-xs sm:text-sm text-purple-300/90 mt-0.5">
@@ -259,16 +269,20 @@ require_once __DIR__ . "/../includes/header.php";
 
     <!-- Alert Feedback Guru (Beri Remedial / Koreksi Esai) -->
     <?php if (isset($_GET['msg']) && $_GET['msg'] === 'essay_graded'): ?>
-        <div class="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs font-semibold text-emerald-300">
-            ✓ Penilaian soal esai berhasil disimpan! Skor akhir siswa telah diperbarui secara otomatis.
+        <div class="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs font-semibold text-emerald-300 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check"></i> Penilaian soal esai berhasil disimpan! Skor akhir siswa telah diperbarui secara otomatis.
         </div>
     <?php elseif (isset($_GET['msg']) && $_GET['msg'] === 'remedial_granted'): ?>
-        <div class="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4 text-xs font-semibold text-blue-300">
-            ✓ Izin remedial berhasil diberikan kepada siswa terpilih. Siswa kini dapat mengerjakan ulang modul ujian ini.
+        <div class="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4 text-xs font-semibold text-blue-300 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check"></i> Izin remedial berhasil diberikan kepada siswa terpilih. Siswa kini dapat mengerjakan ulang modul ujian ini.
         </div>
     <?php elseif (isset($_GET['msg']) && $_GET['msg'] === 'remedial_revoked'): ?>
-        <div class="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-semibold text-amber-300">
-            ✓ Izin remedial berhasil dibatalkan.
+        <div class="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-semibold text-amber-300 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check"></i> Izin remedial berhasil dibatalkan.
+        </div>
+    <?php elseif (isset($_GET['error']) && $_GET['error'] === 'invalid_csrf'): ?>
+        <div class="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs font-semibold text-rose-300 flex items-center gap-2">
+            <i class="fa-solid fa-triangle-exclamation"></i> Token keamanan tidak valid atau telah kadaluarsa. Silakan ulangi aksi Anda.
         </div>
     <?php endif; ?>
 
@@ -287,7 +301,7 @@ require_once __DIR__ . "/../includes/header.php";
             <?php if ($remedial_ready && $user_role === 'siswa'): ?>
                 <div class="rounded-3xl border border-amber-500/50 bg-gradient-to-r from-amber-950/70 via-slate-900 to-slate-900 p-6 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div class="flex items-start gap-3.5">
-                        <span class="text-3xl">📢</span>
+                        <i class="fa-solid fa-bullhorn text-amber-400 text-2xl mt-1"></i>
                         <div>
                             <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[11px] font-black text-amber-300 uppercase tracking-wider mb-1">
                                 Kesempatan Remedial Dibuka
@@ -299,8 +313,8 @@ require_once __DIR__ . "/../includes/header.php";
                         </div>
                     </div>
                     <a href="exam_take.php?id=<?= $exam['id'] ?>&remedial=1" 
-                       class="rounded-xl bg-amber-500 hover:bg-amber-400 px-5 py-3 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/20 transition shrink-0 text-center">
-                        ✍️ Kerjakan Remedial Sekarang
+                       class="rounded-xl bg-amber-500 hover:bg-amber-400 px-5 py-3 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/20 transition shrink-0 text-center inline-flex items-center gap-1.5">
+                        <i class="fa-solid fa-pen-to-square"></i> Kerjakan Remedial Sekarang
                     </a>
                 </div>
             <?php endif; ?>
@@ -311,11 +325,11 @@ require_once __DIR__ . "/../includes/header.php";
                     <div>
                         <div class="flex flex-wrap items-center gap-2 mb-2">
                             <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-extrabold uppercase tracking-wider <?= $is_passed ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300' ?>">
-                                <?= $is_passed ? '✓ MEMENUHI KKM KELULUSAN' : '⚠️ PERLU REMEDIAL / EVALUASI' ?>
+                                <?= $is_passed ? '<i class="fa-solid fa-circle-check"></i> MEMENUHI KKM KELULUSAN' : '<i class="fa-solid fa-triangle-exclamation"></i> PERLU REMEDIAL / EVALUASI' ?>
                             </span>
                             <?php if ($is_remedial_sub): ?>
                                 <span class="inline-flex items-center gap-1 rounded-full border border-purple-500/30 bg-purple-500/20 px-2.5 py-1 text-xs font-bold text-purple-300">
-                                    ✨ Hasil Remedial
+                                    <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Hasil Remedial
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -342,7 +356,7 @@ require_once __DIR__ . "/../includes/header.php";
                             <div>Standar KKM: <strong class="text-white"><?= $exam['passing_grade'] ?></strong></div>
                             <?php if ($is_remedial_sub && $my_submission['previous_score'] !== null): ?>
                                 <div class="pt-1 border-t border-white/10 text-purple-300">
-                                    Nilai Awal: <strong class="line-through text-slate-400"><?= number_format($my_submission['previous_score'], 0) ?></strong> ➔ Remedial: <strong class="text-white"><?= number_format($my_score, 0) ?></strong>
+                                    Nilai Awal: <strong class="line-through text-slate-400"><?= number_format($my_submission['previous_score'], 0) ?></strong> &rarr; Remedial: <strong class="text-white"><?= number_format($my_score, 0) ?></strong>
                                 </div>
                             <?php endif; ?>
                         </div>
@@ -354,7 +368,7 @@ require_once __DIR__ . "/../includes/header.php";
             <div class="space-y-4">
                 <div class="flex items-center justify-between">
                     <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                        <span>🔍</span> Evaluasi & Pembahasan Soal
+                        <i class="fa-solid fa-magnifying-glass text-blue-400"></i> Evaluasi & Pembahasan Soal
                     </h3>
                     <span class="text-xs text-slate-400">Total <?= count($questions) ?> Butir Soal</span>
                 </div>
@@ -362,8 +376,8 @@ require_once __DIR__ . "/../includes/header.php";
                 <?php if ($hide_answers): ?>
                     <!-- Kunci Jawaban & Pembahasan Dirahasiakan Sementara -->
                     <div class="rounded-3xl border border-amber-500/30 bg-slate-900/90 p-8 sm:p-10 text-center space-y-4 shadow-2xl">
-                        <div class="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-amber-500/10 border border-amber-500/20 text-4xl shadow-inner">
-                            🔒
+                        <div class="inline-flex h-20 w-20 items-center justify-center rounded-3xl bg-amber-500/10 border border-amber-500/20 text-3xl text-amber-400 shadow-inner">
+                            <i class="fa-solid fa-lock"></i>
                         </div>
                         <div class="space-y-2 max-w-lg mx-auto">
                             <span class="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
@@ -374,8 +388,8 @@ require_once __DIR__ . "/../includes/header.php";
                                 Untuk menjaga kejujuran pelaksanaan evaluasi (UTS / UKK / Ujian Resmi), kunci jawaban dan pembahasan butir soal baru akan dibuka secara otomatis kepada seluruh peserta setelah batas waktu ujian resmi berakhir:
                             </p>
                             <div class="pt-2">
-                                <span class="inline-block rounded-2xl border border-amber-500/40 bg-amber-500/10 px-5 py-2.5 text-xs sm:text-sm font-mono font-black text-amber-300 shadow-md">
-                                    📅 Dibuka Otomatis: <?= date('d M Y, H:i', strtotime($exam['due_date'])) ?> WIB
+                                <span class="inline-flex items-center gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-5 py-2.5 text-xs sm:text-sm font-mono font-black text-amber-300 shadow-md">
+                                    <i class="fa-regular fa-calendar-days"></i> Dibuka Otomatis: <?= date('d M Y, H:i', strtotime($exam['due_date'])) ?> WIB
                                 </span>
                             </div>
                         </div>
@@ -405,13 +419,13 @@ require_once __DIR__ . "/../includes/header.php";
                                             <?= $idx + 1 ?>
                                         </span>
                                         <?php if ($is_essay): ?>
-                                            <span class="inline-flex items-center gap-1 rounded-md px-2.5 py-0.5 text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                                📝 Soal Esai / Uraian
+                                            <span class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                                <i class="fa-solid fa-pen-nib"></i> Soal Esai / Uraian
                                             </span>
                                             <span class="text-xs text-slate-400">Bobot Maks: <?= (int)$q['max_score'] ?> Poin</span>
                                         <?php else: ?>
-                                            <span class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold <?= $is_correct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30' ?>">
-                                                <?= $is_correct ? '✓ Pilihan Ganda Benar' : '✕ Pilihan Ganda Salah' ?>
+                                            <span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-bold <?= $is_correct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30' ?>">
+                                                <?= $is_correct ? '<i class="fa-solid fa-check"></i> Pilihan Ganda Benar' : '<i class="fa-solid fa-xmark"></i> Pilihan Ganda Salah' ?>
                                             </span>
                                         <?php endif; ?>
                                     </div>
@@ -419,12 +433,12 @@ require_once __DIR__ . "/../includes/header.php";
                                     <div>
                                         <?php if ($is_essay): ?>
                                             <?php if ($is_essay_graded): ?>
-                                                <span class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-300">
-                                                    Nilai Guru: <strong><?= (float)($my_essay_scores[$q['id']] ?? 0) ?></strong> / <?= (int)$q['max_score'] ?> Poin
+                                                <span class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-300 inline-flex items-center gap-1">
+                                                    <i class="fa-solid fa-check"></i> Nilai Guru: <strong><?= (float)($my_essay_scores[$q['id']] ?? 0) ?></strong> / <?= (int)$q['max_score'] ?> Poin
                                                 </span>
                                             <?php else: ?>
-                                                <span class="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
-                                                    ⏳ Menunggu Penilaian Guru
+                                                <span class="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300 inline-flex items-center gap-1">
+                                                    <i class="fa-regular fa-clock"></i> Menunggu Penilaian Guru
                                                 </span>
                                             <?php endif; ?>
                                         <?php else: ?>
@@ -454,7 +468,7 @@ require_once __DIR__ . "/../includes/header.php";
                                 <?php if ($is_essay): ?>
                                     <!-- Review Jawaban Esai Siswa -->
                                     <div class="space-y-2">
-                                        <span class="block text-xs font-bold text-purple-300">✍️ Lembar Jawaban Uraian Anda:</span>
+                                        <span class="block text-xs font-bold text-purple-300 flex items-center gap-1.5"><i class="fa-solid fa-pen-fancy"></i> Lembar Jawaban Uraian Anda:</span>
                                         <div class="rounded-2xl border border-purple-500/20 bg-purple-950/20 p-4 text-xs sm:text-sm text-slate-100 whitespace-pre-wrap font-sans leading-relaxed">
                                             <?= !empty($student_choice) ? htmlspecialchars($student_choice) : '<em class="text-slate-500">Tidak ada jawaban yang diisi.</em>' ?>
                                         </div>
@@ -463,7 +477,7 @@ require_once __DIR__ . "/../includes/header.php";
                                     <!-- Rubrik Pedoman Penilaian (Jika Ada) -->
                                     <?php if (!empty($q['explanation'])): ?>
                                         <div class="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-3 text-xs text-blue-300">
-                                            <strong class="font-bold text-white block mb-0.5">📋 Rubrik / Pedoman Penilaian Soal:</strong>
+                                            <strong class="font-bold text-white flex items-center gap-1.5 mb-0.5"><i class="fa-solid fa-clipboard-list text-blue-400"></i> Rubrik / Pedoman Penilaian Soal:</strong>
                                             <?= nl2br(htmlspecialchars($q['explanation'])) ?>
                                         </div>
                                     <?php endif; ?>
@@ -495,7 +509,7 @@ require_once __DIR__ . "/../includes/header.php";
                                                 <span class="font-bold"><?= $opt_key ?>.</span>
                                                 <span><?= htmlspecialchars($opt_val) ?></span>
                                                 <?php if ($is_this_correct): ?>
-                                                    <span class="ml-auto text-emerald-400 font-bold">✓ Kunci</span>
+                                                    <span class="ml-auto text-emerald-400 font-bold flex items-center gap-1"><i class="fa-solid fa-check"></i> Kunci</span>
                                                 <?php elseif ($is_this_student): ?>
                                                     <span class="ml-auto text-rose-400 font-bold">Pilihan Anda</span>
                                                 <?php endif; ?>
@@ -506,7 +520,7 @@ require_once __DIR__ . "/../includes/header.php";
                                     <!-- Pembahasan PG -->
                                     <?php if (!empty($q['explanation'])): ?>
                                         <div class="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-3 text-xs text-blue-300">
-                                            <strong class="font-bold text-white block mb-0.5">💡 Pembahasan / Penjelasan:</strong>
+                                            <strong class="font-bold text-white flex items-center gap-1.5 mb-0.5"><i class="fa-solid fa-lightbulb text-amber-400"></i> Pembahasan / Penjelasan:</strong>
                                             <?= htmlspecialchars($q['explanation']) ?>
                                         </div>
                                     <?php endif; ?>
@@ -520,18 +534,19 @@ require_once __DIR__ . "/../includes/header.php";
 
         <?php else: ?>
             <div class="rounded-3xl border border-white/10 bg-slate-900/40 p-12 text-center">
-                <span class="text-4xl block mb-3">📝</span>
+                <i class="fa-regular fa-file-lines text-slate-500 text-4xl block mb-3"></i>
                 <h3 class="text-lg font-bold text-white">Belum Ada Riwayat Pengerjaan</h3>
                 <p class="text-sm text-slate-400 mt-1 max-w-md mx-auto">
                     Ujian atau latihan ini belum dikerjakan.
                 </p>
                 <div class="mt-4">
-                    <a href="exam_take.php?id=<?= $exam['id'] ?>" class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-500 transition">
-                        ✍️ Kerjakan Sekarang
+                    <a href="exam_take.php?id=<?= $exam['id'] ?>" class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-500 transition inline-flex items-center gap-1.5">
+                        <i class="fa-solid fa-pen-to-square"></i> Kerjakan Sekarang
                     </a>
                 </div>
             </div>
         <?php endif; ?>
+    <?php endif; ?>
     <?php endif; ?>
 
     <!-- TAMPILAN GURU / ADMIN / STAF: STATISTIK & REKAP KELAS -->
@@ -573,12 +588,12 @@ require_once __DIR__ . "/../includes/header.php";
         <div class="rounded-3xl border border-white/10 bg-slate-900/80 overflow-hidden shadow-xl">
             <div class="p-5 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h3 class="text-base font-bold text-white flex items-center gap-2">
-                    <span>📊</span> Daftar Nilai Peserta Didik (<?= count($all_submissions) ?>)
+                    <i class="fa-solid fa-chart-simple text-blue-400"></i> Daftar Nilai Peserta Didik (<?= count($all_submissions) ?>)
                 </h3>
                 <?php if (!empty($all_submissions)): ?>
                     <a href="exam_export.php?id=<?= $exam['id'] ?>" 
                        class="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-500/20 transition">
-                        <span>📥</span> Unduh Rekap Nilai (.CSV)
+                        <i class="fa-solid fa-file-arrow-down"></i> Unduh Rekap Nilai (.CSV)
                     </a>
                 <?php endif; ?>
             </div>
@@ -639,8 +654,8 @@ require_once __DIR__ . "/../includes/header.php";
                                         </div>
                                     </td>
                                     <td class="py-3.5 px-4 text-center">
-                                        <span class="inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-bold border <?= $pass ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300' ?>">
-                                            <?= $pass ? '✓ Lulus' : '⚠️ Remedial' ?>
+                                        <span class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold border <?= $pass ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300' ?>">
+                                            <?= $pass ? '<i class="fa-solid fa-circle-check text-emerald-400"></i> Lulus' : '<i class="fa-solid fa-triangle-exclamation text-rose-400"></i> Remedial' ?>
                                         </span>
                                     </td>
                                     <?php if ($has_essay_questions): ?>
@@ -653,8 +668,8 @@ require_once __DIR__ . "/../includes/header.php";
                                                         'essay_scores' => json_decode($sub['essay_scores'] ?? '{}', true),
                                                         'score' => (float)$sub['score']
                                                     ])) ?>)"
-                                                    class="inline-flex items-center gap-1 rounded-xl <?= $essay_done ? 'border border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20' : 'bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-500/20 font-bold' ?> px-3 py-1.5 text-xs transition cursor-pointer">
-                                                <span><?= $essay_done ? '✓' : '📝' ?></span>
+                                                    class="inline-flex items-center gap-1.5 rounded-xl <?= $essay_done ? 'border border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20' : 'bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-500/20 font-bold' ?> px-3 py-1.5 text-xs transition cursor-pointer">
+                                                <i class="fa-solid <?= $essay_done ? 'fa-check' : 'fa-pen-to-square' ?>"></i>
                                                 <span><?= $essay_done ? 'Edit Nilai' : 'Koreksi Esai' ?></span>
                                             </button>
                                         </td>
@@ -663,22 +678,30 @@ require_once __DIR__ . "/../includes/header.php";
                                         <?php if ($granted): ?>
                                             <div class="flex items-center justify-center gap-1.5">
                                                 <span class="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/20 px-2 py-1 text-[11px] font-bold text-amber-300">
-                                                    🔄 Menunggu Ujian
+                                                    <i class="fa-solid fa-arrows-rotate fa-spin mr-1"></i> Menunggu Ujian
                                                 </span>
-                                                <a href="exam_results.php?id=<?= $exam_id ?>&action=revoke_remedial&sub_id=<?= $sub['id'] ?>" 
-                                                    onclick="return confirm('Batalkan izin remedial untuk siswa ini?');"
-                                                    title="Batalkan Izin" 
-                                                    class="rounded-lg bg-white/5 hover:bg-rose-500/20 hover:text-rose-300 px-1.5 py-1 text-xs text-slate-400 transition">
-                                                    ✕
-                                                </a>
+                                                <form method="POST" action="exam_results.php?id=<?= $exam_id ?>" class="inline" onsubmit="return confirm('Batalkan izin remedial untuk siswa ini?');">
+                                                    <?= csrfField() ?>
+                                                    <input type="hidden" name="action" value="revoke_remedial">
+                                                    <input type="hidden" name="sub_id" value="<?= $sub['id'] ?>">
+                                                    <button type="submit" 
+                                                        title="Batalkan Izin" 
+                                                        class="rounded-lg bg-white/5 hover:bg-rose-500/20 hover:text-rose-300 px-2 py-1 text-xs text-slate-400 transition cursor-pointer">
+                                                        <i class="fa-solid fa-xmark"></i>
+                                                    </button>
+                                                </form>
                                             </div>
                                         <?php else: ?>
                                             <?php if (!$pass): ?>
-                                                <a href="exam_results.php?id=<?= $exam_id ?>&action=grant_remedial&sub_id=<?= $sub['id'] ?>" 
-                                                    onclick="return confirm('Berikan izin remedial untuk siswa <?= addslashes($sub['student_name']) ?>?');"
-                                                    class="inline-flex items-center gap-1 rounded-xl bg-blue-600/80 hover:bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition shadow-sm">
-                                                    <span>🔄</span> Izinkan Remedial
-                                                </a>
+                                                <form method="POST" action="exam_results.php?id=<?= $exam_id ?>" class="inline" onsubmit="return confirm('Berikan izin remedial untuk siswa <?= addslashes($sub['student_name']) ?>?');">
+                                                    <?= csrfField() ?>
+                                                    <input type="hidden" name="action" value="grant_remedial">
+                                                    <input type="hidden" name="sub_id" value="<?= $sub['id'] ?>">
+                                                    <button type="submit" 
+                                                        class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600/80 hover:bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition shadow-sm cursor-pointer">
+                                                        <i class="fa-solid fa-arrows-rotate"></i> Izinkan Remedial
+                                                    </button>
+                                                </form>
                                             <?php else: ?>
                                                 <span class="text-xs text-slate-500 font-medium">-</span>
                                             <?php endif; ?>
@@ -713,18 +736,19 @@ require_once __DIR__ . "/../includes/header.php";
                 <div class="max-w-2xl w-full rounded-3xl border border-purple-500/30 bg-slate-900 p-6 sm:p-7 shadow-2xl space-y-5 my-8">
                     <div class="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
                         <div>
-                            <span class="inline-flex items-center gap-1 rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-bold text-purple-300">
-                                📝 Form Koreksi Manual Guru
+                            <span class="inline-flex items-center gap-1.5 rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-bold text-purple-300">
+                                <i class="fa-solid fa-pen-to-square"></i> Form Koreksi Manual Guru
                             </span>
                             <h3 class="text-lg font-black text-white mt-1" id="modalStudentName">Koreksi Jawaban Siswa</h3>
                             <p class="text-xs text-slate-400">Masukkan perolehan poin esai sesuai rubrik penilaian. Skor akhir akan otomatis dikalkulasi.</p>
                         </div>
                         <button type="button" onclick="closeEssayGradingModal()" class="rounded-xl bg-white/5 hover:bg-white/10 p-2 text-slate-400 hover:text-white transition cursor-pointer">
-                            ✕
+                            <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
 
                     <form method="POST" action="exam_results.php?id=<?= $exam_id ?>" class="space-y-5">
+                        <?= csrfField() ?>
                         <input type="hidden" name="action" value="save_essay_grades">
                         <input type="hidden" name="submission_id" id="modalSubmissionId" value="">
 
@@ -736,8 +760,8 @@ require_once __DIR__ . "/../includes/header.php";
                             <button type="button" onclick="closeEssayGradingModal()" class="rounded-xl px-4 py-2.5 text-xs font-semibold text-slate-400 hover:bg-white/5 transition cursor-pointer">
                                 Batal
                             </button>
-                            <button type="submit" class="rounded-xl bg-purple-600 hover:bg-purple-500 px-5 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-purple-500/25 transition cursor-pointer">
-                                💾 Simpan Nilai & Perbarui Skor Akhir
+                            <button type="submit" class="rounded-xl bg-purple-600 hover:bg-purple-500 px-5 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-purple-500/25 transition cursor-pointer inline-flex items-center gap-2">
+                                <i class="fa-solid fa-floppy-disk"></i> Simpan Nilai & Perbarui Skor Akhir
                             </button>
                         </div>
                     </form>

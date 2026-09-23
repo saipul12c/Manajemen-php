@@ -19,6 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         header("Location: calendar.php?error=unauthorized");
         exit;
     }
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
 
     $title = trim($_POST['title'] ?? '');
     $description = trim($_POST['description'] ?? '');
@@ -39,20 +43,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $message = "Agenda kegiatan baru berhasil ditambahkan ke kalender.";
         $message_type = "success";
     }
+    } // end CSRF check
 }
 
 // -------------------------------------------------------------
 // 2. HAPUS EVENT (Guru / Staf / Admin)
 // -------------------------------------------------------------
-if (isset($_GET['delete_id']) && $can_manage) {
-    $del_id = (int) $_GET['delete_id'];
-    // Jika admin, bebas hapus. Jika guru/staf, hanya event miliknya
-    $query_del = "DELETE FROM calendar_events WHERE id = ?" . ($user_role !== 'administrator' ? " AND created_by = $user_id" : "");
-    $stmt_del = $pdo->prepare($query_del);
-    $stmt_del->execute([$del_id]);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_event' && $can_manage) {
+    if (validateCsrfToken()) {
+        $del_id = (int) ($_POST['delete_id'] ?? 0);
+        $query_del = "DELETE FROM calendar_events WHERE id = ?";
+        $params_del = [$del_id];
+        if ($user_role !== 'administrator') {
+            $query_del .= " AND created_by = ?";
+            $params_del[] = $user_id;
+        }
+        $stmt_del = $pdo->prepare($query_del);
+        $stmt_del->execute($params_del);
 
-    $message = "Agenda kegiatan berhasil dihapus.";
-    $message_type = "success";
+        $message = "Agenda kegiatan berhasil dihapus.";
+        $message_type = "success";
+    }
 }
 
 // -------------------------------------------------------------
@@ -199,8 +210,8 @@ require_once __DIR__ . "/../includes/header.php";
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
         <div class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-400 text-xl border border-blue-500/30 shadow-lg shadow-blue-500/10">
-                🗓️
+            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-400 text-lg border border-blue-500/30 shadow-lg shadow-blue-500/10">
+                <i class="fa-solid fa-calendar-days"></i>
             </span>
             <div>
                 <h1 class="text-2xl font-bold text-white tracking-tight">Kalender Akademik & Agenda</h1>
@@ -211,8 +222,8 @@ require_once __DIR__ . "/../includes/header.php";
 
     <?php if ($can_manage): ?>
         <button onclick="document.getElementById('modalAddEvent').classList.remove('hidden')" 
-                class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-indigo-500">
-            <span>➕</span>
+                class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-indigo-500 cursor-pointer">
+            <i class="fa-solid fa-plus"></i>
             <span>Tambah Agenda Sekolah</span>
         </button>
     <?php endif; ?>
@@ -222,10 +233,10 @@ require_once __DIR__ . "/../includes/header.php";
 <?php if ($message): ?>
     <div class="mb-6 rounded-2xl border p-4 text-sm flex items-center justify-between <?= $message_type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300' ?>">
         <div class="flex items-center gap-3">
-            <span class="text-lg"><?= $message_type === 'success' ? '✅' : '⚠️' ?></span>
+            <span><?= $message_type === 'success' ? '<i class="fa-solid fa-circle-check text-emerald-400"></i>' : '<i class="fa-solid fa-triangle-exclamation text-rose-400"></i>' ?></span>
             <span><?= htmlspecialchars($message) ?></span>
         </div>
-        <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100">✕</button>
+        <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
     </div>
 <?php endif; ?>
 
@@ -371,7 +382,7 @@ require_once __DIR__ . "/../includes/header.php";
         <!-- Agenda Mendatang -->
         <div class="rounded-3xl border border-white/10 bg-slate-900/60 p-6 shadow-xl backdrop-blur">
             <h3 class="text-base font-bold text-white tracking-tight mb-4 flex items-center gap-2">
-                <span>⏰</span>
+                <i class="fa-regular fa-clock text-amber-400"></i>
                 <span>Agenda Mendatang</span>
             </h3>
 
@@ -396,8 +407,8 @@ require_once __DIR__ . "/../includes/header.php";
                                 </span>
                             </div>
                             <p class="font-semibold text-sm text-white line-clamp-2"><?= htmlspecialchars($up['title']) ?></p>
-                            <p class="text-xs text-slate-500 mt-1">
-                                📅 <?= date('d M Y', strtotime($up['date'])) ?>
+                            <p class="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                                <i class="fa-regular fa-calendar"></i> <?= date('d M Y', strtotime($up['date'])) ?>
                             </p>
                         </div>
                     <?php endforeach; ?>
@@ -408,7 +419,7 @@ require_once __DIR__ . "/../includes/header.php";
         <!-- Tips Penggunaan -->
         <div class="rounded-3xl border border-white/10 bg-gradient-to-br from-blue-900/20 to-slate-900/40 p-6 shadow-xl backdrop-blur">
             <h4 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                <span>💡</span>
+                <i class="fa-solid fa-lightbulb text-amber-400"></i>
                 <span>Integrasi Otomatis</span>
             </h4>
             <p class="text-xs leading-relaxed text-slate-400">
@@ -429,7 +440,7 @@ require_once __DIR__ . "/../includes/header.php";
             <div class="flex items-center gap-2">
                 <span id="detailCategoryBadge" class="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border"></span>
             </div>
-            <button onclick="document.getElementById('modalEventDetail').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+            <button onclick="document.getElementById('modalEventDetail').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg font-bold cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
         <h3 id="detailTitle" class="text-lg font-bold text-white mb-2"></h3>
@@ -459,14 +470,15 @@ require_once __DIR__ . "/../includes/header.php";
     <div class="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl my-8">
         <div class="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
             <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                <span>➕</span>
+                <i class="fa-solid fa-calendar-plus text-blue-400"></i>
                 <span>Tambah Agenda Sekolah</span>
             </h3>
-            <button onclick="document.getElementById('modalAddEvent').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+            <button onclick="document.getElementById('modalAddEvent').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg font-bold cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
         <form method="POST" action="calendar.php?month=<?= $req_month ?>&year=<?= $req_year ?>" class="space-y-4">
             <input type="hidden" name="action" value="create_event">
+            <?= csrfField() ?>
 
             <div>
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Nama Kegiatan / Agenda *</label>
@@ -491,10 +503,10 @@ require_once __DIR__ . "/../includes/header.php";
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Kategori Agenda</label>
                     <select name="category" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
-                        <option value="kegiatan">📌 Kegiatan Sekolah</option>
-                        <option value="akademik">🎓 Akademik</option>
-                        <option value="libur">🏖️ Hari Libur / Cuti</option>
-                        <option value="ujian">📝 Ujian / Evaluasi</option>
+                        <option value="kegiatan">Kegiatan Sekolah</option>
+                        <option value="akademik">Akademik</option>
+                        <option value="libur">Hari Libur / Cuti</option>
+                        <option value="ujian">Ujian / Evaluasi</option>
                     </select>
                 </div>
                 <div>
@@ -533,7 +545,7 @@ require_once __DIR__ . "/../includes/header.php";
 <script>
 function showEventDetail(item, dateStr) {
     document.getElementById('detailTitle').textContent = item.title;
-    document.getElementById('detailDate').textContent = '📅 ' + dateStr;
+    document.getElementById('detailDate').innerHTML = '<i class="fa-regular fa-calendar mr-1.5"></i>' + dateStr;
     document.getElementById('detailDesc').textContent = item.description || 'Tidak ada catatan tambahan untuk agenda ini.';
 
     const catBadge = document.getElementById('detailCategoryBadge');
@@ -554,22 +566,29 @@ function showEventDetail(item, dateStr) {
 
     <?php if ($can_manage): ?>
     if (item.type === 'event') {
-        const delBtn = document.createElement('a');
-        delBtn.href = 'calendar.php?delete_id=' + item.id;
-        delBtn.className = 'rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20';
-        delBtn.textContent = '🗑️ Hapus Agenda';
-        delBtn.onclick = function() {
+        const delForm = document.createElement('form');
+        delForm.method = 'POST';
+        delForm.action = 'calendar.php?month=<?= $req_month ?>&year=<?= $req_year ?>';
+        delForm.innerHTML = '<input type="hidden" name="action" value="delete_event">' +
+            '<input type="hidden" name="delete_id" value="' + item.id + '">' +
+            '<?= csrfField() ?>';
+        delForm.onsubmit = function() {
             return confirm('Apakah Anda yakin ingin menghapus agenda kegiatan ini?');
         };
-        delContainer.appendChild(delBtn);
+        const delBtn = document.createElement('button');
+        delBtn.type = 'submit';
+        delBtn.className = 'inline-flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 cursor-pointer';
+        delBtn.innerHTML = '<i class="fa-solid fa-trash"></i> Hapus Agenda';
+        delForm.appendChild(delBtn);
+        delContainer.appendChild(delForm);
     }
     <?php endif; ?>
 
     if (item.url) {
         const linkBtn = document.createElement('a');
         linkBtn.href = item.url;
-        linkBtn.className = 'rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500';
-        linkBtn.textContent = 'Buka Halaman ↗';
+        linkBtn.className = 'inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500 cursor-pointer';
+        linkBtn.innerHTML = 'Buka Halaman <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>';
         delContainer.appendChild(linkBtn);
     }
 
