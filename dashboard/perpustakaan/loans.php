@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 session_start();
 require_once __DIR__ . "/../../config/database.php";
-require_once __DIR__ . "/../../config/csrf.php";
 
 requireLogin();
 
@@ -159,6 +158,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// 4. PROSES PERPANJANGAN MANDIRI / OLEH PETUGAS (Action: renew_loan)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'renew_loan') {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
+        $loan_id = (int)($_POST['loan_id'] ?? 0);
+        try {
+            $stmt_l = $pdo->prepare("
+                SELECT l.*, b.title as book_title 
+                FROM library_loans l 
+                JOIN library_books b ON l.book_id = b.id 
+                WHERE l.id = ? AND l.status = 'dipinjam'
+            ");
+            $stmt_l->execute([$loan_id]);
+            $loan = $stmt_l->fetch();
+
+            if (!$loan) {
+                $message = "Data peminjaman aktif tidak ditemukan.";
+                $message_type = "error";
+            } elseif (!$is_librarian && (int)$loan['user_id'] !== $user_id) {
+                $message = "Anda hanya dapat memperpanjang peminjaman buku milik Anda sendiri.";
+                $message_type = "error";
+            } elseif (date('Y-m-d') > $loan['due_date']) {
+                $message = "Peminjaman yang sudah melewati jatuh tempo tidak dapat diperpanjang secara mandiri. Harap kembalikan buku ke perpustakaan.";
+                $message_type = "error";
+            } elseif ((int)($loan['renewal_count'] ?? 0) >= 1) {
+                $message = "Buku ini sudah pernah diperpanjang sebelumnya (Maksimal perpanjangan mandiri adalah 1 kali).";
+                $message_type = "error";
+            } else {
+                $new_due_date = date('Y-m-d', strtotime($loan['due_date'] . ' +7 days'));
+                $stmt_up = $pdo->prepare("UPDATE library_loans SET due_date = ?, renewal_count = renewal_count + 1 WHERE id = ?");
+                $stmt_up->execute([$new_due_date, $loan_id]);
+
+                logActivity($pdo, 'RENEW_LOAN', "Perpanjangan peminjaman buku #$loan_id ({$loan['book_title']}) hingga $new_due_date");
+                $message = "Peminjaman buku '{$loan['book_title']}' berhasil diperpanjang 7 hari hingga " . date('d/m/Y', strtotime($new_due_date)) . "!";
+                $message_type = "success";
+            }
+        } catch (Exception $e) {
+            $message = "Gagal memperpanjang peminjaman: " . $e->getMessage();
+            $message_type = "error";
+        }
+    }
+}
+
 // Identifikasi Target Siswa jika Orang Tua
 $linked_child_id = null;
 if ($user_role === 'orang_tua') {
@@ -254,6 +298,9 @@ include __DIR__ . "/../includes/header.php";
 
 <div class="space-y-6">
 
+    <!-- Sub Navigasi Modul Perpustakaan -->
+    <?php include __DIR__ . "/_nav.php"; ?>
+
     <!-- Header Section -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -266,15 +313,21 @@ include __DIR__ . "/../includes/header.php";
             </p>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-2.5">
+            <?php if ($is_librarian): ?>
+                <a href="scan.php" 
+                   class="rounded-xl border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 px-3.5 py-2 text-xs sm:text-sm font-semibold text-teal-300 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-barcode"></i> Scan Cepat
+                </a>
+            <?php endif; ?>
             <a href="books.php" 
                class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-200 transition flex items-center gap-1.5">
-                <i class="fa-solid fa-book-bookmark"></i> Buka Katalog Buku
+                <i class="fa-solid fa-book-bookmark"></i> Katalog Buku
             </a>
             <?php if ($is_librarian): ?>
                 <button onclick="openLoanModal()" 
                         class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition flex items-center gap-1.5 cursor-pointer">
-                    <i class="fa-solid fa-plus"></i> Catat Peminjaman Baru
+                    <i class="fa-solid fa-plus"></i> Catat Pinjam
                 </button>
             <?php endif; ?>
         </div>
@@ -366,15 +419,13 @@ include __DIR__ . "/../includes/header.php";
                         <th class="px-4 py-3.5">Tgl Pinjam</th>
                         <th class="px-4 py-3.5">Jatuh Tempo</th>
                         <th class="px-4 py-3.5">Status & Denda</th>
-                        <?php if ($is_librarian): ?>
-                            <th class="px-4 py-3.5 text-right">Aksi Petugas</th>
-                        <?php endif; ?>
+                        <th class="px-4 py-3.5 text-right">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-white/5 text-slate-200">
                     <?php if (empty($loans)): ?>
                         <tr>
-                            <td colspan="<?= $is_librarian ? 6 : 5 ?>" class="px-6 py-12 text-center text-slate-400">
+                            <td colspan="6" class="px-6 py-12 text-center text-slate-400">
                                 <i class="fa-solid fa-book-open-reader text-slate-500 text-3xl block mb-2"></i>
                                 Tidak ada data sirkulasi peminjaman yang ditemukan.
                             </td>
@@ -451,10 +502,28 @@ include __DIR__ . "/../includes/header.php";
                                     </div>
                                 </td>
 
-                                <?php if ($is_librarian): ?>
-                                    <td class="px-4 py-3.5 whitespace-nowrap text-right">
-                                        <?php if ($is_active): ?>
-                                            <div class="inline-flex items-center gap-1.5">
+                                <td class="px-4 py-3.5 whitespace-nowrap text-right">
+                                    <?php if ($is_active): ?>
+                                        <div class="inline-flex items-center gap-1.5">
+                                            <!-- Tombol Perpanjangan Mandiri / Staf (Maksimal 1x perpanjang dan belum telat) -->
+                                            <?php if (!$is_late && (int)($l['renewal_count'] ?? 0) < 1): ?>
+                                                <form method="POST" class="inline" onsubmit="return confirm('Perpanjang masa peminjaman buku ini 7 hari? (Perpanjangan hanya dapat dilakukan 1 kali)');">
+                                                    <?= csrfField() ?>
+                                                    <input type="hidden" name="action" value="renew_loan">
+                                                    <input type="hidden" name="loan_id" value="<?= $l['id'] ?>">
+                                                    <button type="submit" 
+                                                            class="rounded-lg border border-teal-500/30 bg-teal-500/10 hover:bg-teal-500/20 px-2.5 py-1 text-xs font-semibold text-teal-300 transition cursor-pointer inline-flex items-center gap-1"
+                                                            title="Perpanjang 7 Hari">
+                                                        <i class="fa-solid fa-clock-rotate-left"></i> Perpanjang
+                                                    </button>
+                                                </form>
+                                            <?php elseif ((int)($l['renewal_count'] ?? 0) >= 1): ?>
+                                                <span class="rounded px-2 py-0.5 text-[10px] font-semibold bg-slate-800 text-slate-400 border border-white/5" title="Buku sudah pernah diperpanjang 1 kali">
+                                                    1x Diperpanjang
+                                                </span>
+                                            <?php endif; ?>
+
+                                            <?php if ($is_librarian): ?>
                                                 <!-- Tombol Proses Pengembalian -->
                                                 <form method="POST" class="inline" onsubmit="return confirm('Konfirmasi pengembalian buku ini? Stok akan otomatis bertambah.');">
                                                     <?= csrfField() ?>
@@ -478,12 +547,12 @@ include __DIR__ . "/../includes/header.php";
                                                         Hilang
                                                     </button>
                                                 </form>
-                                            </div>
-                                        <?php else: ?>
-                                            <span class="text-xs text-slate-500 inline-flex items-center gap-1">Selesai <i class="fa-solid fa-check text-emerald-400"></i></span>
-                                        <?php endif; ?>
-                                    </td>
-                                <?php endif; ?>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <span class="text-xs text-slate-500 inline-flex items-center gap-1">Selesai <i class="fa-solid fa-check text-emerald-400"></i></span>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>

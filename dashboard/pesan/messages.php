@@ -45,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // 2. QUERY KONTAK & PERCAKAPAN
 // -------------------------------------------------------------
 // Dapatkan semua user yang pernah berkirim pesan dengan user saat ini
+$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, true);
 $stmt_contacts = $pdo->prepare("
     SELECT DISTINCT 
         CASE WHEN m.sender_id = :uid THEN m.receiver_id ELSE m.sender_id END as contact_id,
@@ -68,6 +69,7 @@ $stmt_contacts = $pdo->prepare("
 ");
 $stmt_contacts->execute([':uid' => $user_id]);
 $conversations = $stmt_contacts->fetchAll();
+$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
 
 // Tentukan kontak aktif yang sedang dibuka
 $active_contact_id = isset($_GET['contact_id']) ? (int)$_GET['contact_id'] : ($conversations[0]['contact_id'] ?? null);

@@ -9,6 +9,9 @@ if (isset($_SESSION['user_id'])) {
 
 require_once __DIR__ . "/../config/database.php";
 
+$school_info = getSchoolSettings($pdo);
+$school_name = $school_info['school_name'] ?? 'Manajemen-PHP';
+
 $message = "";
 $message_type = "";
 
@@ -109,11 +112,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         <div class="mb-8 text-center">
 
             <a href="../index.php"
-               class="text-2xl font-bold inline-flex items-center gap-2">
-                <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white text-sm shadow-md shadow-blue-500/30">
-                    <i class="fa-solid fa-bolt"></i>
+               class="text-2xl font-bold inline-flex items-center gap-2.5 group">
+                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-500 text-white shadow-lg shadow-blue-500/25 group-hover:scale-105 transition">
+                    <i class="fa-solid fa-graduation-cap text-base"></i>
                 </span>
-                <span>Manajemen<span class="text-blue-500">-php</span></span>
+                <span class="text-white group-hover:text-blue-400 transition"><?= htmlspecialchars($school_name) ?></span>
             </a>
 
             <h1 class="mt-6 text-3xl font-bold">
@@ -205,15 +208,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             </div>
 
-            <p class="text-center text-sm text-slate-400">
-
-                Belum punya akun?
-
-                <a href="register.php"
-                   class="font-semibold text-blue-400 hover:text-blue-300">
-                    Daftar sekarang
+            <p class="text-center text-xs sm:text-sm text-slate-400">
+                Calon peserta didik baru?
+                <a href="../ppdb/ppdb.php" class="font-semibold text-emerald-400 hover:text-emerald-300 transition underline underline-offset-2">
+                    Daftar via PPDB Online
                 </a>
-
             </p>
 
             <!-- BUG-21 fix: Kredensial demo dihapus dari halaman publik untuk keamanan -->

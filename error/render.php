@@ -205,6 +205,8 @@ function renderErrorPage(int $statusCode, ?string $customTitle = null, ?string $
                 <span>•</span>
                 <a href="<?= $toRoot ?>dashboard/index.php" class="hover:text-slate-300 transition">Dashboard</a>
                 <span>•</span>
+                <a href="<?= $toRoot ?>kontak.php" class="hover:text-slate-300 transition">Kontak Bantuan</a>
+                <span>•</span>
                 <span class="text-slate-600">ID Sesi: <?= substr(session_id() ?: 'guest', 0, 8) ?></span>
             </div>
         </div>

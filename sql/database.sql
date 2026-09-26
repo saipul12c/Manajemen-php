@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS `users` (
     `email` VARCHAR(100) NOT NULL UNIQUE,
     `password` VARCHAR(255) NOT NULL,
     `role` ENUM('administrator', 'staf', 'guru', 'orang_tua', 'siswa') NOT NULL DEFAULT 'siswa',
+    `class_id` INT DEFAULT NULL,
+    `nisn` VARCHAR(20) DEFAULT NULL,
+    `gender` ENUM('L', 'P') DEFAULT NULL,
     `phone` VARCHAR(20) DEFAULT NULL,
     `address` TEXT DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -546,6 +549,16 @@ CREATE TABLE IF NOT EXISTS `ppdb_registrations` (
     `address` TEXT NOT NULL,
     `previous_school` VARCHAR(150) NOT NULL,
     `chosen_major` VARCHAR(100) NOT NULL DEFAULT 'Umum',
+    `track_type` ENUM('reguler', 'zonasi', 'prestasi', 'afirmasi') NOT NULL DEFAULT 'reguler',
+    `distance_km` DECIMAL(6,2) DEFAULT NULL,
+    `achievement_desc` VARCHAR(255) DEFAULT NULL,
+    `achievement_level` ENUM('sekolah', 'kecamatan', 'kabupaten', 'provinsi', 'nasional', 'internasional') DEFAULT NULL,
+    `affirmation_no` VARCHAR(50) DEFAULT NULL,
+    `score_math` DECIMAL(5,2) DEFAULT NULL,
+    `score_science` DECIMAL(5,2) DEFAULT NULL,
+    `score_indonesian` DECIMAL(5,2) DEFAULT NULL,
+    `score_english` DECIMAL(5,2) DEFAULT NULL,
+    `calculated_score` DECIMAL(5,2) DEFAULT NULL,
     `parent_name` VARCHAR(150) NOT NULL,
     `parent_phone` VARCHAR(30) NOT NULL,
     `parent_job` VARCHAR(100) DEFAULT NULL,
@@ -553,20 +566,23 @@ CREATE TABLE IF NOT EXISTS `ppdb_registrations` (
     `birth_cert_doc` VARCHAR(255) DEFAULT NULL,
     `family_card_doc` VARCHAR(255) DEFAULT NULL,
     `photo_doc` VARCHAR(255) DEFAULT NULL,
+    `document_status` ENUM('lengkap', 'perlu_revisi', 'ditolak') NOT NULL DEFAULT 'lengkap',
+    `rejection_reason` TEXT DEFAULT NULL,
     `status` ENUM('menunggu_verifikasi', 'diverifikasi', 'lulus_seleksi', 'tidak_lulus', 'diterima') NOT NULL DEFAULT 'menunggu_verifikasi',
     `selection_score` DECIMAL(5,2) DEFAULT NULL,
     `notes` TEXT DEFAULT NULL,
     `user_id` INT DEFAULT NULL,
+    `qr_token` VARCHAR(64) DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `ppdb_registrations` 
-(`registration_no`, `full_name`, `nisn`, `nik`, `gender`, `birth_place`, `birth_date`, `religion`, `phone`, `email`, `address`, `previous_school`, `chosen_major`, `parent_name`, `parent_phone`, `parent_job`, `status`, `selection_score`, `notes`, `created_at`) 
+(`registration_no`, `full_name`, `nisn`, `nik`, `gender`, `birth_place`, `birth_date`, `religion`, `phone`, `email`, `address`, `previous_school`, `chosen_major`, `track_type`, `distance_km`, `achievement_desc`, `achievement_level`, `affirmation_no`, `score_math`, `score_science`, `score_indonesian`, `score_english`, `calculated_score`, `parent_name`, `parent_phone`, `parent_job`, `document_status`, `rejection_reason`, `status`, `selection_score`, `notes`, `qr_token`, `created_at`) 
 VALUES
-('PPDB-2026-0001', 'Rian Pratama', '0081234567', '3201011203080001', 'L', 'Jakarta', '2009-04-12', 'Islam', '081234567890', 'rian.pratama@gmail.com', 'Jl. Kenanga No. 15, Jakarta Selatan', 'SMP Negeri 1 Jakarta', 'MIPA (Matematika & IPA)', 'Budi Santoso', '081298765432', 'Wiraswasta', 'lulus_seleksi', 88.50, 'Nilai rapor semester 1-5 sangat memuaskan.', DATE_SUB(NOW(), INTERVAL 5 DAY)),
-('PPDB-2026-0002', 'Siti Nur Aisyah', '0087654321', '3201015607080002', 'P', 'Bandung', '2009-07-25', 'Islam', '081345678901', 'siti.aisyah@gmail.com', 'Jl. Melati No. 8, Bandung', 'SMP IT Al-Falah', 'IPS (Ilmu Pengetahuan Sosial)', 'Ahmad Hidayat', '081387654321', 'PNS', 'menunggu_verifikasi', NULL, 'Menunggu verifikasi kartu keluarga.', DATE_SUB(NOW(), INTERVAL 2 DAY)),
-('PPDB-2026-0003', 'Bayu Anggara', '0089988776', '3201012309080003', 'L', 'Bogor', '2009-09-18', 'Islam', '081456789012', 'bayu.anggara@gmail.com', 'Jl. Flamboyan No. 22, Bogor', 'SMP Budi Mulia', 'Bahasa & Budaya', 'Hendra Gunawan', '081476543210', 'Karyawan Swasta', 'diverifikasi', 82.00, 'Berkas lengkap, dijadwalkan tes wawancara.', DATE_SUB(NOW(), INTERVAL 1 DAY))
+('PPDB-2026-0001', 'Rian Pratama', '0081234567', '3201011203080001', 'L', 'Jakarta', '2009-04-12', 'Islam', '081234567890', 'rian.pratama@gmail.com', 'Jl. Kenanga No. 15, Jakarta Selatan', 'SMP Negeri 1 Jakarta', 'MIPA (Matematika & IPA)', 'prestasi', 3.50, 'Juara 2 OSN Matematika Kota', 'kabupaten', NULL, 88.00, 90.00, 85.00, 86.00, 88.50, 'Budi Santoso', '081298765432', 'Wiraswasta', 'lengkap', NULL, 'lulus_seleksi', 88.50, 'Nilai rapor semester 1-5 sangat memuaskan.', 'a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0', DATE_SUB(NOW(), INTERVAL 5 DAY)),
+('PPDB-2026-0002', 'Siti Nur Aisyah', '0087654321', '3201015607080002', 'P', 'Bandung', '2009-07-25', 'Islam', '081345678901', 'siti.aisyah@gmail.com', 'Jl. Melati No. 8, Bandung', 'SMP IT Al-Falah', 'IPS (Ilmu Pengetahuan Sosial)', 'zonasi', 0.80, NULL, NULL, NULL, 80.00, 78.00, 85.00, 82.00, 88.25, 'Ahmad Hidayat', '081387654321', 'PNS', 'perlu_revisi', 'Kartu Keluarga kurang jelas / buram. Mohon unggah ulang.', 'menunggu_verifikasi', NULL, 'Menunggu verifikasi kartu keluarga.', 'b2c3d4e5f6a17890123456789abcdef0123456789abcdef0123456789abcdef0', DATE_SUB(NOW(), INTERVAL 2 DAY)),
+('PPDB-2026-0003', 'Bayu Anggara', '0089988776', '3201012309080003', 'L', 'Bogor', '2009-09-18', 'Islam', '081456789012', 'bayu.anggara@gmail.com', 'Jl. Flamboyan No. 22, Bogor', 'SMP Budi Mulia', 'Bahasa & Budaya', 'reguler', 5.20, NULL, NULL, NULL, 82.00, 80.00, 84.00, 82.00, 82.00, 'Hendra Gunawan', '081476543210', 'Karyawan Swasta', 'lengkap', NULL, 'diverifikasi', 82.00, 'Berkas lengkap, dijadwalkan tes wawancara.', 'c3d4e5f6a1b27890123456789abcdef0123456789abcdef0123456789abcdef0', DATE_SUB(NOW(), INTERVAL 1 DAY))
 ON DUPLICATE KEY UPDATE `full_name`=VALUES(`full_name`);
 
 -- =========================================================
@@ -612,6 +628,7 @@ CREATE TABLE IF NOT EXISTS `library_loans` (
     `return_date` DATE DEFAULT NULL,
     `fine_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     `status` ENUM('dipinjam', 'kembali', 'hilang') NOT NULL DEFAULT 'dipinjam',
+    `renewal_count` TINYINT NOT NULL DEFAULT 0,
     `notes` TEXT DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -622,6 +639,33 @@ VALUES
 (1, 5, DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 2 DAY), NULL, 0.00, 'dipinjam', 'Peminjaman untuk tugas kelompok Fisika.'),
 (3, 5, DATE_SUB(CURRENT_DATE(), INTERVAL 20 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 13 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 12 DAY), 0.00, 'kembali', 'Dikembalikan tepat waktu dalam kondisi baik.')
 ON DUPLICATE KEY UPDATE `status`=VALUES(`status`);
+
+-- =========================================================
+-- 19b. Tabel Buku Tamu Perpustakaan (library_visitors)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `library_visitors` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `user_id` INT DEFAULT NULL,
+    `name` VARCHAR(150) NOT NULL,
+    `role` ENUM('siswa', 'guru', 'staf', 'umum') NOT NULL DEFAULT 'siswa',
+    `identifier` VARCHAR(50) DEFAULT NULL,
+    `class_name` VARCHAR(50) DEFAULT NULL,
+    `gender` ENUM('L', 'P') DEFAULT NULL,
+    `purpose` VARCHAR(150) NOT NULL DEFAULT 'Membaca / Belajar',
+    `visit_date` DATE NOT NULL,
+    `visit_time` TIME NOT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `library_visitors` 
+(`user_id`, `name`, `role`, `identifier`, `class_name`, `gender`, `purpose`, `visit_date`, `visit_time`, `notes`) 
+VALUES
+(5, 'Ahmad Fauzi', 'siswa', '0081234567', 'X MIPA 1', 'L', 'Membaca Buku / Majalah', CURRENT_DATE(), '08:30:00', 'Membaca buku referensi fisika.'),
+(NULL, 'Rian Pratama', 'siswa', '0081234567', 'X MIPA 1', 'L', 'Mengerjakan Tugas / Belajar Mandiri', CURRENT_DATE(), '09:15:00', 'Mengerjakan tugas matematika.'),
+(3, 'Siti Rahmawati, S.Pd', 'guru', '19850315 201001 2 018', 'Dewan Guru', 'P', 'Peminjaman / Pengembalian Buku', CURRENT_DATE(), '10:00:00', 'Meminjam buku materi ajar biologi.'),
+(NULL, 'Budi Santoso', 'umum', 'Wali Murid', 'Umum', 'L', 'Konsultasi / Kunjungan Perpustakaan', CURRENT_DATE(), '10:45:00', 'Melihat fasilitas koleksi buku sekolah.')
+ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
 
 -- =========================================================
 -- 20. Tabel Konfirmasi Baca Pengumuman (announcement_reads)
@@ -656,6 +700,64 @@ CREATE TABLE IF NOT EXISTS `student_report_notes` (
 INSERT INTO `student_report_notes` (`student_id`, `academic_year`, `semester`, `homeroom_notes`, `extracurricular`, `created_by`) VALUES
 (5, '2026/2027', 'Ganjil', 'Ahmad menunjukkan ketekunan belajar yang sangat baik, terutama pada bidang sains dan matematika. Tingkatkan rasa percaya diri saat presentasi di depan kelas.', 'Pramuka (A - Sangat Aktif), Kelompok Ilmiah Remaja/KIR (A - Ketua Tim Penelitian)', 3)
 ON DUPLICATE KEY UPDATE `homeroom_notes`=VALUES(`homeroom_notes`);
+
+-- =========================================================
+-- 22. Tabel PPDB (ppdb_registrations)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `ppdb_registrations` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `registration_no` VARCHAR(50) NOT NULL UNIQUE,
+    `full_name` VARCHAR(150) NOT NULL,
+    `nisn` VARCHAR(20) NOT NULL,
+    `nik` VARCHAR(30) DEFAULT NULL,
+    `gender` ENUM('L', 'P') NOT NULL,
+    `birth_place` VARCHAR(100) NOT NULL,
+    `birth_date` DATE NOT NULL,
+    `religion` VARCHAR(50) DEFAULT 'Islam',
+    `phone` VARCHAR(30) NOT NULL,
+    `email` VARCHAR(100) NOT NULL,
+    `address` TEXT NOT NULL,
+    `previous_school` VARCHAR(150) NOT NULL,
+    `chosen_major` VARCHAR(100) NOT NULL DEFAULT 'Umum',
+    `track_type` ENUM('reguler', 'zonasi', 'prestasi', 'afirmasi') NOT NULL DEFAULT 'reguler',
+    `distance_km` DECIMAL(6,2) DEFAULT NULL,
+    `achievement_desc` VARCHAR(255) DEFAULT NULL,
+    `achievement_level` ENUM('sekolah', 'kecamatan', 'kabupaten', 'provinsi', 'nasional', 'internasional') DEFAULT NULL,
+    `affirmation_no` VARCHAR(50) DEFAULT NULL,
+    `score_math` DECIMAL(5,2) DEFAULT NULL,
+    `score_science` DECIMAL(5,2) DEFAULT NULL,
+    `score_indonesian` DECIMAL(5,2) DEFAULT NULL,
+    `score_english` DECIMAL(5,2) DEFAULT NULL,
+    `calculated_score` DECIMAL(5,2) DEFAULT NULL,
+    `parent_name` VARCHAR(150) NOT NULL,
+    `parent_phone` VARCHAR(30) NOT NULL,
+    `parent_job` VARCHAR(100) DEFAULT NULL,
+    `report_card_doc` VARCHAR(255) DEFAULT NULL,
+    `birth_cert_doc` VARCHAR(255) DEFAULT NULL,
+    `family_card_doc` VARCHAR(255) DEFAULT NULL,
+    `photo_doc` VARCHAR(255) DEFAULT NULL,
+    `document_status` ENUM('lengkap', 'perlu_revisi', 'ditolak') NOT NULL DEFAULT 'lengkap',
+    `rejection_reason` TEXT DEFAULT NULL,
+    `status` ENUM('menunggu_verifikasi', 'diverifikasi', 'lulus_seleksi', 'tidak_lulus', 'diterima') NOT NULL DEFAULT 'menunggu_verifikasi',
+    `selection_score` DECIMAL(5,2) DEFAULT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `user_id` INT DEFAULT NULL,
+    `qr_token` VARCHAR(64) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_ppdb_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `ppdb_registrations` (
+    `id`, `registration_no`, `full_name`, `nisn`, `nik`, `gender`, `birth_place`, `birth_date`, `religion`, `phone`, `email`, `address`,
+    `previous_school`, `chosen_major`, `track_type`, `distance_km`, `achievement_desc`, `achievement_level`, `affirmation_no`,
+    `score_math`, `score_science`, `score_indonesian`, `score_english`, `calculated_score`,
+    `parent_name`, `parent_phone`, `parent_job`,
+    `document_status`, `status`, `selection_score`, `notes`, `qr_token`
+) VALUES
+(1, 'PPDB-2026-0001', 'Farhan Ramadhan', '0081234567', '3201012304080001', 'L', 'Jakarta', '2008-04-12', 'Islam', '081298765432', 'farhan.ppdb@gmail.com', 'Jl. Kenanga No. 18, Kebayoran Baru, Jakarta Selatan', 'SMP Negeri 1 Jakarta', 'MIPA (Matematika & IPA)', 'prestasi', NULL, 'Juara 1 OSN Matematika Tingkat Kota', 'kabupaten', NULL, 92.00, 90.00, 88.00, 86.00, 94.00, 'Rahmat Hidayat', '081398765432', 'Wiraswasta', 'lengkap', 'diverifikasi', 94.00, 'Berkas lengkap dan prestasi terverifikasi sertifikat asli.', 'f4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5'),
+(2, 'PPDB-2026-0002', 'Siti Nurhaliza', '0089876543', '3201015609080002', 'P', 'Bandung', '2008-09-25', 'Islam', '085712349876', 'siti.ppdb@gmail.com', 'Jl. Anggrek No. 04, Cilandak, Jakarta Selatan', 'SMP Negeri 5 Jakarta', 'IPS (Ilmu Pengetahuan Sosial)', 'zonasi', 1.80, NULL, NULL, NULL, 85.00, 84.00, 90.00, 87.00, 93.50, 'Bambang Supriyanto', '085812349876', 'PNS', 'lengkap', 'menunggu_verifikasi', 93.50, 'Jarak domisili terverifikasi melalui titik peta KK.', 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2')
+ON DUPLICATE KEY UPDATE `full_name`=VALUES(`full_name`);
 
 
 

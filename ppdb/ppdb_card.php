@@ -1,7 +1,7 @@
 <?php
 /**
  * Bukti Cetak Kartu Pendaftaran PPDB 2026/2027
- * Kartu resmi tanda bukti pendaftaran calon peserta didik baru dilengkapi barcode & jadwal seleksi.
+ * Kartu resmi tanda bukti pendaftaran calon peserta didik baru dilengkapi barcode & QR Code validasi digital.
  */
 declare(strict_types=1);
 
@@ -9,7 +9,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-require_once __DIR__ . '/config/database.php';
+require_once dirname(__DIR__) . '/config/database.php';
 
 $reg_no = trim($_GET['reg'] ?? '');
 if (empty($reg_no)) {
@@ -24,8 +24,21 @@ if (!$student) {
     die("Data pendaftaran dengan nomor {$reg_no} tidak ditemukan.");
 }
 
-// Generate simple barcode visual representation
-$barcode_hash = crc32($student['registration_no']);
+// Generate QR token jika belum ada
+if (empty($student['qr_token'])) {
+    $student['qr_token'] = generatePpdbQrToken($student['registration_no']);
+    $stmt_up = $pdo->prepare("UPDATE ppdb_registrations SET qr_token = ? WHERE id = ?");
+    $stmt_up->execute([$student['qr_token'], $student['id']]);
+}
+
+$school_info = getSchoolSettings($pdo);
+
+// URL verifikasi resmi
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$proto = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+$dir_path = dirname($_SERVER['PHP_SELF'] ?? '/');
+$verify_url = "{$proto}://{$host}" . rtrim($dir_path, '/\\') . "/ppdb_verify.php?token=" . urlencode($student['qr_token']);
+$qr_image_url = "https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin=6&data=" . urlencode($verify_url);
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -40,11 +53,11 @@ $barcode_hash = crc32($student['registration_no']);
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Libre+Barcode+39&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
-        .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 48px; letter-spacing: 2px; }
+        .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; letter-spacing: 2px; }
         @media print {
             .no-print { display: none !important; }
             body { background: white !important; color: black !important; padding: 0 !important; }
-            .print-card { box-shadow: none !important; border: 1px solid #111 !important; border-radius: 0 !important; }
+            .print-card { box-shadow: none !important; border: 1px solid #333 !important; border-radius: 0 !important; width: 100% !important; max-width: 100% !important; }
         }
     </style>
 </head>
@@ -52,12 +65,16 @@ $barcode_hash = crc32($student['registration_no']);
 
     <!-- Action Toolbar (Hidden during print) -->
     <div class="no-print mb-6 flex flex-wrap items-center justify-between gap-4 w-full max-w-3xl">
-        <a href="ppdb.php?tab=cek&search=<?= urlencode($student['registration_no']) ?>" 
+        <a href="ppdb.php?tab=cek&search=<?= urlencode($student['registration_no']) ?>&birth_date=<?= urlencode($student['birth_date']) ?>" 
            class="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 transition">
             <i class="fa-solid fa-arrow-left"></i> Kembali ke Portal PPDB
         </a>
 
         <div class="flex items-center gap-3">
+            <a href="<?= htmlspecialchars($verify_url) ?>" target="_blank"
+               class="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 transition">
+                <i class="fa-solid fa-shield-halved text-emerald-400"></i> Cek Verifikasi Digital
+            </a>
             <button onclick="window.print()" 
                     class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-600/30 transition cursor-pointer">
                 <i class="fa-solid fa-print"></i> Cetak Kartu (Print)
@@ -71,13 +88,17 @@ $barcode_hash = crc32($student['registration_no']);
         <!-- KOP Surat Resmi -->
         <div class="flex items-center justify-between border-b-2 border-slate-900 pb-5 mb-6">
             <div class="flex items-center gap-4">
-                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-white font-black text-2xl shadow-md">
+                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-700 text-white font-black text-2xl shadow-md">
                     <i class="fa-solid fa-graduation-cap"></i>
                 </div>
                 <div>
                     <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">PANITIA PENERIMAAN PESERTA DIDIK BARU (PPDB)</h2>
-                    <h3 class="text-base font-bold text-emerald-700">SMA / SMK TERPADU INDONESIA</h3>
-                    <p class="text-xs text-slate-500 mt-0.5">Jl. Pendidikan No. 45, Kompleks Akademik Modern | Telp: (021) 7890-1234 | Email: ppdb@sekolah.sch.id</p>
+                    <h3 class="text-base font-bold text-emerald-700 uppercase"><?= htmlspecialchars($school_info['school_name'] ?? 'SMA / SMK TERPADU INDONESIA') ?></h3>
+                    <p class="text-xs text-slate-500 mt-0.5">
+                        <?= htmlspecialchars($school_info['school_address'] ?? 'Jl. Pendidikan No. 45') ?> | 
+                        Telp: <?= htmlspecialchars($school_info['school_phone'] ?? '(021) 7890-1234') ?> | 
+                        Email: <?= htmlspecialchars($school_info['school_email'] ?? 'ppdb@sekolah.sch.id') ?>
+                    </p>
                 </div>
             </div>
             <div class="text-right hidden sm:block">
@@ -90,24 +111,33 @@ $barcode_hash = crc32($student['registration_no']);
         <!-- Judul Dokumen -->
         <div class="text-center mb-6">
             <h1 class="text-lg font-black text-slate-900 uppercase tracking-wider underline">KARTU TANDA BUKTI PENDAFTARAN</h1>
-            <p class="text-xs text-slate-600 mt-1">Harap kartu ini dicetak dan dibawa saat verifikasi fisik dan tes wawancara.</p>
+            <p class="text-xs text-slate-600 mt-1">Harap kartu ini dicetak dan dibawa saat verifikasi berkas fisik serta tes wawancara.</p>
         </div>
 
-        <!-- Header No Registrasi & Barcode -->
+        <!-- Header No Registrasi & QR Code Digital -->
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl bg-slate-50 p-5 border border-slate-200 mb-6">
             <div>
                 <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nomor Pendaftaran Resmi:</span>
                 <span class="text-2xl font-black text-slate-900 font-mono"><?= htmlspecialchars($student['registration_no']) ?></span>
-                <span class="block text-xs text-slate-500 mt-1">Tanggal Daftar: <?= date('d F Y', strtotime($student['created_at'])) ?></span>
-            </div>
-            <div class="text-center">
-                <!-- Barcode Simulation -->
-                <div class="barcode text-slate-800 select-none">
-                    *<?= htmlspecialchars(str_replace('-', '', $student['registration_no'])) ?>*
+                <div class="flex items-center gap-2 mt-1.5">
+                    <span class="inline-block rounded bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 text-[11px]">
+                        Jalur <?= htmlspecialchars(getPpdbTrackLabel($student['track_type'] ?? 'reguler')) ?>
+                    </span>
+                    <span class="text-xs text-slate-500">Tanggal Daftar: <?= date('d F Y', strtotime($student['created_at'])) ?></span>
                 </div>
-                <span class="font-mono text-[11px] text-slate-500 tracking-widest block -mt-2">
-                    <?= htmlspecialchars($student['registration_no']) ?>
-                </span>
+            </div>
+
+            <!-- QR Code Validasi Digital -->
+            <div class="flex items-center gap-3">
+                <div class="text-right hidden sm:block text-[11px] text-slate-500">
+                    <span class="font-bold text-slate-700 block">Scan Validasi:</span>
+                    <span>Pindai untuk cek</span>
+                    <span class="block">keaslian berkas</span>
+                </div>
+                <div class="p-1.5 rounded-xl border border-slate-300 bg-white shadow-sm flex flex-col items-center">
+                    <img src="<?= htmlspecialchars($qr_image_url) ?>" alt="QR Code Verifikasi" class="w-24 h-24 object-contain">
+                    <span class="text-[9px] font-mono text-slate-400 mt-0.5">VALIDATED</span>
+                </div>
             </div>
         </div>
 
@@ -115,16 +145,16 @@ $barcode_hash = crc32($student['registration_no']);
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
             <!-- Foto 3x4 Calon Siswa -->
             <div class="md:col-span-1 flex flex-col items-center">
-                <div class="w-32 h-44 rounded-xl border-2 border-dashed border-slate-300 bg-slate-100 flex flex-col items-center justify-center p-2 overflow-hidden shadow-inner">
-                    <?php if (!empty($student['photo_doc']) && file_exists(__DIR__ . '/' . $student['photo_doc'])): ?>
-                        <img src="<?= htmlspecialchars($student['photo_doc']) ?>" alt="Pas Foto" class="w-full h-full object-cover rounded-lg">
+                <div class="w-32 h-44 rounded-xl border-2 border-dashed border-slate-300 bg-slate-100 flex flex-col items-center justify-center p-1.5 overflow-hidden shadow-inner">
+                    <?php if (!empty($student['photo_doc']) && file_exists(dirname(__DIR__) . '/' . $student['photo_doc'])): ?>
+                        <img src="../<?= htmlspecialchars($student['photo_doc']) ?>" alt="Pas Foto" class="w-full h-full object-cover rounded-lg">
                     <?php else: ?>
                         <span class="text-3xl text-slate-400"><i class="fa-solid fa-user"></i></span>
                         <span class="text-[10px] text-slate-400 font-medium text-center mt-2 leading-tight">Pas Foto 3x4 Calon Siswa</span>
                     <?php endif; ?>
                 </div>
                 <span class="text-[11px] font-bold text-slate-600 mt-2">
-                    <?= $student['gender'] === 'L' ? 'Laki-Laki' : 'Perempuan' ?>
+                    <?= $student['gender'] === 'L' ? 'Laki-Laki (L)' : 'Perempuan (P)' ?>
                 </span>
             </div>
 
@@ -137,12 +167,8 @@ $barcode_hash = crc32($student['registration_no']);
                             <td class="py-1.5 font-bold text-slate-900">: <?= htmlspecialchars($student['full_name']) ?></td>
                         </tr>
                         <tr>
-                            <td class="py-1.5 font-semibold text-slate-500">NISN</td>
-                            <td class="py-1.5 font-mono font-bold text-slate-900">: <?= htmlspecialchars($student['nisn']) ?></td>
-                        </tr>
-                        <tr>
-                            <td class="py-1.5 font-semibold text-slate-500">NIK</td>
-                            <td class="py-1.5 font-mono text-slate-800">: <?= htmlspecialchars($student['nik'] ?: '-') ?></td>
+                            <td class="py-1.5 font-semibold text-slate-500">NISN / NIK</td>
+                            <td class="py-1.5 font-mono font-bold text-slate-900">: <?= htmlspecialchars($student['nisn']) ?> / <?= htmlspecialchars($student['nik'] ?: '-') ?></td>
                         </tr>
                         <tr>
                             <td class="py-1.5 font-semibold text-slate-500">Tempat, Tgl Lahir</td>
@@ -159,6 +185,17 @@ $barcode_hash = crc32($student['registration_no']);
                         <tr>
                             <td class="py-1.5 font-semibold text-slate-500">Pilihan Peminatan</td>
                             <td class="py-1.5 font-bold text-emerald-700">: <?= htmlspecialchars($student['chosen_major']) ?></td>
+                        </tr>
+                        <tr>
+                            <td class="py-1.5 font-semibold text-slate-500">Jalur Penerimaan</td>
+                            <td class="py-1.5 font-bold text-slate-800">
+                                : <?= htmlspecialchars(getPpdbTrackLabel($student['track_type'] ?? 'reguler')) ?>
+                                <?php if (($student['track_type'] ?? '') === 'zonasi' && $student['distance_km']): ?>
+                                    (Radius: <?= htmlspecialchars((string)$student['distance_km']) ?> KM)
+                                <?php elseif (($student['track_type'] ?? '') === 'prestasi' && $student['achievement_desc']): ?>
+                                    (<?= htmlspecialchars($student['achievement_desc']) ?>)
+                                <?php endif; ?>
+                            </td>
                         </tr>
                         <tr>
                             <td class="py-1.5 font-semibold text-slate-500">Nama Orang Tua/Wali</td>
@@ -197,8 +234,8 @@ $barcode_hash = crc32($student['registration_no']);
             </div>
             <div>
                 <p class="text-slate-500 mb-16">Panitia PPDB 2026/2027,</p>
-                <p class="font-bold text-slate-900 underline">Drs. H. Mulyadi, M.Pd.</p>
-                <p class="text-[10px] text-slate-400">Ketua Tim Seleksi Penerimaan</p>
+                <p class="font-bold text-slate-900 underline"><?= htmlspecialchars($school_info['headmaster_name'] ?? 'Dr. H. Bambang Sudirman, M.Pd') ?></p>
+                <p class="text-[10px] text-slate-400">NIP. <?= htmlspecialchars($school_info['headmaster_nip'] ?? '19750812 199903 1 002') ?></p>
             </div>
         </div>
 

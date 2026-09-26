@@ -14,7 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } else {
         $fields = [
             'school_name', 'school_address', 'school_phone', 'school_email',
-            'school_website', 'headmaster_name', 'headmaster_nip', 'academic_year', 'school_logo'
+            'school_website', 'headmaster_name', 'headmaster_nip', 'academic_year', 'school_logo',
+            'ppdb_status', 'ppdb_wave_name', 'ppdb_quota', 'ppdb_start_date', 'ppdb_end_date', 'ppdb_closed_message'
         ];
 
         foreach ($fields as $f) {
@@ -23,8 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        logActivity($pdo, 'UPDATE_SETTINGS', 'Memperbarui profil lembaga dan tahun ajaran aktif');
-        $message = "Pengaturan identitas sekolah dan semester aktif berhasil disimpan!";
+        logActivity($pdo, 'UPDATE_SETTINGS', 'Memperbarui profil lembaga, semester aktif, dan pengaturan PPDB Online');
+        $message = "Pengaturan identitas sekolah dan sistem PPDB Online berhasil disimpan!";
         $message_type = "success";
     }
 }
@@ -42,15 +43,20 @@ require_once __DIR__ . "/../includes/header.php";
                 <i class="fa-solid fa-gear"></i>
             </span>
             <div>
-                <h1 class="text-2xl font-bold text-white tracking-tight">Pengaturan Profil Lembaga & Semester</h1>
-                <p class="text-sm text-slate-400">Identitas sekolah ini otomatis digunakan pada kop surat resmi, kartu ujian, dan rapor</p>
+                <h1 class="text-2xl font-bold text-white tracking-tight">Pengaturan Profil Lembaga & PPDB</h1>
+                <p class="text-sm text-slate-400">Identitas sekolah, periode akademik, serta kontrol buka/tutup dan kuota pendaftaran siswa baru</p>
             </div>
         </div>
     </div>
 
-    <a href="audit_logs.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-2">
-        <i class="fa-solid fa-shield-halved text-blue-400"></i> Lihat Audit Log
-    </a>
+    <div class="flex items-center gap-3">
+        <a href="ppdb.php" class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-300 transition flex items-center gap-2">
+            <i class="fa-solid fa-graduation-cap"></i> Panel PPDB
+        </a>
+        <a href="audit_logs.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition flex items-center gap-2">
+            <i class="fa-solid fa-shield-halved text-blue-400"></i> Audit Log
+        </a>
+    </div>
 </div>
 
 <?php if ($message): ?>
@@ -128,6 +134,63 @@ require_once __DIR__ . "/../includes/header.php";
                 <label class="block text-xs font-semibold text-slate-300 mb-1.5">Tahun Ajaran & Semester Aktif *</label>
                 <input type="text" name="academic_year" required value="<?= htmlspecialchars($school_info['academic_year']) ?>" placeholder="Contoh: 2026/2027 Ganjil" 
                        class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+            </div>
+        </div>
+
+        <!-- 3. PENGATURAN PPDB ONLINE -->
+        <div class="pt-4">
+            <div class="flex items-center justify-between border-b border-white/10 pb-2 mb-4">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+                    <i class="fa-solid fa-graduation-cap"></i> 3. Kontrol Buka / Tutup & Kuota PPDB Online
+                </h3>
+                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold <?= ($school_info['ppdb_status'] ?? 'buka') === 'buka' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30' ?>">
+                    ● Status: <?= ($school_info['ppdb_status'] ?? 'buka') === 'buka' ? 'Pendaftaran DIBUKA' : 'Pendaftaran DITUTUP' ?>
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Status Pendaftaran PPDB *</label>
+                    <select name="ppdb_status" required
+                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none font-medium">
+                        <option value="buka" <?= ($school_info['ppdb_status'] ?? 'buka') === 'buka' ? 'selected' : '' ?>>🟢 Buka Pendaftaran</option>
+                        <option value="tutup" <?= ($school_info['ppdb_status'] ?? 'buka') === 'tutup' ? 'selected' : '' ?>>🔴 Tutup Pendaftaran</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Nama Gelombang Aktif *</label>
+                    <input type="text" name="ppdb_wave_name" required value="<?= htmlspecialchars($school_info['ppdb_wave_name'] ?? 'Gelombang 1') ?>" placeholder="Contoh: Gelombang 1"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Batas Kuota Pendaftar *</label>
+                    <input type="number" min="1" max="10000" name="ppdb_quota" required value="<?= htmlspecialchars((string)($school_info['ppdb_quota'] ?? 150)) ?>" placeholder="Contoh: 150"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none font-mono">
+                    <span class="text-[10px] text-slate-400 mt-1 block">Formulir otomatis terkunci saat kuota tercapai.</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Tanggal Buka Pendaftaran (Opsional)</label>
+                    <input type="date" name="ppdb_start_date" value="<?= htmlspecialchars($school_info['ppdb_start_date'] ?? '') ?>"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Tanggal Berakhir Pendaftaran (Opsional)</label>
+                    <input type="date" name="ppdb_end_date" value="<?= htmlspecialchars($school_info['ppdb_end_date'] ?? '') ?>"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Pesan Pengumuman Saat Pendaftaran Ditutup</label>
+                <textarea name="ppdb_closed_message" rows="2" 
+                          placeholder="Pesan yang akan ditampilkan kepada calon pendaftar jika pendaftaran sedang ditutup atau kuota penuh..."
+                          class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"><?= htmlspecialchars($school_info['ppdb_closed_message'] ?? 'Pendaftaran Peserta Didik Baru (PPDB) saat ini sedang ditutup atau batas kuota telah terpenuhi.') ?></textarea>
             </div>
         </div>
 

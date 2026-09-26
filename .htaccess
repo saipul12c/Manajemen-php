@@ -1,17 +1,41 @@
+# =========================================================
 # Konfigurasi Apache Server - Manajemen-PHP
+# =========================================================
 
-# Mencegah Directory Listing
-Options -Indexes
+# Mencegah Directory Listing & Konflik MultiViews
+Options -Indexes -MultiViews
 
-# Custom Error Pages
-ErrorDocument 400 /error/400.php
-ErrorDocument 401 /error/401.php
-ErrorDocument 403 /error/403.php
-ErrorDocument 404 /error/404.php
-ErrorDocument 500 /error/500.php
-ErrorDocument 503 /error/503.php
+# Custom Error Pages (Mengarahkan ke folder error aplikasi)
+ErrorDocument 400 /manajemen-php/error/400.php
+ErrorDocument 401 /manajemen-php/error/401.php
+ErrorDocument 403 /manajemen-php/error/403.php
+ErrorDocument 404 /manajemen-php/error/404.php
+ErrorDocument 500 /manajemen-php/error/500.php
+ErrorDocument 503 /manajemen-php/error/503.php
 
-# Keamanan Header Tambahan
+# =========================================================
+# Modul URL Rewrite (Clean URLs & Keamanan)
+# =========================================================
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Mencegah akses langsung ke folder atau file sistem sensitif
+    RewriteRule ^(config|sql)/ - [F,L]
+    RewriteRule \.(sql|log|ini|md)$ - [F,L]
+
+    # Abaikan jika target adalah folder/direktori fisik yang valid
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Cek apakah file fisik berekstensi .php tersedia
+    RewriteCond %{REQUEST_FILENAME}\.php -f
+
+    # Teruskan request ke file .php dengan mempertahankan parameter GET (QSA)
+    RewriteRule ^(.*)$ $1.php [QSA,L]
+</IfModule>
+
+# =========================================================
+# Keamanan Header HTTP
+# =========================================================
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"

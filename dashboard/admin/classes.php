@@ -2,7 +2,7 @@
 session_start();
 require_once __DIR__ . "/../../config/database.php";
 
-requireRole(['administrator']);
+requireRole(['administrator', 'staf']);
 
 $user_id = (int) $_SESSION['user_id'];
 $message = "";

@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 session_start();
 require_once __DIR__ . "/../../config/database.php";
-require_once __DIR__ . "/../../config/csrf.php";
 
 requireLogin();
 
@@ -209,6 +208,9 @@ include __DIR__ . "/../includes/header.php";
 
 <div class="space-y-6">
 
+    <!-- Sub Navigasi Modul Perpustakaan -->
+    <?php include __DIR__ . "/_nav.php"; ?>
+
     <!-- Header Section -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -369,10 +371,10 @@ include __DIR__ . "/../includes/header.php";
                     <div class="mt-5 pt-4 border-t border-white/10 flex items-center justify-between gap-2">
                         <div class="flex items-center gap-1.5">
                             <?php if (!empty($b['ebook_file'])): ?>
-                                <a href="<?= htmlspecialchars($b['ebook_file']) ?>" target="_blank"
-                                   class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition flex items-center gap-1.5">
+                                <button type="button" onclick="openEbookReader(<?= htmlspecialchars(json_encode($b['title']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($b['ebook_file']), ENT_QUOTES) ?>)"
+                                   class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition flex items-center gap-1.5 cursor-pointer">
                                     <i class="fa-solid fa-book-open"></i> Baca E-Book
-                                </a>
+                                </button>
                             <?php endif; ?>
 
                             <a href="loans.php?book_id=<?= $b['id'] ?>" 
@@ -383,6 +385,11 @@ include __DIR__ . "/../includes/header.php";
 
                         <?php if ($is_librarian): ?>
                             <div class="flex items-center gap-1">
+                                <a href="print_labels.php?book_id=<?= $b['id'] ?>"
+                                   class="rounded-lg border border-white/10 bg-white/5 hover:bg-white/15 p-2 text-xs text-teal-400 transition"
+                                   title="Cetak Label & Barcode Buku">
+                                    <i class="fa-solid fa-tags"></i>
+                                </a>
                                 <button onclick="openEditModal(<?= htmlspecialchars(json_encode($b)) ?>)"
                                         class="rounded-lg border border-white/10 bg-white/5 hover:bg-white/15 p-2 text-xs text-slate-300 transition"
                                         title="Edit Buku">
@@ -426,41 +433,52 @@ include __DIR__ . "/../includes/header.php";
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Kode Buku / Barcode *</label>
-                    <input type="text" name="code" required placeholder="Contoh: BK-006"
+                    <input type="text" id="createCode" name="code" required placeholder="Contoh: BK-006"
                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold text-slate-300 mb-1">ISBN (Opsional)</label>
-                    <input type="text" name="isbn" placeholder="Contoh: 978-602-01-xxxx"
-                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-xs font-semibold text-slate-300">ISBN (Opsional)</label>
+                        <span id="isbnStatusCreate" class="text-[10px] text-teal-400 font-semibold hidden"></span>
+                    </div>
+                    <div class="flex gap-1.5">
+                        <input type="text" id="createIsbn" name="isbn" placeholder="Contoh: 9786020123451"
+                               class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
+                        <button type="button" onclick="autoFillIsbn('create')" id="btnFetchIsbnCreate"
+                                class="rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 px-3 py-2 text-xs font-bold text-indigo-300 transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                title="Ambil otomatis judul, penulis, penerbit, tahun, dan sinopsis dari Google Books API">
+                            <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+                            <span class="hidden sm:inline">Auto-Fill</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="sm:col-span-2">
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Judul Buku *</label>
-                    <input type="text" name="title" required placeholder="Judul lengkap buku..."
+                    <input type="text" id="createTitle" name="title" required placeholder="Judul lengkap buku..."
                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Penulis / Pengarang *</label>
-                    <input type="text" name="author" required placeholder="Nama penulis..."
+                    <input type="text" id="createAuthor" name="author" required placeholder="Nama penulis..."
                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Penerbit & Tahun</label>
                     <div class="grid grid-cols-2 gap-2">
-                        <input type="text" name="publisher" placeholder="Penerbit"
+                        <input type="text" id="createPublisher" name="publisher" placeholder="Penerbit"
                                class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white focus:border-teal-500 focus:outline-none transition">
-                        <input type="number" name="year" placeholder="Tahun" value="<?= date('Y') ?>"
+                        <input type="number" id="createYear" name="year" placeholder="Tahun" value="<?= date('Y') ?>"
                                class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white focus:border-teal-500 focus:outline-none transition">
                     </div>
                 </div>
 
                 <div>
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Kategori Buku *</label>
-                    <select name="category" required
+                    <select id="createCategory" name="category" required
                             class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
                         <option value="Sains & Teknologi">Sains & Teknologi</option>
                         <option value="Novel & Sastra">Novel & Sastra</option>
@@ -492,7 +510,7 @@ include __DIR__ . "/../includes/header.php";
 
                 <div class="sm:col-span-2">
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Deskripsi Singkat / Sinopsis</label>
-                    <textarea name="description" rows="2.5" placeholder="Rangkuman ringkas isi buku..."
+                    <textarea id="createDescription" name="description" rows="2.5" placeholder="Rangkuman ringkas isi buku..."
                               class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition"></textarea>
                 </div>
             </div>
@@ -532,9 +550,20 @@ include __DIR__ . "/../includes/header.php";
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold text-slate-300 mb-1">ISBN</label>
-                    <input type="text" name="isbn" id="editIsbn"
-                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-xs font-semibold text-slate-300">ISBN</label>
+                        <span id="isbnStatusEdit" class="text-[10px] text-teal-400 font-semibold hidden"></span>
+                    </div>
+                    <div class="flex gap-1.5">
+                        <input type="text" name="isbn" id="editIsbn"
+                               class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
+                        <button type="button" onclick="autoFillIsbn('edit')" id="btnFetchIsbnEdit"
+                                class="rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 px-3 py-2 text-xs font-bold text-indigo-300 transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                title="Auto-Fill dari Google Books">
+                            <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+                            <span class="hidden sm:inline">Auto-Fill</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="sm:col-span-2">
@@ -627,7 +656,185 @@ function openEditModal(data) {
 function closeEditModal() {
     document.getElementById('editModal').classList.add('hidden');
 }
+
+// -------------------------------------------------------------
+// FITUR: AUTO-FILL ISBN VIA GOOGLE BOOKS & OPENLIBRARY API
+// -------------------------------------------------------------
+async function autoFillIsbn(mode) {
+    const isCreate = mode === 'create';
+    const isbnInput = document.getElementById(isCreate ? 'createIsbn' : 'editIsbn');
+    const btn = document.getElementById(isCreate ? 'btnFetchIsbnCreate' : 'btnFetchIsbnEdit');
+    const statusText = document.getElementById(isCreate ? 'isbnStatusCreate' : 'isbnStatusEdit');
+
+    const rawIsbn = (isbnInput.value || '').trim();
+    const cleanIsbn = rawIsbn.replace(/[^0-9X]/gi, '');
+
+    if (!cleanIsbn || cleanIsbn.length < 10) {
+        alert('Harap masukkan minimal 10 atau 13 digit angka ISBN terlebih dahulu.');
+        isbnInput.focus();
+        return;
+    }
+
+    const origBtnHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xs"></i> <span>Mencari...</span>';
+    if (statusText) {
+        statusText.classList.remove('hidden', 'text-rose-400', 'text-teal-400');
+        statusText.classList.add('text-indigo-400');
+        statusText.textContent = 'Mencari ke Google Books API...';
+    }
+
+    try {
+        let bookData = null;
+
+        // 1. Coba Google Books API
+        try {
+            const resp = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`);
+            const data = await resp.json();
+            if (data && data.totalItems > 0 && data.items && data.items[0].volumeInfo) {
+                const vi = data.items[0].volumeInfo;
+                bookData = {
+                    title: vi.title || '',
+                    author: (vi.authors || []).join(', '),
+                    publisher: vi.publisher || '',
+                    year: vi.publishedDate ? vi.publishedDate.substring(0, 4) : '',
+                    description: vi.description || '',
+                    categories: (vi.categories || []).join(', ')
+                };
+            }
+        } catch (e1) {
+            console.warn('Google Books API failed, trying OpenLibrary...', e1);
+        }
+
+        // 2. Fallback OpenLibrary API jika Google Books tidak menemukan
+        if (!bookData) {
+            try {
+                const olResp = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`);
+                const olData = await olResp.json();
+                const key = `ISBN:${cleanIsbn}`;
+                if (olData && olData[key]) {
+                    const olItem = olData[key];
+                    bookData = {
+                        title: olItem.title || '',
+                        author: (olItem.authors || []).map(a => a.name).join(', '),
+                        publisher: (olItem.publishers || []).map(p => p.name).join(', '),
+                        year: olItem.publish_date ? (olItem.publish_date.match(/\d{4}/) ? olItem.publish_date.match(/\d{4}/)[0] : '') : '',
+                        description: typeof olItem.notes === 'string' ? olItem.notes : '',
+                        categories: (olItem.subjects || []).map(s => s.name).join(', ')
+                    };
+                }
+            } catch (e2) {
+                console.warn('OpenLibrary fallback failed', e2);
+            }
+        }
+
+        if (bookData) {
+            const prefix = isCreate ? 'create' : 'edit';
+            if (bookData.title) document.getElementById(`${prefix}Title`).value = bookData.title;
+            if (bookData.author) document.getElementById(`${prefix}Author`).value = bookData.author;
+            if (bookData.publisher) document.getElementById(`${prefix}Publisher`).value = bookData.publisher;
+            if (bookData.year) document.getElementById(`${prefix}Year`).value = bookData.year;
+            if (bookData.description) document.getElementById(`${prefix}Description`).value = bookData.description;
+
+            // Map category jika cocok
+            const catSelect = document.getElementById(`${prefix}Category`);
+            if (catSelect) {
+                const cLower = (bookData.categories + ' ' + bookData.title).toLowerCase();
+                let matchedCat = '';
+                if (cLower.includes('science') || cLower.includes('physics') || cLower.includes('chemistry') || cLower.includes('biology') || cLower.includes('math') || cLower.includes('fisika') || cLower.includes('matematika')) {
+                    matchedCat = 'Sains & Teknologi';
+                } else if (cLower.includes('fiction') || cLower.includes('novel') || cLower.includes('literature') || cLower.includes('poetry') || cLower.includes('sastra')) {
+                    matchedCat = 'Novel & Sastra';
+                } else if (cLower.includes('computer') || cLower.includes('programming') || cLower.includes('software') || cLower.includes('web') || cLower.includes('technology') || cLower.includes('komputer')) {
+                    matchedCat = 'Teknologi & Komputer';
+                } else if (cLower.includes('history') || cLower.includes('social') || cLower.includes('geography') || cLower.includes('sejarah') || cLower.includes('ips')) {
+                    matchedCat = 'IPS & Sejarah';
+                } else if (cLower.includes('language') || cLower.includes('dictionary') || cLower.includes('kamus') || cLower.includes('grammar') || cLower.includes('bahasa')) {
+                    matchedCat = 'Referensi & Bahasa';
+                } else if (cLower.includes('religion') || cLower.includes('islam') || cLower.includes('moral') || cLower.includes('agama')) {
+                    matchedCat = 'Agama & Moral';
+                }
+                if (matchedCat) {
+                    catSelect.value = matchedCat;
+                }
+            }
+
+            if (statusText) {
+                statusText.classList.remove('text-indigo-400', 'text-rose-400');
+                statusText.classList.add('text-teal-400');
+                statusText.innerHTML = '<i class="fa-solid fa-check"></i> Data ditemukan & otomatis terisi!';
+            }
+        } else {
+            if (statusText) {
+                statusText.classList.remove('text-indigo-400', 'text-teal-400');
+                statusText.classList.add('text-rose-400');
+                statusText.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Tidak ditemukan di Google Books.';
+            }
+            alert(`Tidak dapat menemukan data untuk ISBN: ${rawIsbn}. Silakan lengkapi informasi buku secara manual.`);
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Gagal menghubungi API ISBN. Pastikan perangkat Anda terhubung ke internet.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origBtnHtml;
+    }
+}
 </script>
 <?php endif; ?>
+
+<!-- MODAL IN-BROWSER E-BOOK READER -->
+<div id="ebookReaderModal" class="fixed inset-0 z-50 hidden bg-black/85 backdrop-blur-md flex flex-col p-2 sm:p-4">
+    <div class="flex items-center justify-between bg-slate-900 border border-white/10 rounded-2xl px-4 py-3 mb-2 text-white shadow-xl">
+        <div class="flex items-center gap-2.5">
+            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+                <i class="fa-solid fa-book-open-reader"></i>
+            </div>
+            <div>
+                <h4 id="ebookModalTitle" class="text-sm font-bold text-white line-clamp-1">Judul E-Book</h4>
+                <p class="text-[11px] text-slate-400">In-Browser E-Book & Modul Reader Perpustakaan</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <a id="ebookExternalLink" href="#" target="_blank" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5" title="Buka Tab Baru">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> <span class="hidden sm:inline">Tab Baru</span>
+            </a>
+            <button onclick="toggleEbookFullscreen()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5 cursor-pointer" title="Layar Penuh">
+                <i class="fa-solid fa-expand"></i>
+            </button>
+            <button onclick="closeEbookReader()" class="rounded-xl bg-rose-600/80 hover:bg-rose-500 px-3.5 py-1.5 text-xs font-bold text-white transition flex items-center gap-1.5 cursor-pointer">
+                <i class="fa-solid fa-xmark"></i> Tutup
+            </button>
+        </div>
+    </div>
+    <div id="ebookFrameContainer" class="flex-1 rounded-2xl overflow-hidden border border-white/10 bg-slate-950 shadow-2xl relative">
+        <iframe id="ebookIframe" src="" class="w-full h-full border-none" allow="fullscreen"></iframe>
+    </div>
+</div>
+
+<script>
+function openEbookReader(title, fileUrl) {
+    document.getElementById('ebookModalTitle').textContent = title;
+    document.getElementById('ebookExternalLink').href = fileUrl;
+    document.getElementById('ebookIframe').src = fileUrl;
+    document.getElementById('ebookReaderModal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeEbookReader() {
+    document.getElementById('ebookIframe').src = '';
+    document.getElementById('ebookReaderModal').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+function toggleEbookFullscreen() {
+    const elem = document.getElementById('ebookReaderModal');
+    if (!document.fullscreenElement) {
+        elem.requestFullscreen().catch(err => console.error(err));
+    } else {
+        document.exitFullscreen().catch(err => console.error(err));
+    }
+}
+</script>
 
 <?php include __DIR__ . "/../includes/footer.php"; ?>

@@ -23,7 +23,7 @@ try {
 
     // Auto-create tables only once per session for performance (BUG-19 fix)
     if (session_status() === PHP_SESSION_NONE) { session_start(); }
-    if (!isset($_SESSION['db_migrated_v7'])) {
+    if (!isset($_SESSION['db_migrated_v11'])) {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `announcements` (
             `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -316,6 +316,16 @@ try {
             `address` TEXT NOT NULL,
             `previous_school` VARCHAR(150) NOT NULL,
             `chosen_major` VARCHAR(100) NOT NULL DEFAULT 'Umum',
+            `track_type` ENUM('reguler', 'zonasi', 'prestasi', 'afirmasi') NOT NULL DEFAULT 'reguler',
+            `distance_km` DECIMAL(6,2) DEFAULT NULL,
+            `achievement_desc` VARCHAR(255) DEFAULT NULL,
+            `achievement_level` ENUM('sekolah', 'kecamatan', 'kabupaten', 'provinsi', 'nasional', 'internasional') DEFAULT NULL,
+            `affirmation_no` VARCHAR(50) DEFAULT NULL,
+            `score_math` DECIMAL(5,2) DEFAULT NULL,
+            `score_science` DECIMAL(5,2) DEFAULT NULL,
+            `score_indonesian` DECIMAL(5,2) DEFAULT NULL,
+            `score_english` DECIMAL(5,2) DEFAULT NULL,
+            `calculated_score` DECIMAL(5,2) DEFAULT NULL,
             `parent_name` VARCHAR(150) NOT NULL,
             `parent_phone` VARCHAR(30) NOT NULL,
             `parent_job` VARCHAR(100) DEFAULT NULL,
@@ -323,10 +333,13 @@ try {
             `birth_cert_doc` VARCHAR(255) DEFAULT NULL,
             `family_card_doc` VARCHAR(255) DEFAULT NULL,
             `photo_doc` VARCHAR(255) DEFAULT NULL,
+            `document_status` ENUM('lengkap', 'perlu_revisi', 'ditolak') NOT NULL DEFAULT 'lengkap',
+            `rejection_reason` TEXT DEFAULT NULL,
             `status` ENUM('menunggu_verifikasi', 'diverifikasi', 'lulus_seleksi', 'tidak_lulus', 'diterima') NOT NULL DEFAULT 'menunggu_verifikasi',
             `selection_score` DECIMAL(5,2) DEFAULT NULL,
             `notes` TEXT DEFAULT NULL,
             `user_id` INT DEFAULT NULL,
+            `qr_token` VARCHAR(64) DEFAULT NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -360,7 +373,129 @@ try {
             `return_date` DATE DEFAULT NULL,
             `fine_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             `status` ENUM('dipinjam', 'kembali', 'hilang') NOT NULL DEFAULT 'dipinjam',
+            `renewal_count` TINYINT NOT NULL DEFAULT 0,
             `notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        -- 26. Perpustakaan: Buku Tamu & Presensi Pengunjung
+        CREATE TABLE IF NOT EXISTS `library_visitors` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `user_id` INT DEFAULT NULL,
+            `name` VARCHAR(150) NOT NULL,
+            `role` ENUM('siswa', 'guru', 'staf', 'umum') NOT NULL DEFAULT 'siswa',
+            `identifier` VARCHAR(50) DEFAULT NULL,
+            `class_name` VARCHAR(50) DEFAULT NULL,
+            `gender` ENUM('L', 'P') DEFAULT NULL,
+            `purpose` VARCHAR(150) NOT NULL DEFAULT 'Membaca / Belajar',
+            `visit_date` DATE NOT NULL,
+            `visit_time` TIME NOT NULL,
+            `notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        -- 27. Perpustakaan: Reservasi / Booking Buku Mandiri
+        CREATE TABLE IF NOT EXISTS `library_reservations` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `book_id` INT NOT NULL,
+            `user_id` INT NOT NULL,
+            `reservation_date` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `expiry_date` DATE NOT NULL,
+            `status` ENUM('menunggu', 'disiapkan', 'selesai', 'dibatalkan', 'kedaluwarsa') NOT NULL DEFAULT 'menunggu',
+            `notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        -- 28. Perpustakaan: Review & Rating Buku
+        CREATE TABLE IF NOT EXISTS `library_reviews` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `book_id` INT NOT NULL,
+            `user_id` INT NOT NULL,
+            `rating` TINYINT NOT NULL,
+            `review` TEXT NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        -- 29. Pesan Kontak Tamu (Inbox Tamu Publik)
+        CREATE TABLE IF NOT EXISTS `contact_messages` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `name` VARCHAR(150) NOT NULL,
+            `email` VARCHAR(150) NOT NULL,
+            `phone` VARCHAR(50) DEFAULT NULL,
+            `subject` VARCHAR(255) NOT NULL,
+            `message` TEXT NOT NULL,
+            `status` ENUM('baru', 'diproses', 'selesai') NOT NULL DEFAULT 'baru',
+            `admin_notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        -- 30. Buku Agenda Surat Masuk & Surat Keluar (Arsip Persuratan TU)
+        CREATE TABLE IF NOT EXISTS `mail_archives` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `mail_type` ENUM('masuk', 'keluar') NOT NULL DEFAULT 'masuk',
+            `agenda_no` VARCHAR(50) NOT NULL,
+            `reference_no` VARCHAR(100) NOT NULL,
+            `sender_or_recipient` VARCHAR(200) NOT NULL,
+            `mail_date` DATE NOT NULL,
+            `received_or_sent_date` DATE NOT NULL,
+            `subject` VARCHAR(255) NOT NULL,
+            `description` TEXT DEFAULT NULL,
+            `disposition_instruction` TEXT DEFAULT NULL,
+            `disposition_target` VARCHAR(150) DEFAULT NULL,
+            `attachment_file` VARCHAR(255) DEFAULT NULL,
+            `recorded_by` INT NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        -- 31. Sarpras: Buku Inventaris Barang & Aset Sekolah
+        CREATE TABLE IF NOT EXISTS `inventory_items` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `item_code` VARCHAR(50) NOT NULL UNIQUE,
+            `item_name` VARCHAR(150) NOT NULL,
+            `category` VARCHAR(100) NOT NULL DEFAULT 'Elektronik',
+            `room_location` VARCHAR(100) NOT NULL DEFAULT 'Ruang Lab Komputer',
+            `condition_status` ENUM('baik', 'rusak_ringan', 'rusak_berat') NOT NULL DEFAULT 'baik',
+            `quantity` INT NOT NULL DEFAULT 1,
+            `unit` VARCHAR(30) NOT NULL DEFAULT 'Unit',
+            `funding_source` VARCHAR(100) DEFAULT 'BOS',
+            `purchase_year` INT DEFAULT 2026,
+            `purchase_cost` DECIMAL(12,2) DEFAULT 0.00,
+            `notes` TEXT DEFAULT NULL,
+            `recorded_by` INT NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        -- 32. Sarpras: Peminjaman Sarana & Prasarana
+        CREATE TABLE IF NOT EXISTS `inventory_loans` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `item_id` INT NOT NULL,
+            `borrower_name` VARCHAR(150) NOT NULL,
+            `borrower_role` VARCHAR(50) NOT NULL DEFAULT 'guru',
+            `borrower_phone` VARCHAR(30) DEFAULT NULL,
+            `borrow_date` DATE NOT NULL,
+            `expected_return_date` DATE NOT NULL,
+            `actual_return_date` DATE DEFAULT NULL,
+            `status` ENUM('dipinjam', 'kembali') NOT NULL DEFAULT 'dipinjam',
+            `purpose` VARCHAR(255) NOT NULL,
+            `notes` TEXT DEFAULT NULL,
+            `recorded_by` INT NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        -- 33. Keuangan: Buku Kas Umum (BKU) / Pengeluaran Operasional Sekolah
+        CREATE TABLE IF NOT EXISTS `financial_expenses` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `expense_no` VARCHAR(50) NOT NULL UNIQUE,
+            `category` VARCHAR(100) NOT NULL DEFAULT 'ATK & Operasional Kantor',
+            `title` VARCHAR(200) NOT NULL,
+            `expense_date` DATE NOT NULL,
+            `amount` DECIMAL(12,2) NOT NULL,
+            `recipient` VARCHAR(150) DEFAULT NULL,
+            `receipt_doc` VARCHAR(255) DEFAULT NULL,
+            `notes` TEXT DEFAULT NULL,
+            `recorded_by` INT NOT NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     ");
@@ -423,6 +558,53 @@ try {
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY `uk_student_report_period` (`student_id`, `academic_year`, `semester`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "ALTER TABLE `library_loans` ADD COLUMN `renewal_count` TINYINT NOT NULL DEFAULT 0 AFTER `status`",
+        "CREATE TABLE IF NOT EXISTS `library_visitors` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `user_id` INT DEFAULT NULL,
+            `name` VARCHAR(150) NOT NULL,
+            `role` ENUM('siswa', 'guru', 'staf', 'umum') NOT NULL DEFAULT 'siswa',
+            `identifier` VARCHAR(50) DEFAULT NULL,
+            `class_name` VARCHAR(50) DEFAULT NULL,
+            `gender` ENUM('L', 'P') DEFAULT NULL,
+            `purpose` VARCHAR(150) NOT NULL DEFAULT 'Membaca / Belajar',
+            `visit_date` DATE NOT NULL,
+            `visit_time` TIME NOT NULL,
+            `notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `track_type` ENUM('reguler', 'zonasi', 'prestasi', 'afirmasi') NOT NULL DEFAULT 'reguler' AFTER `chosen_major`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `distance_km` DECIMAL(6,2) DEFAULT NULL AFTER `track_type`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `achievement_desc` VARCHAR(255) DEFAULT NULL AFTER `distance_km`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `achievement_level` ENUM('sekolah', 'kecamatan', 'kabupaten', 'provinsi', 'nasional', 'internasional') DEFAULT NULL AFTER `achievement_desc`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `affirmation_no` VARCHAR(50) DEFAULT NULL AFTER `achievement_level`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `score_math` DECIMAL(5,2) DEFAULT NULL AFTER `affirmation_no`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `score_science` DECIMAL(5,2) DEFAULT NULL AFTER `score_math`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `score_indonesian` DECIMAL(5,2) DEFAULT NULL AFTER `score_science`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `score_english` DECIMAL(5,2) DEFAULT NULL AFTER `score_indonesian`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `calculated_score` DECIMAL(5,2) DEFAULT NULL AFTER `score_english`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `document_status` ENUM('lengkap', 'perlu_revisi', 'ditolak') NOT NULL DEFAULT 'lengkap' AFTER `photo_doc`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `rejection_reason` TEXT DEFAULT NULL AFTER `document_status`",
+        "ALTER TABLE `ppdb_registrations` ADD COLUMN `qr_token` VARCHAR(64) DEFAULT NULL AFTER `user_id`",
+        "CREATE TABLE IF NOT EXISTS `library_reservations` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `book_id` INT NOT NULL,
+            `user_id` INT NOT NULL,
+            `reservation_date` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `expiry_date` DATE NOT NULL,
+            `status` ENUM('menunggu', 'disiapkan', 'selesai', 'dibatalkan', 'kedaluwarsa') NOT NULL DEFAULT 'menunggu',
+            `notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `library_reviews` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `book_id` INT NOT NULL,
+            `user_id` INT NOT NULL,
+            `rating` TINYINT NOT NULL,
+            `review` TEXT NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY `uk_book_user_review` (`book_id`, `user_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
     ];
     foreach ($alter_queries as $aq) {
@@ -644,11 +826,152 @@ try {
                 (3, 5, DATE_SUB(CURRENT_DATE(), INTERVAL 20 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 13 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 12 DAY), 0.00, 'kembali', 'Dikembalikan tepat waktu dalam kondisi baik.');
             ");
         }
+
+        // Set sample ebook URL for book 5 if empty
+        $pdo->exec("UPDATE `library_books` SET `ebook_file` = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' WHERE `id` = 5 AND (`ebook_file` IS NULL OR `ebook_file` = '')");
+
+        // Auto-seed Ulasan & Rating Buku
+        $count_reviews = (int) $pdo->query("SELECT COUNT(*) FROM `library_reviews`")->fetchColumn();
+        if ($count_reviews === 0) {
+            $pdo->exec("
+                INSERT INTO `library_reviews` (`book_id`, `user_id`, `rating`, `review`, `created_at`) VALUES
+                (1, 5, 5, 'Buku fisika ini sangat mudah dipahami, rumus dijabarkan langkah demi langkah. Sangat membantu persiapan ujian semester.', DATE_SUB(NOW(), INTERVAL 3 DAY)),
+                (2, 5, 5, 'Novel karya Andrea Hirata ini luar biasa inspiratif. Wajib dibaca semua siswa untuk memompa semangat belajar!', DATE_SUB(NOW(), INTERVAL 2 DAY)),
+                (5, 4, 5, 'Penjelasan konsep PHP 8 dan PDO database sangat terstruktur dan aplikatif untuk tugas praktikum.', DATE_SUB(NOW(), INTERVAL 1 DAY)),
+                (3, 5, 4, 'Kosakatanya sangat lengkap dan terjemahannya akurat, cocok untuk referensi tugas bahasa Inggris.', DATE_SUB(NOW(), INTERVAL 4 DAY));
+            ");
+        }
+
+        // Auto-seed Reservasi Buku
+        $count_reservations = (int) $pdo->query("SELECT COUNT(*) FROM `library_reservations`")->fetchColumn();
+        if ($count_reservations === 0) {
+            $pdo->exec("
+                INSERT INTO `library_reservations` (`book_id`, `user_id`, `reservation_date`, `expiry_date`, `status`, `notes`) VALUES
+                (2, 5, CURRENT_TIMESTAMP(), DATE_ADD(CURRENT_DATE(), INTERVAL 2 DAY), 'menunggu', 'Reservasi untuk membaca lanjutan bab 15.'),
+                (5, 5, DATE_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 1 DAY), 'disiapkan', 'Siap diambil di rak reservasi sirkulasi.');
+            ");
+        }
+
+        // Auto-seed Buku Tamu Perpustakaan
+        $count_visitors = (int) $pdo->query("SELECT COUNT(*) FROM `library_visitors`")->fetchColumn();
+        if ($count_visitors === 0) {
+            $pdo->exec("
+                INSERT INTO `library_visitors` 
+                (`user_id`, `name`, `role`, `identifier`, `class_name`, `gender`, `purpose`, `visit_date`, `visit_time`, `notes`) 
+                VALUES
+                (5, 'Ahmad Fauzi', 'siswa', '0081234567', 'X MIPA 1', 'L', 'Membaca Buku / Majalah', CURRENT_DATE(), '08:30:00', 'Membaca buku referensi fisika.'),
+                (NULL, 'Rian Pratama', 'siswa', '0081234567', 'X MIPA 1', 'L', 'Mengerjakan Tugas / Belajar Mandiri', CURRENT_DATE(), '09:15:00', 'Mengerjakan tugas matematika.'),
+                (3, 'Siti Rahmawati, S.Pd', 'guru', '19850315 201001 2 018', 'Dewan Guru', 'P', 'Peminjaman / Pengembalian Buku', CURRENT_DATE(), '10:00:00', 'Meminjam buku materi ajar biologi.'),
+                (NULL, 'Budi Santoso', 'umum', 'Wali Murid', 'Umum', 'L', 'Konsultasi / Kunjungan Perpustakaan', CURRENT_DATE(), '10:45:00', 'Melihat fasilitas koleksi buku sekolah.');
+            ");
+        }
+
+        // Auto-seed Pengumuman Sekolah jika kosong
+        $count_announcements = (int) $pdo->query("SELECT COUNT(*) FROM `announcements`")->fetchColumn();
+        if ($count_announcements === 0) {
+            $first_user_id = (int)$pdo->query("SELECT id FROM `users` ORDER BY id ASC LIMIT 1")->fetchColumn() ?: 1;
+            $pdo->exec("
+                INSERT INTO `announcements` (`title`, `content`, `target_role`, `category`, `is_pinned`, `status`, `author_id`, `created_at`) VALUES
+                (
+                    'Jadwal Pelaksanaan Penilaian Akhir Semester (PAS) TA 2026/2027',
+                    'Diberitahukan kepada seluruh siswa, orang tua, dan bapak/ibu guru bahwa Penilaian Akhir Semester (PAS) Semester Ganjil akan dilaksanakan mulai tanggal 15 s.d 22 Desember 2026.\n\nKetentuan pelaksanaan ujian:\n1. Siswa wajib membawa kartu peserta ujian digital yang dapat dicetak melalui dashboard siswa.\n2. Siswa hadir di ruangan 15 menit sebelum bel masuk berbunyi.\n3. Dilarang membawa catatan, buku, atau perangkat komunikasi tidak resmi ke dalam ruang ujian.\n\nMari persiapkan diri dengan tekun dan junjung tinggi kejujuran akademik!',
+                    'semua', 'penting', 1, 'published', $first_user_id, DATE_SUB(NOW(), INTERVAL 1 DAY)
+                ),
+                (
+                    'Penerimaan Peserta Didik Baru (PPDB) TA 2026/2027 Resmi Dibuka',
+                    'Pendaftaran Peserta Didik Baru (PPDB) Tahun Ajaran 2026/2027 telah dibuka secara daring (online) untuk Jalur Zonasi, Prestasi Akademik/Non-Akademik, dan Afirmasi.\n\nCalon siswa dapat langsung mendaftar melalui menu PPDB Online di halaman utama website ini, melengkapi data diri, dan mengunggah berkas persyaratan tanpa dipungut biaya pendaftaran.\n\nInformasi lebih lanjut dapat menghubungi narahubung panitia PPDB di jam kerja.',
+                    'semua', 'kegiatan', 1, 'published', $first_user_id, DATE_SUB(NOW(), INTERVAL 3 DAY)
+                ),
+                (
+                    'Undangan Pertemuan Wali Murid & Konsultasi Perkembangan Belajar',
+                    'Kepada Yth. Bapak/Ibu Orang Tua / Wali Murid,\n\nSekolah mengundang kehadiran Bapak/Ibu pada acara Pertemuan Rutin Triwulan & Konsultasi Perkembangan Belajar Siswa yang akan diselenggarakan pada:\n\nHari/Tanggal : Sabtu, 28 November 2026\nWaktu : Pukul 08.30 - 11.30 WIB\nTempat : Aula Graha Utama Sekolah\n\nKehadiran Bapak/Ibu sangat diharapkan demi terjalinnya sinergi yang baik antara pihak sekolah dan orang tua.',
+                    'orang_tua', 'umum', 0, 'published', $first_user_id, DATE_SUB(NOW(), INTERVAL 5 DAY)
+                ),
+                (
+                    'Gladi Bersih Asesmen Nasional Berbasis Komputer (ANBK) di Lab Komputer',
+                    'Diberitahukan kepada seluruh dewan guru dan tim proktor teknologi bahwa gladi bersih ANBK akan diselenggarakan pada hari Kamis mendatang di Lab Komputer 1 & 2.\n\nDimohon kepada proktor untuk mengecek kesiapan server lokal, kestabilan jaringan internet, dan daya cadangan (UPS) demi kelancaran simulasi asesmen.',
+                    'guru', 'akademik', 0, 'published', $first_user_id, DATE_SUB(NOW(), INTERVAL 7 DAY)
+                ),
+                (
+                    'Sosialisasi Layanan Pustaka Digital & Akses E-Book Sekolah',
+                    'Kini seluruh siswa dan guru dapat mengakses koleksi e-book, modul ajar, dan melakukan reservasi buku fisik mandiri secara daring melalui menu Katalog Perpustakaan.\n\nManfaatkan fasilitas literasi digital sekolah untuk menunjang kegiatan pembelajaran dan riset karya ilmiah Anda!',
+                    'siswa', 'kegiatan', 0, 'published', $first_user_id, DATE_SUB(NOW(), INTERVAL 2 DAY)
+                );
+            ");
+        }
+
+        // Auto-seed Kalender Agenda Sekolah jika kosong
+        $count_calendar = (int) $pdo->query("SELECT COUNT(*) FROM `calendar_events`")->fetchColumn();
+        if ($count_calendar === 0) {
+            $first_user_id = (int)$pdo->query("SELECT id FROM `users` ORDER BY id ASC LIMIT 1")->fetchColumn() ?: 1;
+            $pdo->exec("
+                INSERT INTO `calendar_events` (`title`, `description`, `event_date`, `end_date`, `category`, `color`, `created_by`) VALUES
+                ('Penilaian Akhir Semester (PAS)', 'Ujian akhir semester ganjil seluruh jenjang kelas', DATE_ADD(CURRENT_DATE(), INTERVAL 7 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 14 DAY), 'akademik', 'blue', $first_user_id),
+                ('Pameran Literasi & Bulan Bahasa', 'Gelar karya sastra dan kreasi siswa di lapangan utama', DATE_ADD(CURRENT_DATE(), INTERVAL 4 DAY), NULL, 'kegiatan', 'emerald', $first_user_id),
+                ('Pertemuan Paguyuban Orang Tua Murid', 'Sosialisasi program sekolah dan laporan akademik', DATE_ADD(CURRENT_DATE(), INTERVAL 12 DAY), NULL, 'akademik', 'amber', $first_user_id),
+                ('Batas Verifikasi Berkas PPDB Tahap 1', 'Verifikasi akhir dokumen calon siswa baru', DATE_ADD(CURRENT_DATE(), INTERVAL 18 DAY), NULL, 'kegiatan', 'purple', $first_user_id);
+            ");
+        }
+        // Auto-seed Buku Agenda Surat Masuk & Keluar (mail_archives)
+        $count_mail = (int) $pdo->query("SELECT COUNT(*) FROM `mail_archives`")->fetchColumn();
+        if ($count_mail === 0) {
+            $first_user_id = (int)$pdo->query("SELECT id FROM `users` ORDER BY id ASC LIMIT 1")->fetchColumn() ?: 1;
+            $pdo->exec("
+                INSERT INTO `mail_archives` 
+                (`mail_type`, `agenda_no`, `reference_no`, `sender_or_recipient`, `mail_date`, `received_or_sent_date`, `subject`, `description`, `disposition_instruction`, `disposition_target`, `recorded_by`)
+                VALUES
+                ('masuk', 'AG-IN/2026/09/001', '420/1254/Disdik/IX/2026', 'Dinas Pendidikan Provinsi DKI Jakarta', DATE_SUB(CURRENT_DATE(), INTERVAL 4 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY), 'Sosialisasi Program Indonesia Pintar (PIP) Fase 2', 'Undangan menghadiri sosialisasi pencairan dana bantuan siswa PIP di Aula Dinas Pendidikan.', 'Hadiri dan siapkan data nominasi siswa penerima PIP.', 'Staf Kesiswaan & Kurikulum', $first_user_id),
+                ('masuk', 'AG-IN/2026/09/002', '440/Pusk-KB/089/2026', 'Puskesmas Kecamatan Kebayoran Baru', DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), 'Jadwal Skrining Kesehatan Berkala & Penyuluhan Remaja', 'Pemberitahuan jadwal tim medis puskesmas untuk pemeriksaan kesehatan berkala peserta didik kelas X.', 'Koordinasikan jadwal dengan wali kelas X dan ruang UKS.', 'Pembina UKS & Tata Usaha', $first_user_id),
+                ('keluar', 'AG-OUT/2026/09/001', '421.3/089/SMA-BBN/IX/2026', 'Kepala Balai Penjaminan Mutu Pendidikan (BPMP)', CURRENT_DATE(), CURRENT_DATE(), 'Pengantar Laporan Pemutakhiran Data Dapodik Semester Ganjil', 'Penyampaian berkas rekap data pokok kesiswaan dan rombongan belajar tahun ajaran 2026/2027.', NULL, NULL, $first_user_id);
+            ");
+        }
+
+        // Auto-seed Sarpras & Inventaris (inventory_items)
+        $count_inventory = (int) $pdo->query("SELECT COUNT(*) FROM `inventory_items`")->fetchColumn();
+        if ($count_inventory === 0) {
+            $first_user_id = (int)$pdo->query("SELECT id FROM `users` ORDER BY id ASC LIMIT 1")->fetchColumn() ?: 1;
+            $pdo->exec("
+                INSERT INTO `inventory_items` 
+                (`item_code`, `item_name`, `category`, `room_location`, `condition_status`, `quantity`, `unit`, `funding_source`, `purchase_year`, `purchase_cost`, `notes`, `recorded_by`)
+                VALUES
+                ('INV-LAB-001', 'PC All-in-One Core i7 16GB RAM 512GB SSD', 'Elektronik', 'Lab Komputer 1', 'baik', 30, 'Unit', 'BOS', 2024, 12500000.00, 'Perangkat utama praktikum informatika dan CBT.', $first_user_id),
+                ('INV-SAR-002', 'Proyektor Epson EB-X500 3600 Lumens', 'Elektronik', 'Ruang Tata Usaha', 'baik', 4, 'Unit', 'Komite', 2023, 6200000.00, 'Tersedia untuk dipinjam dewan guru saat KBM.', $first_user_id),
+                ('INV-SAR-003', 'Sound System Portabel Wireless 12 Inch + 2 Mic', 'Elektronik', 'Ruang Tata Usaha', 'baik', 2, 'Unit', 'BOS', 2024, 3800000.00, 'Digunakan untuk upacara, senam, dan pertemuan wali murid.', $first_user_id),
+                ('INV-KLS-004', 'Set Meja & Kursi Siswa Standar Kayu Jati', 'Mebel', 'Ruang Kelas X MIPA 1', 'baik', 36, 'Set', 'BOS', 2023, 650000.00, 'Kondisi kokoh dan terawat rapi.', $first_user_id),
+                ('INV-LAB-005', 'Mikroskop Binokuler Olympus CX23', 'Alat Praktik', 'Lab Biologi & Kimia', 'baik', 10, 'Unit', 'DAK Pendidikan', 2023, 8500000.00, 'Alat praktikum pengamatan preparat sel siswa.', $first_user_id);
+            ");
+        }
+
+        // Auto-seed Peminjaman Sarpras (inventory_loans)
+        $count_inv_loans = (int) $pdo->query("SELECT COUNT(*) FROM `inventory_loans`")->fetchColumn();
+        if ($count_inv_loans === 0) {
+            $first_user_id = (int)$pdo->query("SELECT id FROM `users` ORDER BY id ASC LIMIT 1")->fetchColumn() ?: 1;
+            $pdo->exec("
+                INSERT INTO `inventory_loans` 
+                (`item_id`, `borrower_name`, `borrower_role`, `borrower_phone`, `borrow_date`, `expected_return_date`, `actual_return_date`, `status`, `purpose`, `recorded_by`)
+                VALUES
+                (2, 'Siti Rahmawati, S.Pd', 'guru', '081234567890', CURRENT_DATE(), DATE_ADD(CURRENT_DATE(), INTERVAL 1 DAY), NULL, 'dipinjam', 'Media presentasi pembelajaran Biologi Kelas XI', $first_user_id);
+            ");
+        }
+
+        // Auto-seed Pengeluaran Kas Operasional / BKU (financial_expenses)
+        $count_expenses = (int) $pdo->query("SELECT COUNT(*) FROM `financial_expenses`")->fetchColumn();
+        if ($count_expenses === 0) {
+            $first_user_id = (int)$pdo->query("SELECT id FROM `users` ORDER BY id ASC LIMIT 1")->fetchColumn() ?: 1;
+            $pdo->exec("
+                INSERT INTO `financial_expenses` 
+                (`expense_no`, `category`, `title`, `expense_date`, `amount`, `recipient`, `notes`, `recorded_by`)
+                VALUES
+                ('EXP-2026/09/001', 'ATK & Operasional Kantor', 'Belanja Kertas HVS F4/A4, Tinta Printer & Map Arsip TU', DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY), 680000.00, 'Toko Alat Tulis Grama Mandiri', 'Kebutuhan administrasi arsip dan formulir penilaian.', $first_user_id),
+                ('EXP-2026/09/002', 'Listrik & Internet', 'Pembayaran Tagihan Listrik PLN Pasca Bayar Gedung Sekolah', DATE_SUB(CURRENT_DATE(), INTERVAL 4 DAY), 1950000.00, 'PT PLN (Persero)', 'Tagihan periode pemakaian bulan berjalan.', $first_user_id),
+                ('EXP-2026/09/003', 'Konsumsi & Rapat', 'Konsumsi Rapat Pleno Dewan Guru & Staf Tata Usaha', DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY), 450000.00, 'Katering Berkah Bersama', 'Snack dan makan siang 30 guru & staf.', $first_user_id);
+            ");
+        }
     } catch (PDOException $e_seed) {
         // Abaikan jika error insert sampel
     }
 
-    $_SESSION['db_migrated_v7'] = true;
+    $_SESSION['db_migrated_v11'] = true;
     } // end migration check
 
 } catch (PDOException $e) {
@@ -996,11 +1319,11 @@ function csrfField(): string {
     return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(generateCsrfToken()) . '">';
 }
 
-function validateCsrfToken(): bool {
+function validateCsrfToken(?string $token = null): bool {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
-    $token = $_POST['csrf_token'] ?? $_GET['csrf_token'] ?? '';
+    $token = $token ?? $_POST['csrf_token'] ?? $_GET['csrf_token'] ?? '';
     return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
 }
 
@@ -1009,15 +1332,21 @@ function validateCsrfToken(): bool {
  */
 function getSchoolSettings(PDO $pdo): array {
     $defaults = [
-        'school_name'     => 'SMA Bina Bangsa Nusantara',
-        'school_address'  => 'Jl. Pendidikan Nasional No. 45, Kebayoran Baru, Jakarta',
-        'school_phone'    => '(021) 789-0123',
-        'school_email'    => 'info@binabangsa.sch.id',
-        'school_website'  => 'https://binabangsa.sch.id',
-        'headmaster_name' => 'Dr. H. Bambang Sudirman, M.Pd',
-        'headmaster_nip'  => '19750812 199903 1 002',
-        'academic_year'   => '2026/2027 Ganjil',
-        'school_logo'     => ''
+        'school_name'         => 'SMA Bina Bangsa Nusantara',
+        'school_address'      => 'Jl. Pendidikan Nasional No. 45, Kebayoran Baru, Jakarta',
+        'school_phone'        => '(021) 789-0123',
+        'school_email'        => 'info@binabangsa.sch.id',
+        'school_website'      => 'https://binabangsa.sch.id',
+        'headmaster_name'     => 'Dr. H. Bambang Sudirman, M.Pd',
+        'headmaster_nip'      => '19750812 199903 1 002',
+        'academic_year'       => '2026/2027 Ganjil',
+        'school_logo'         => '',
+        'ppdb_status'         => 'buka',
+        'ppdb_wave_name'      => 'Gelombang 1',
+        'ppdb_quota'          => '150',
+        'ppdb_start_date'     => '',
+        'ppdb_end_date'       => '',
+        'ppdb_closed_message' => 'Pendaftaran Peserta Didik Baru (PPDB) saat ini sedang ditutup atau batas kuota telah terpenuhi.'
     ];
     try {
         $stmt = $pdo->query("SELECT setting_key, setting_value FROM school_settings");
@@ -1026,6 +1355,11 @@ function getSchoolSettings(PDO $pdo): array {
         }
     } catch (Exception $e) {}
     return $defaults;
+}
+
+function getSetting(PDO $pdo, string $key, string $default = ''): string {
+    $settings = getSchoolSettings($pdo);
+    return (string)($settings[$key] ?? $default);
 }
 
 function updateSchoolSetting(PDO $pdo, string $key, string $value): void {
@@ -1124,6 +1458,92 @@ function getLoanStatusLabel(string $status): string {
 function getLoanStatusBadge(string $status): string {
     return LIBRARY_LOAN_STATUSES[$status]['badge'] ?? 'border-slate-500/30 bg-slate-500/10 text-slate-300';
 }
+
+/**
+ * Jalur Pendaftaran PPDB
+ */
+const PPDB_TRACKS = [
+    'reguler'  => ['label' => 'Reguler / Tes Akademik', 'badge' => 'border-blue-500/30 bg-blue-500/10 text-blue-300', 'icon' => 'fa-graduation-cap'],
+    'zonasi'   => ['label' => 'Zonasi Domisili',        'badge' => 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300', 'icon' => 'fa-location-dot'],
+    'prestasi' => ['label' => 'Jalur Prestasi',         'badge' => 'border-amber-500/30 bg-amber-500/10 text-amber-300', 'icon' => 'fa-trophy'],
+    'afirmasi' => ['label' => 'Afirmasi / KIP',         'badge' => 'border-purple-500/30 bg-purple-500/10 text-purple-300', 'icon' => 'fa-hand-holding-heart'],
+];
+
+function getPpdbTrackLabel(string $track): string {
+    return PPDB_TRACKS[$track]['label'] ?? ucfirst($track);
+}
+
+function getPpdbTrackBadge(string $track): string {
+    return PPDB_TRACKS[$track]['badge'] ?? 'border-slate-500/30 bg-slate-500/10 text-slate-300';
+}
+
+function getPpdbTrackIcon(string $track): string {
+    return PPDB_TRACKS[$track]['icon'] ?? 'fa-file-lines';
+}
+
+/**
+ * Status Verifikasi Berkas Dokumen PPDB
+ */
+const PPDB_DOC_STATUSES = [
+    'lengkap'      => ['label' => 'Berkas Lengkap & Valid', 'badge' => 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'],
+    'perlu_revisi' => ['label' => 'Perlu Revisi Berkas',   'badge' => 'border-amber-500/30 bg-amber-500/10 text-amber-300'],
+    'ditolak'      => ['label' => 'Berkas Ditolak',        'badge' => 'border-rose-500/30 bg-rose-500/10 text-rose-300'],
+];
+
+function getPpdbDocStatusLabel(string $status): string {
+    return PPDB_DOC_STATUSES[$status]['label'] ?? ucfirst(str_replace('_', ' ', $status));
+}
+
+function getPpdbDocStatusBadge(string $status): string {
+    return PPDB_DOC_STATUSES[$status]['badge'] ?? 'border-slate-500/30 bg-slate-500/10 text-slate-300';
+}
+
+/**
+ * Kalkulator Nilai PPDB Otomatis (Rapor + Bobot Prestasi / Zonasi)
+ */
+function calculatePpdbScore(float $math, float $science, float $indo, float $eng, string $track = 'reguler', ?string $ach_level = null, ?float $distance_km = null): float {
+    // 1. Rata-rata 4 Mapel Pokok (Maks 100)
+    $avg_report = ($math + $science + $indo + $eng) / 4.0;
+
+    // 2. Bonus Jalur Prestasi
+    $bonus_prestasi = 0.0;
+    if ($track === 'prestasi' && !empty($ach_level)) {
+        switch ($ach_level) {
+            case 'internasional': $bonus_prestasi = 15.0; break;
+            case 'nasional':      $bonus_prestasi = 10.0; break;
+            case 'provinsi':      $bonus_prestasi = 7.0;  break;
+            case 'kabupaten':     $bonus_prestasi = 5.0;  break;
+            case 'kecamatan':     $bonus_prestasi = 3.0;  break;
+            case 'sekolah':       $bonus_prestasi = 1.5;  break;
+        }
+    }
+
+    // 3. Poin Zonasi (Jarak lebih dekat = prioritas nilai zonasi lebih tinggi)
+    $bonus_zonasi = 0.0;
+    if ($track === 'zonasi' && $distance_km !== null) {
+        if ($distance_km <= 1.0) {
+            $bonus_zonasi = 10.0;
+        } elseif ($distance_km <= 3.0) {
+            $bonus_zonasi = 7.0;
+        } elseif ($distance_km <= 5.0) {
+            $bonus_zonasi = 4.0;
+        } elseif ($distance_km <= 10.0) {
+            $bonus_zonasi = 2.0;
+        }
+    }
+
+    // Total skor akhir maksimal 100
+    $final_score = min(100.0, round($avg_report + $bonus_prestasi + $bonus_zonasi, 2));
+    return max(0.0, $final_score);
+}
+
+/**
+ * Generate Token Unik Verifikasi QR Code Dokumen PPDB
+ */
+function generatePpdbQrToken(string $registration_no): string {
+    return hash('sha256', $registration_no . '|PPDB_SECRET_SALT_2026|' . microtime(true) . '|' . bin2hex(random_bytes(8)));
+}
+
 
 
 

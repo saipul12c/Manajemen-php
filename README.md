@@ -16,6 +16,8 @@
 <p align="center">
   <a href="#-fitur-utama">Fitur</a> •
   <a href="#-arsitektur-sistem">Arsitektur</a> •
+  <a href="#-sistem-role-hak-akses">Role</a> •
+  <a href="#-buku-panduan-operasional-per-role">Panduan Role</a> •
   <a href="#-instalasi--setup">Instalasi</a> •
   <a href="#-panduan-penggunaan">Panduan</a> •
   <a href="#-skema-database">Database</a> •
@@ -58,31 +60,54 @@ Aplikasi ini mengimplementasikan **Role-Based Access Control (RBAC)** dengan 5 p
 ```
 manajemen-php/
 │
-├── index.php                    # Landing page publik (hero + navigasi)
-├── ppdb.php                     # Portal PPDB Online (pendaftaran + cek status)
-├── ppdb_card.php                # Cetak kartu pendaftaran PPDB (barcode)
+├── index.php                    # Landing page publik (hero interaktif + statistik real-time)
+├── about.php                    # Halaman profil sekolah, visi-misi, pilar peran, & keunggulan
+├── kontak.php                   # Halaman kontak, pusat bantuan & tiket pengaduan publik
+├── informasi.php                # Papan informasi & pengumuman sekolah publik (mading digital)
+├── pengumuman.php               # Alias pengalihan langsung ke informasi.php
+├── perpustakaan.php             # Katalog perpustakaan digital publik (OPAC & e-reader)
 ├── .htaccess                    # Konfigurasi Apache (security headers, error pages)
 │
+├── includes/                    # Template layout bersama untuk halaman publik
+│   ├── navbar.php               #   Navbar bersama landing page & portal publik responsif
+│   └── footer.php               #   Footer bersama, jam operasional, & informasi kontak
+│
+├── dokumentasi/                 # Arsip dokumentasi & riwayat rilis
+│   ├── RELEASE-github.MD        #   Catatan rilis versi & changelog
+│   └── dokumentasi-role/        #   Buku panduan operasional terperinci per peran pengguna
+│       ├── Administrator.md     #     Buku panduan Super Admin (manajemen user, PPDB, audit, backup)
+│       ├── Staf.md              #     Buku panduan Tata Usaha (persuratan, BKU, sarpras, perpus)
+│       ├── Guru.md              #     Buku panduan Tenaga Pendidik (KBM, ujian online, presensi, rapor)
+│       ├── OrangTua.md          #     Buku panduan Wali Murid (monitoring multi-anak, izin, bayar SPP)
+│       └── Siswa.md             #     Buku panduan Peserta Didik (e-learning, ujian, QR, e-reader)
+│
+├── ppdb/                        # Modul PPDB Online Terpadu
+│   ├── ppdb.php                 #   Portal pendaftaran 4 jalur & tracking seleksi mandiri
+│   ├── ppdb_card.php            #   Cetak kartu pendaftaran resmi dengan barcode & QR verifikasi
+│   └── ppdb_verify.php          #   Verifikasi keaslian berkas & kartu PPDB via token SHA-256
+│
 ├── auth/                        # Modul Autentikasi
-│   ├── login.php                #   Halaman login dengan rate limiting
-│   └── register.php             #   Halaman registrasi (siswa & orang tua)
+│   ├── login.php                #   Halaman login dengan rate limiting & demo credentials
+│   └── register.php             #   Dialihkan ke PPDB Online (satu pintu registrasi resmi)
 │
 ├── config/                      # Konfigurasi & Helper Sistem
-│   └── database.php             #   Koneksi PDO, auto-migration, CSRF, helper functions
+│   └── database.php             #   Koneksi PDO, auto-migration v11, CSRF, helper & scoring
 │
-├── dashboard/                   # Area Dashboard (terproteksi login)
-│   ├── index.php                #   Halaman utama dashboard (role-based widgets)
+├── dashboard/                   # Area Dashboard (terproteksi login & role-based)
+│   ├── index.php                #   Halaman utama dashboard (role-based widgets & feed)
 │   ├── profile.php              #   Profil pengguna & edit data diri
 │   │
-│   ├── includes/                #   Template layout
-│   │   ├── header.php           #     Header, navigasi, sidebar
-│   │   └── footer.php           #     Footer
+│   ├── includes/                #   Template layout dashboard
+│   │   ├── header.php           #     Header, navigasi sidebar responsif, badge notifikasi
+│   │   └── footer.php           #     Footer dashboard
 │   │
-│   ├── admin/                   #   Panel Administrasi
-│   │   ├── users.php            #     CRUD manajemen pengguna
+│   ├── admin/                   #   Panel Administrasi & Pengaturan
+│   │   ├── users.php            #     CRUD manajemen pengguna & Impor Siswa Massal (CSV)
+│   │   ├── student_profile_print.php # Cetak Lembar Buku Induk Siswa (Standar Kemendikbud)
+│   │   ├── contact_messages.php #     Inbox pesan tamu publik & status tindak lanjut tiket
 │   │   ├── classes.php          #     Manajemen kelas & rombel
-│   │   ├── ppdb.php             #     Verifikasi & seleksi PPDB
-│   │   ├── settings.php         #     Pengaturan identitas sekolah
+│   │   ├── ppdb.php             #     Verifikasi berkas, seleksi, & 1-klik aktivasi akun siswa
+│   │   ├── settings.php         #     Pengaturan identitas sekolah & kuota/gelombang PPDB
 │   │   ├── audit_logs.php       #     Log aktivitas (audit trail)
 │   │   └── backup.php           #     Backup & restore database
 │   │
@@ -115,14 +140,24 @@ manajemen-php/
 │   │
 │   ├── keuangan/                #   Modul Keuangan & SPP
 │   │   ├── payments.php         #     Tagihan & pembayaran siswa
+│   │   ├── expenses.php         #     Buku Kas Umum (BKU) & pengeluaran kas operasional
 │   │   ├── receipt.php          #     Cetak kuitansi pembayaran
 │   │   ├── financial_report.php #     Laporan keuangan
 │   │   ├── financial_print.php  #     Cetak laporan keuangan
 │   │   └── financial_export.php #     Export data keuangan
 │   │
-│   ├── perpustakaan/            #   Modul Perpustakaan Digital
-│   │   ├── books.php            #     Katalog & manajemen buku
-│   │   └── loans.php            #     Sirkulasi peminjaman & pengembalian
+│   ├── sarpras/                 #   Modul Sarana & Prasarana (Sarpras)
+│   │   └── inventory.php        #     Buku inventaris aset ruangan, kondisi barang, & sirkulasi pinjam
+│   │
+│   ├── perpustakaan/            #   Modul Perpustakaan Digital Terpadu
+│   │   ├── _nav.php             #     Sub-navigasi terpadu modul perpustakaan
+│   │   ├── books.php            #     Katalog buku, e-book, & Auto-Fill ISBN via API
+│   │   ├── loans.php            #     Sirkulasi peminjaman, perpanjangan, & denda
+│   │   ├── reservations.php     #     Manajemen antrean booking mandiri buku
+│   │   ├── scan.php             #     Quick scan QR sirkulasi buku (webcam)
+│   │   ├── visitors.php         #     Buku tamu presensi pengunjung perpustakaan
+│   │   ├── print_labels.php     #     Cetak label barcode & nomor panggil buku
+│   │   └── clearance.php        #     Penerbitan surat bebas pustaka digital
 │   │
 │   ├── bk/                      #   Modul Bimbingan Konseling (BK)
 │   │   ├── counseling.php       #     Catatan pelanggaran & prestasi
@@ -136,8 +171,9 @@ manajemen-php/
 │   │   └── messages.php         #     Pesan antar pengguna (chat)
 │   │
 │   └── surat/                   #   Modul Layanan Surat & Permohonan
-│       ├── requests.php         #     Pengajuan surat & layanan
-│       └── request_print.php    #     Cetak surat permohonan
+│       ├── requests.php         #     Pengajuan surat siswa/ortu & penerbitan resmi TU (SPT GTK)
+│       ├── request_print.php    #     Cetak surat dinas, SKBB, SKL, & SPT Tugas Guru/Pegawai
+│       └── archives.php         #     Buku agenda surat masuk & keluar + lembar disposisi KS
 │
 ├── error/                       # Custom Error Pages
 │   ├── error_data.php           #   Metadata & konten halaman error
@@ -151,10 +187,18 @@ manajemen-php/
 │   └── 503.php                  #   Service Unavailable
 │
 ├── sql/                         # Skema Database
-│   └── database.sql             #   File SQL lengkap (DDL + seed data)
+│   └── database.sql             #   File SQL lengkap (DDL + seed data 35 tabel)
 │
-└── uploads/                     # Direktori Upload File
-    └── exams/                   #   File soal ujian (gambar, dll.)
+└── uploads/                     # Direktori Berkas Upload Sistem
+    ├── announcements/           #   Lampiran dokumen edaran pengumuman
+    ├── assignments/             #   Lampiran soal tugas & berkas pengumpulan jawaban siswa
+    ├── books/                   #   Gambar cover buku & file modul / e-book PDF
+    ├── exams/                   #   Gambar pendukung soal ujian online
+    ├── expenses/                #   Scan berkas nota / kwitansi kas keluar BKU
+    ├── letters/                 #   Lampiran surat izin/sakit & scan agenda surat masuk/keluar
+    ├── materials/               #   Berkas materi pembelajaran E-Learning
+    ├── payments/                #   Bukti transfer pembayaran tagihan SPP
+    └── ppdb/                    #   Dokumen pendaftaran calon siswa (rapor, KK, akta, foto)
 ```
 
 ---
@@ -166,35 +210,73 @@ Manajemen-PHP mengimplementasikan 5 peran pengguna dengan hak akses berlapis:
 | # | Role                | Deskripsi                               | Hak Akses Utama                                                                                                     |
 |---|---------------------|-----------------------------------------|----------------------------------------------------------------------------------------------------------------------|
 | 1 | 🔴 **Administrator** | Pengelola tertinggi sistem              | Full access — CRUD semua data, manajemen pengguna & kelas, PPDB, pengaturan sekolah, audit log, backup database     |
-| 2 | 🟠 **Staf**          | Tata usaha / administrasi sekolah       | Manajemen keuangan (tagihan & verifikasi pembayaran), pengumuman, layanan surat, PPDB, laporan keuangan             |
+| 2 | 🟠 **Staf**          | Tata usaha / administrasi sekolah       | Administrasi persuratan (agenda surat masuk/keluar, disposisi KS, terbitkan surat resmi & SPT Guru/Pegawai), inventaris sarpras & sirkulasi pinjam, Buku Kas Umum (BKU) kas operasional, verifikasi pembayaran SPP, PPDB, kelola akun siswa & orang tua, impor massal CSV, cetak lembar buku induk siswa, inbox pesan tamu |
 | 3 | 🟢 **Guru**          | Pengajar / tenaga pendidik              | Buat & kelola ujian/latihan, soal, materi E-Learning, tugas, penilaian, presensi siswa, buku nilai, BK, scan QR     |
 | 4 | 🟣 **Orang Tua**     | Wali murid / orang tua siswa            | Monitoring nilai anak, presensi, tagihan keuangan, pengumuman, pesan konsultasi ke guru, catatan BK                 |
 | 5 | 🔵 **Siswa**         | Peserta didik aktif                     | Mengerjakan ujian/latihan, lihat materi & tugas, presensi, jadwal, nilai rapor, perpustakaan, pesan ke guru         |
 
 > **Catatan:** Registrasi publik hanya mengizinkan role `siswa` dan `orang_tua`. Role `administrator`, `staf`, dan `guru` hanya dapat dibuat oleh Administrator melalui panel admin.
 
+### 📚 Buku Panduan Operasional Per Role
+
+Untuk panduan mendalam langkah-demi-langkah (SOP), alur kerja terperinci, dan batasan wewenang teknis untuk setiap stakeholder sekolah, silakan pelajari manual operasional khusus yang telah disusun secara profesional:
+
+| Peran Pengguna | Dokumen Panduan | Fokus & Cakupan Operasional Utama |
+| :--- | :--- | :--- |
+| 🔴 **Administrator** | [**Administrator.md**](dokumentasi/dokumentasi-role/Administrator.md) | Otoritas penuh sistem, tata kelola akun 5 role, pengaturan kuota & gelombang PPDB, verifikasi skoring 4 jalur, audit log keamanan, pemeliharaan database (*backup & restore*), serta cetak lembar buku induk siswa Kemendikbud. |
+| 🟠 **Staf Tata Usaha** | [**Staf.md**](dokumentasi/dokumentasi-role/Staf.md) | Operasional harian kesiswaan, verifikasi permohonan surat & sinkronisasi absensi otomatis, penerbitan SPT dinas GTK ber-QR verifikasi, Buku Agenda Surat Masuk/Keluar (`AG-IN`/`AG-OUT`), Buku Kas Umum (BKU), inventaris sarpras, dan sirkulasi perpustakaan (Auto-Fill ISBN). |
+| 🟢 **Guru / Pendidik** | [**Guru.md**](dokumentasi/dokumentasi-role/Guru.md) | Distribusi materi pembelajaran E-Learning, tugas ber-deadline & feedback evaluasi, bank asesmen ujian/latihan 6 kategori, editor soal PG & esai, token & acak soal, sistem remedial, presensi QR webcam, pembinaan BK, dan pengisian rapor semester bagi Wali Kelas. |
+| 🟣 **Orang Tua / Wali**| [**OrangTua.md**](dokumentasi/dokumentasi-role/OrangTua.md) | Pemantauan kehadiran anak real-time, dukungan multi-anak (*multi-child switcher*), kontrol pengerjaan tugas & rapor digital, pengajuan izin sakit online (upload surat dokter), pembayaran mandiri SPP via Transfer/QRIS & unduh kwitansi sah, serta konsultasi privat ke guru. |
+| 🔵 **Siswa / Murid**   | [**Siswa.md**](dokumentasi/dokumentasi-role/Siswa.md) | Unduh modul belajar, serahkan berkas jawaban tugas, pengerjaan asesmen ujian online ber-countdown timer, kartu presensi digital QR Code, In-Browser E-Book reader layar penuh, booking buku mandiri (reservasi 2 hari), serta pengajuan surat siswa mandiri. |
+
 ---
 
 ## ✨ Fitur Utama
 
-### 🏠 Landing Page & Autentikasi
+### 🏠 Portal Publik, Profil Sekolah & Pusat Layanan Bantuan
 
-- **Landing Page** modern dan responsif dengan hero section dan preview dashboard
-- **Login** dengan proteksi rate limiting (maks. 5 percobaan per 15 menit)
-- **Registrasi** mandiri untuk siswa dan orang tua
-- **Session management** dengan `session_regenerate_id()` untuk mencegah session fixation
-- **CSRF Protection** di seluruh form dengan token 64-karakter
+- **Landing Page Interaktif (`index.php`)**:
+  - Hero section modern dengan animasi visual, countdown/highlight status PPDB real-time, dan navigasi terpadu
+  - Tautan cepat ke seluruh layanan civitas sekolah (PPDB, Pengumuman, Perpustakaan OPAC, Profil, Kontak)
+- **Halaman Profil Sekolah (`about.php`)**:
+  - Profil kelembagaan, visi & misi resmi, sambutan kepala sekolah, dan struktur ekosistem 5 peran pengguna
+  - Counter statistik civitas real-time (jumlah siswa aktif, guru/tenaga pendidik, koleksi perpustakaan, dan pendaftar PPDB)
+- **Pusat Bantuan & Pengaduan Tamu (`kontak.php`)**:
+  - Formulir pengiriman tiket pengaduan / pesan publik dengan penomoran tiket otomatis (`TKT-YYYYMMDD-XXXX`)
+  - Proteksi anti-spam ganda: **Honeypot Bot Trap** dan validasi **CSRF Token**
+  - Terintegrasi langsung dengan kotak masuk admin (`dashboard/admin/contact_messages.php`)
+  - Informasi jam operasional layanan TU, kontak darurat, email, dan integrasi peta navigasi sekolah
+- **📢 Papan Informasi & Pengumuman Mandiri (`informasi.php` & `pengumuman.php`)**:
+  - Akses publik tanpa perlu login untuk transparansi informasi civitas sekolah
+  - Menampilkan pengumuman resmi berkategori: **Penting, Darurat, Akademik, Kegiatan, dan Umum**
+  - **Banner Peringatan Khusus** untuk edaran darurat / disematkan (*pinned*)
+  - **Live Search & Filter Kategori Interaktif** berbasis JavaScript instan
+  - **Modal Detail Pop-Up** lengkap dengan pembuat, waktu tayang, pratinjau lampiran PDF, dan tombol cetak
+  - **Widget Kalender & Agenda Mendatang** terintegrasi dengan tabel `calendar_events`
 
-### 🎓 PPDB Online (Penerimaan Peserta Didik Baru)
+### 🎓 PPDB Online (Penerimaan Peserta Didik Baru Terpadu)
 
-- Portal pendaftaran mandiri calon siswa baru TA 2026/2027
-- Formulir biodata lengkap (data pribadi, orang tua, asal sekolah, jurusan)
-- Upload berkas dokumen (rapor, akta lahir, kartu keluarga, pas foto) — maks. 5 MB per file
-- Nomor registrasi otomatis (`PPDB-2026-XXXX`)
-- Cek status pendaftaran real-time via NISN atau nomor registrasi
-- **Cetak kartu pendaftaran** dengan barcode unik
-- Pipeline seleksi: `Menunggu Verifikasi → Terverifikasi → Lulus Seleksi → Diterima`
-- Panel verifikasi & manajemen PPDB untuk Admin
+- **Portal Pendaftaran Mandiri 4 Jalur (`ppdb/ppdb.php`)**:
+  - **Jalur Reguler / Tes Akademik**: Seleksi berbasis tes dan nilai rapor
+  - **Jalur Zonasi Domisili**: Seleksi berbasis jarak kilometer rumah ke sekolah
+  - **Jalur Prestasi**: Poin bonus penghargaan sertifikat berjenjang (sekolah s/d internasional)
+  - **Jalur Afirmasi / KIP**: Afirmasi siswa dari keluarga ekonomi rentan
+- **Kalkulator Nilai Otomatis (`calculatePpdbScore`)**:
+  - Menghitung rata-rata nilai rapor 4 mapel pokok (Matematika, IPA, Bahasa Indonesia, Bahasa Inggris)
+  - Otomatis mengkalkulasi bobot bonus prestasi dan skoring prioritas jarak zonasi secara akurat
+- **Verifikasi Berkas Dokumen Multi-Status**:
+  - Panitia dapat menandai status berkas: **Lengkap & Valid**, **Perlu Revisi**, atau **Ditolak**
+  - Catatan revisi/penolakan tampil transparan di portal pelacakan status calon siswa
+- **Verifikasi Keaslian Kartu Pendaftaran via QR Code (`ppdb_verify.php`)**:
+  - Kartu pendaftaran (`ppdb_card.php`) dilengkapi Barcode registrasi dan QR Code ber-token enkripsi SHA-256
+  - Panitia/petugas dapat memindai QR code untuk memvalidasi keabsahan data tanpa risiko manipulasi berkas fisik
+- **Otomatisasi 1-Klik Penerimaan Siswa Baru**:
+  - Saat panitia menetapkan status calon siswa menjadi **Diterima** ke kelas/jurusan:
+    1. Otomatis membuat/mengaktifkan akun login siswa di tabel `users`
+    2. Otomatis membuat akun wali murid (orang tua) dan relasi pada tabel `parent_students`
+    3. Otomatis mengaitkan kewajiban tagihan keuangan awal siswa baru pada tabel `student_bills`
+- **Manajemen Gelombang & Kuota PPDB (`dashboard/admin/settings.php`)**:
+  - Admin dapat membuka/menutup portal PPDB, mengubah nama gelombang, membatasi kuota daya tampung, mengatur batas periode tanggal, dan menampilkan pesan penutupan kustom
 
 ### 📚 Modul Akademik
 
@@ -229,25 +311,51 @@ Manajemen-PHP mengimplementasikan 5 peran pengguna dengan hak akses berlapis:
 - **Laporan statistik** kehadiran (persentase, grafik tren)
 - **Cetak & Export** laporan presensi ke spreadsheet
 
-### 💰 Modul Keuangan & SPP
+### 💰 Modul Keuangan, SPP & Buku Kas Umum (BKU)
 
-- **Jenis Tagihan** yang fleksibel (SPP bulanan, kegiatan, sumbangan, dll.)
-- **Tagihan per siswa** dengan periode bulan, tahun ajaran, dan tanggal jatuh tempo
-- **Pembayaran** mendukung metode: Transfer Bank, Tunai, QRIS
-- Upload bukti pembayaran dengan verifikasi oleh Staf/Admin
-- Pipeline status: `Belum Lunas → Menunggu Verifikasi → Lunas`
-- **Cetak kuitansi** pembayaran resmi
-- **Laporan keuangan** komprehensif dengan filter periode dan export
+- **Manajemen Tagihan & SPP**:
+  - Jenis tagihan fleksibel (SPP bulanan, uang kegiatan, sumbangan sarana, dll.)
+  - Penagihan per siswa dengan periode bulan, tahun ajaran, dan tanggal jatuh tempo
+  - Metode pembayaran: Transfer Bank, Tunai, QRIS dengan upload bukti transfer
+  - Pipeline verifikasi: `Belum Lunas → Menunggu Verifikasi → Lunas`
+  - Cetak kuitansi resmi pembayaran berstempel digital
+  - Laporan rekapitulasi keuangan komprehensif & export data
+- **Buku Kas Umum (BKU) & Kas Pengeluaran Operasional (`expenses.php`)**:
+  - Pencatatan Bukti Kas Keluar (BKK) bernomor urut otomatis (`BKK-YYYY/MM/NNN`)
+  - Kategori belanja: ATK & Operasional Kantor, Listrik & Internet, Konsumsi & Rapat, Pemeliharaan & Kebersihan, Kesiswaan & Lomba, Honor/Transport Tugas, dll.
+  - Upload dan verifikasi dokumen fisik bukti nota / kwitansi pembelian
+  - **Monitoring Arus Kas Real-Time**: Kalkulasi otomatis Total Penerimaan Kas SPP vs Total Pengeluaran Kas vs Sisa Saldo Kas Riil
+  - Filter pengeluaran per bulan/tahun dan cetak laporan BKU siap audit
 
-### 📖 Perpustakaan Digital
+### 🏢 Modul Inventaris Sarana & Prasarana (Sarpras)
 
-- **Katalog buku** lengkap (kode, ISBN, judul, penulis, penerbit, tahun, kategori)
-- Manajemen stok buku (total & tersedia)
-- Informasi lokasi rak penyimpanan
-- Dukungan **E-Book** (file PDF digital)
-- **Sirkulasi Peminjaman** — Tanggal pinjam, jatuh tempo, tanggal kembali
-- Perhitungan **denda keterlambatan** otomatis
-- Status buku: `Dipinjam → Dikembalikan` atau `Hilang`
+- **Buku Inventaris Aset Sekolah (`sarpras/inventory.php`)**:
+  - Pencatatan aset sekolah berdasarkan penempatan ruangan (Lab Komputer, Lab IPA, Ruang Guru, Ruang TU, Kelas, Perpustakaan, Aula, Gudang Olahraga, dll.)
+  - Klasifikasi kategori: Elektronik, Mebel & Perabot, Alat Peraga, Perlengkapan Kantor, Kendaraan, dan Peralatan Olahraga
+  - Monitoring kondisi barang real-time: **Baik (Layak Pakai)**, **Rusak Ringan (Perlu Servis)**, dan **Rusak Berat (Usul Penghapusan)**
+  - Pencatatan sumber pendanaan (BOS Reguler, BOS Kinerja, Yayasan, Hibah) dan nilai perolehan aset
+  - **Metrik Dashboard Aset**: Total unit terdata, unit layak pakai, unit butuh perbaikan, dan akumulasi estimasi nilai aset (Rp)
+- **Sirkulasi Peminjaman Sarpras & Fasilitas**:
+  - Formulir pencatatan peminjaman peralatan/ruangan oleh guru, siswa/OSIS, pembina ekskul, atau tamu
+  - Tracking batas waktu pengembalian dengan penanda status jatuh tempo
+  - Konfirmasi pengembalian sarana dan pencatatan kondisi barang saat kembali
+- **Cetak Rekapitulasi Inventaris** untuk laporan pertanggungjawaban sarana prasarana sekolah
+
+### 📖 Perpustakaan Digital & Katalog Publik (OPAC)
+
+Sistem perpustakaan sekolah modern yang terintegrasi penuh antara **katalog publik (`perpustakaan.php`)** dan **dashboard manajemen sirkulasi**:
+
+- **Katalog Publik Terbuka (OPAC)** — Aksesibel langsung tanpa login, dilengkapi pencarian cerdas (judul, penulis, ISBN), filter kategori interaktif, dan ketersediaan stok buku fisik/digital secara real-time.
+- **Fitur 1: Reservasi / Booking Buku Mandiri** — Siswa & guru yang login dapat melakukan pemesanan (booking) buku mandiri secara online. Buku ditahan selama 2 hari di meja sirkulasi; siswa dapat memantau status antrean (`menunggu`, `disiapkan`, `selesai`, `dibatalkan`, `kedaluwarsa`) atau membatalkannya kapan saja.
+- **Fitur 2: Review & Rating Buku Komunitas (1–5 Bintang)** — Pembaca dapat memberikan ulasan tertulis dan rating 1-5 bintang. Tampilan katalog menyajikan skor rata-rata, jumlah pembaca, dan rekap ulasan siswa lain.
+- **Fitur 3: In-Browser PDF/E-Book Reader** — Membaca koleksi modul dan e-book digital langsung di peramban web tanpa perlu mengunduh file. Dilengkapi mode **Fullscreen (Layar Penuh)**, tautan tab baru, dan proteksi klik kanan (anti-copy/save).
+- **Fitur 4: Auto-Fill ISBN via API** — Integrasi Google Books API & Open Library API pada dashboard staf/admin. Cukup ketik nomor ISBN, sistem otomatis melengkapi judul, penulis, penerbit, tahun rilis, dan pemetaan kategori perpustakaan sekolah secara instan.
+- **Sirkulasi Peminjaman & Denda Otomatis** — Pencatatan transaksi peminjaman, perpanjangan masa pinjam, pengembalian, dan penghitungan denda keterlambatan harian secara otomatis.
+- **Fitur Penunjang Sirkulasi Lengkap**:
+  - **Quick Scan Barcode** — Pemindaian cepat QR code anggota dan barcode buku via webcam/kamera.
+  - **Buku Tamu Pengunjung** — Pencatatan kehadiran civitas yang berkunjung ke ruang perpustakaan.
+  - **Cetak Label & Barcode** — Pembuatan stiker nomor panggil (call number) dan barcode buku siap tempel.
+  - **Surat Bebas Pustaka** — Verifikasi digital dan penerbitan surat bebas tanggungan perpustakaan untuk siswa tingkat akhir.
 
 ### 🤝 Bimbingan Konseling (BK)
 
@@ -277,21 +385,41 @@ Manajemen-PHP mengimplementasikan 5 peran pengguna dengan hak akses berlapis:
 - Lampiran file pada pesan
 - Riwayat percakapan tersimpan
 
-### 📄 Layanan Surat & Permohonan
+### 📄 Layanan Surat, Agenda Masuk/Keluar & Penugasan Dinas
 
-- Pengajuan layanan administratif (surat keterangan, izin, dll.)
-- Pipeline status: `Menunggu → Diproses → Selesai / Ditolak`
-- Lampiran dokumen pendukung
-- **Cetak surat** permohonan resmi
+- **Layanan Permohonan Surat Siswa & Orang Tua**:
+  - Pengajuan mandiri siswa & wali murid: Surat Keterangan Aktif, SKBB, SKL Sementara, Undangan Orang Tua, Rekomendasi Beasiswa, Surat Izin Sakit, & Dispensasi
+  - Pipeline verifikasi permohonan: `Menunggu → Diproses → Selesai / Ditolak`
+  - Lampiran dokumen/surat dokter dengan validasi MIME-type aman
+  - **Integrasi Presensi Otomatis**: Persetujuan surat izin/sakit otomatis menyinkronkan status kehadiran siswa ke tabel `student_attendance`
+  - **Aksesibilitas Multi-Anak Orang Tua**: Wali murid dapat memantau dan mencetak surat untuk semua anak yang terhubung via tabel `parent_students`
+- **Penerbitan Surat Resmi Langsung & SPT Guru/Pegawai**:
+  - Staf TU dapat langsung menerbitkan surat resmi sekolah berkop dinas
+  - **Surat Perintah Tugas (SPT / SPPD) Guru & Pegawai** — Surat penugasan resmi bagi pendidik dan tenaga kependidikan untuk tugas kedinasan, kepengawasan, dan pelatihan MGMP dengan format standar kedinasan Republik Indonesia
+  - Format cetak resmi berstandar Kemendikbud: Kop surat resmi, penomoran kode klasifikasi arsip (`421.3`, `800/SPT-GTK`, dll.), tanda tangan digital Kepala Sekolah, simulasi stempel basah terakreditasi, dan verifikasi hash QR code
+- **Buku Agenda Surat Masuk & Surat Keluar (`archives.php`)**:
+  - Dua tab navigasi terpisah untuk Surat Masuk dan Surat Keluar
+  - Penomoran agenda resmi otomatis: `AG-IN/YYYY/MM/NNN` dan `AG-OUT/YYYY/MM/NNN`
+  - Pencatatan nomor surat luar, instansi pengirim/tujuan, perihal, dan tanggal penerimaan
+  - Unggah dan preview arsip scan berkas fisik (PDF, JPG, PNG)
+  - **Lembar Disposisi Kepala Sekolah Digital**: Pencatatan instruksi disposisi Kepala Sekolah kepada guru/staf beserta batas waktu tindak lanjut
 
-### 🛠️ Panel Administrasi
+### 🛠️ Panel Administrasi & Kesiswaan
 
-- **Manajemen Pengguna** — CRUD user, assign role, assign kelas untuk siswa
-- **Manajemen Kelas** — Buat dan kelola rombongan belajar (rombel)
-- **Verifikasi PPDB** — Review, verifikasi, dan seleksi calon siswa baru
-- **Pengaturan Sekolah** — Identitas sekolah (nama, alamat, telepon, email, website, kepala sekolah, NIP, tahun ajaran, logo)
-- **Audit Log** — Pencatatan seluruh aktivitas penting dalam sistem (login, update, delete, dll.) dengan IP address
-- **Backup & Restore Database** — Export dan import skema + data database
+- **Manajemen Pengguna & Kesiswaan**:
+  - CRUD pengguna (5 role) dengan proteksi hak akses hirarkis (Staf TU khusus mengelola siswa & wali murid)
+  - **Impor Siswa Massal via CSV** — Unggah banyak data siswa sekaligus dari Excel/CSV lengkap dengan pemetaan kelas otomatis dan pembuatan password default
+  - **Unduh Template CSV** contoh resmi langsung dari dashboard
+  - **Cetak Lembar Buku Induk Siswa (`student_profile_print.php`)** — Lembar buku induk standar Kemendikbud memuat Bagian A–D (Data Diri, Alamat, Asal Sekolah, Orang Tua/Wali), kotak Pas Foto 3x4 cm, dan tanda tangan pengesahan Kepala Sekolah & Staf TU
+- **Kotak Masuk Pesan Tamu Publik (`contact_messages.php`)**:
+  - Menerima dan mengelola tiket pengaduan/pertanyaan publik dari formulir `kontak.php`
+  - Status penanganan tiket (`baru`, `diproses`, `selesai`) dan pencatatan catatan tindak lanjut admin/staf
+  - Indikator badge pesan tamu belum dibaca pada sidebar navigasi
+- **Manajemen Kelas** — Buat dan kelola rombongan belajar (rombel) serta penugasan wali kelas
+- **Verifikasi PPDB** — Review, verifikasi dokumen, dan seleksi calon peserta didik baru
+- **Pengaturan Sekolah** — Identitas sekolah (nama, NPSN, alamat, telepon, email, website, kepala sekolah, NIP, tahun ajaran, logo)
+- **Audit Log** — Pencatatan seluruh aktivitas penting dalam sistem (login, update, delete, penerbitan surat, transaksi kas) dengan IP address
+- **Backup & Restore Database** — Export dan import skema + data database secara aman
 
 ### 🚨 Custom Error Pages
 
@@ -305,39 +433,49 @@ Manajemen-PHP mengimplementasikan 5 peran pengguna dengan hak akses berlapis:
 
 ## 🗄️ Skema Database
 
-Sistem menggunakan database `website_login` dengan **25+ tabel** yang saling berelasi:
+Sistem menggunakan database `website_login` dengan **35 tabel** yang saling berelasi:
 
 | #  | Tabel                     | Deskripsi                                                    |
 |----|---------------------------|--------------------------------------------------------------|
-| 1  | `users`                   | Data pengguna (nama, email, password hash, role, kelas)      |
+| 1  | `users`                   | Data pengguna (nama, email, password hash, role, kelas, nisn)|
 | 2  | `announcements`           | Pengumuman sekolah (target role, kategori, pin, expiry)      |
-| 3  | `announcement_reads`      | Tracking pembaca pengumuman                                  |
+| 3  | `announcement_reads`      | Tracking pembaca pengumuman per pengguna                     |
 | 4  | `assignments`             | Tugas pembelajaran dari guru                                 |
 | 5  | `assignment_submissions`  | Pengumpulan tugas oleh siswa (file, nilai, feedback)         |
-| 6  | `service_requests`        | Permohonan layanan administrasi & surat                      |
+| 6  | `service_requests`        | Permohonan layanan administrasi surat siswa/ortu & SPT dinas |
 | 7  | `exams`                   | Bank ujian & latihan (token, durasi, passing grade, timer)   |
 | 8  | `exam_questions`          | Soal ujian (PG + Esai, gambar, bobot skor)                   |
 | 9  | `exam_submissions`        | Hasil pengerjaan ujian siswa (skor, remedial)                |
-| 10 | `student_attendance`      | Presensi kehadiran harian per siswa per mapel                |
+| 10 | `student_attendance`      | Presensi kehadiran harian per siswa per mata pelajaran       |
 | 11 | `calendar_events`         | Kalender akademik & agenda kegiatan sekolah                  |
-| 12 | `parent_students`         | Relasi orang tua ↔ siswa (wali murid)                       |
-| 13 | `classes`                 | Data kelas / rombongan belajar                               |
-| 14 | `school_settings`         | Konfigurasi identitas sekolah (key-value)                    |
+| 12 | `parent_students`         | Relasi orang tua (wali murid) ↔ siswa                        |
+| 13 | `classes`                 | Data kelas / rombongan belajar (rombel)                      |
+| 14 | `school_settings`         | Konfigurasi identitas sekolah & pengaturan PPDB (key-value)  |
 | 15 | `audit_logs`              | Log aktivitas pengguna (audit trail)                         |
-| 16 | `subjects`                | Data mata pelajaran                                          |
+| 16 | `subjects`                | Data mata pelajaran kurikulum                                |
 | 17 | `timetables`              | Jadwal pelajaran mingguan per kelas                          |
-| 18 | `learning_materials`      | Materi pembelajaran & E-Learning                             |
-| 19 | `payment_types`           | Jenis tagihan keuangan                                       |
+| 18 | `learning_materials`      | Materi pembelajaran E-Learning (dokumen, link, video)        |
+| 19 | `payment_types`           | Jenis tagihan keuangan sekolah                               |
 | 20 | `student_bills`           | Tagihan keuangan per siswa                                   |
-| 21 | `bill_payments`           | Transaksi pembayaran tagihan                                 |
-| 22 | `counseling_records`      | Catatan BK (pelanggaran & prestasi siswa)                    |
-| 23 | `messages`                | Pesan internal antar pengguna                                |
-| 24 | `ppdb_registrations`      | Pendaftaran calon peserta didik baru                         |
-| 25 | `library_books`           | Katalog buku perpustakaan                                    |
-| 26 | `library_loans`           | Sirkulasi peminjaman & pengembalian buku                     |
-| 27 | `student_report_notes`    | Catatan rapor (wali kelas & ekstrakurikuler)                 |
+| 21 | `bill_payments`           | Transaksi pembayaran tagihan SPP                             |
+| 22 | `counseling_records`      | Catatan BK (pelanggaran berpoin & prestasi siswa)            |
+| 23 | `messages`                | Pesan internal konsultasi antar pengguna                     |
+| 24 | `ppdb_registrations`      | Data pendaftaran calon siswa PPDB (4 jalur & verifikasi)     |
+| 25 | `library_books`           | Katalog buku fisik & koleksi e-book perpustakaan             |
+| 26 | `library_loans`           | Sirkulasi transaksi peminjaman, perpanjangan, & denda buku   |
+| 27 | `library_reservations`    | Antrean booking & reservasi buku mandiri siswa / guru        |
+| 28 | `library_reviews`         | Ulasan testimoni & rating bintang (1–5) buku komunitas       |
+| 29 | `library_visitors`        | Buku tamu presensi kehadiran fisik pengunjung perpustakaan   |
+| 30 | `student_report_notes`    | Catatan rapor semester (wali kelas & ekstrakurikuler)        |
+| 31 | `contact_messages`        | Kotak masuk pesan tamu & tiket pengaduan formulir kontak     |
+| 32 | `mail_archives`           | Buku agenda surat masuk/keluar & disposisi Kepala Sekolah    |
+| 33 | `inventory_items`         | Buku inventaris sarana prasarana sekolah per ruangan         |
+| 34 | `inventory_loans`         | Transaksi sirkulasi peminjaman sarpras & fasilitas sekolah   |
+| 35 | `financial_expenses`      | Buku Kas Umum (BKU) & pengeluaran operasional sekolah        |
 
-> **Auto-Migration:** Sistem secara otomatis membuat tabel dan menjalankan migrasi kolom baru saat pertama kali diakses. Tidak perlu import SQL manual (opsional).
+> 💡 **Catatan Modul:** Fitur Surat Bebas Perpustakaan (`dashboard/perpustakaan/clearance.php`) beroperasi secara dinamis memeriksa status tanggungan pinjaman aktif dan denda keterlambatan langsung dari tabel `library_loans` tanpa memerlukan tabel terpisah.
+>
+> ⚙️ **Auto-Migration:** Sistem secara otomatis membuat seluruh tabel dan menjalankan migrasi kolom baru saat pertama kali aplikasi diakses. Tidak wajib import SQL manual.
 
 ---
 
@@ -462,6 +600,69 @@ Setelah import `sql/database.sql`, tersedia akun demo berikut:
 7. Lihat hasil, analisis, cetak, atau export
 ```
 
+### Alur Perpustakaan & E-Book (Siswa & Staf)
+
+```
+1. Buka halaman publik: perpustakaan.php (tanpa harus login terlebih dahulu)
+2. Cari buku atau filter kategori; baca e-book langsung via In-Browser PDF Reader
+3. Siswa login → Buka modal detail buku fisik → Klik "Booking / Reservasi Buku"
+4. Buku di-booking dan ditahan selama 2 hari di meja sirkulasi
+5. Staf/Petugas di Dashboard Perpustakaan (reservations.php) memverifikasi dan klik "Proses Jadi Pinjaman"
+6. Setelah selesai membaca, siswa dapat memberikan rating (1-5 bintang) & ulasan pada katalog buku
+7. Staf menambahkan buku baru di books.php dengan fitur Auto-Fill ISBN via API secara otomatis
+```
+
+### Alur Papan Informasi & Pengumuman Publik
+
+```
+1. Akses halaman mandiri informasi.php atau pengumuman.php tanpa perlu login
+2. Gunakan Live Search untuk menyaring kata kunci pada judul atau isi edaran
+3. Filter berdasarkan kategori (Penting, Darurat, Akademik, Kegiatan, Umum) atau target sasaran
+4. Klik kartu pengumuman untuk membuka modal pop-up baca pengumuman lengkap
+5. Unduh lampiran resmi (PDF/dokumen) atau klik "Cetak Dokumen"
+6. Pantau agenda akademik sekolah terdekat dan nomor kontak layanan pada sidebar
+```
+
+### Alur Tiket Pengaduan Tamu Publik
+
+```
+1. Buka halaman publik kontak.php (tanpa login)
+2. Lengkapi formulir (Nama, Email, No. Telepon, Kategori, Perihal, dan Pesan)
+3. Sistem secara otomatis memproteksi dari spam bot (Honeypot) dan menghasilkan nomor tiket (TKT-YYYYMMDD-XXXX)
+4. Staf/Admin membuka Dashboard → Kotak Masuk Tamu (contact_messages.php)
+5. Staf meninjau isi pengaduan, mengubah status tiket (baru → diproses → selesai), serta mencatat tindakan lanjut
+```
+
+### Alur Layanan Persuratan, SPT & Agenda Masuk/Keluar
+
+```
+1. Siswa/Orang Tua mengajukan permohonan surat di dashboard/surat/requests.php (Ket. Aktif, SKBB, Izin Sakit)
+2. Staf TU memverifikasi; jika disetujui, staf dapat langsung mencetak surat resmi berstempel digital & QR verifikasi (request_print.php)
+3. Persetujuan surat izin/sakit siswa otomatis mensinkronkan data presensi hadir/sakit/izin di student_attendance
+4. Staf TU dapat menerbitkan Surat Perintah Tugas (SPT Guru & Pegawai) untuk dinas luar, MGMP, atau pelatihan
+5. Staf mendokumentasikan surat masuk/keluar di archives.php dan menginput instruksi lembar disposisi Kepala Sekolah
+```
+
+### Alur Buku Kas Umum (BKU) & Kas Pengeluaran
+
+```
+1. Staf Keuangan/Admin mengakses Dashboard Keuangan → Kas Pengeluaran (expenses.php)
+2. Klik "Catat Pengeluaran Baru" → pilih kategori belanja, tanggal, jumlah nominal (Rp), penerima, dan upload bukti kwitansi
+3. Sistem otomatis mengalokasikan nomor urut Bukti Kas Keluar resmi (EXP-YYYY/MM/NNN)
+4. Dashboard otomatis mengkalkulasi neraca arus kas: Total Masuk (SPP) - Total Keluar (Operasional) = Saldo Riil
+5. Staf dapat memfilter laporan kas bulanan dan mencetak laporan BKU siap audit
+```
+
+### Alur Inventaris Sarpras & Sirkulasi Peminjaman
+
+```
+1. Staf/Admin Sarpras mendata barang di sarpras/inventory.php per ruangan beserta kondisi (baik/rusak ringan/rusak berat)
+2. Pengguna (guru, siswa/OSIS, pembina) yang meminjam barang dicatat pada tab Sirkulasi Peminjaman
+3. Sistem memantau tanggal jatuh tempo pinjaman dengan status peringatan otomatis
+4. Saat barang dikembalikan, staf mengonfirmasi pengembalian dan memperbarui kondisi fisik barang
+5. Staf mencetak buku rekapitulasi inventaris untuk pertanggungjawaban aset sekolah
+```
+
 ---
 
 ## 🔒 Keamanan
@@ -483,6 +684,8 @@ Manajemen-PHP mengimplementasikan berbagai lapisan keamanan:
 | **Audit Trail**                | Pencatatan aktivitas penting dengan IP address                                                     |
 | **Register Role Restriction**  | Registrasi publik dibatasi hanya untuk `siswa` & `orang_tua`                                      |
 | **CSRF Token Rotation**        | Token di-reset setelah login berhasil untuk mencegah reuse                                         |
+| **Bot & Spam Protection**      | Honeypot trap tersembunyi pada form kontak publik (`kontak.php`) untuk memblokir bot spam otomatis|
+| **QR Authenticity Token**      | Hash token SHA-256 pada kartu PPDB untuk verifikasi keaslian via `ppdb_verify.php`                |
 
 ---
 
@@ -505,7 +708,7 @@ Sistem memiliki mekanisme **auto-migration** yang cerdas:
 1. **Tabel baru** — Otomatis dibuat menggunakan `CREATE TABLE IF NOT EXISTS`
 2. **Kolom baru** — Ditambahkan menggunakan `ALTER TABLE ADD COLUMN` yang di-wrap dalam try-catch
 3. **Data sampel** — Otomatis di-seed jika tabel masih kosong (kalender, kelas, jadwal, mata pelajaran, tagihan, perpustakaan, dsb.)
-4. **Flag session** — Migrasi hanya dijalankan sekali per session (`$_SESSION['db_migrated_v7']`)
+4. **Flag session** — Migrasi hanya dijalankan sekali per session (`$_SESSION['db_migrated_v11']`)
 
 > Ini memastikan developer baru atau deployment baru dapat langsung berjalan tanpa konfigurasi database manual.
 

@@ -202,10 +202,25 @@ if (in_array($user_role, ['siswa', 'orang_tua'], true)) {
         while ($rx = $stmt_ex_s->fetch()) {
             $my_exam_subs[$rx['exam_id']] = [
                 'score' => $rx['score'],
-                'remedial_granted' => (int)($rx['remedial_granted'] ?? 0)
+                'remedial_granted' => $rx['remedial_granted'] ?? 0
             ];
         }
     }
+}
+
+// Deteksi Data PPDB & Status Kelas untuk Siswa
+$my_ppdb_reg = null;
+$student_class_name = null;
+if ($user_role === 'siswa') {
+    try {
+        $stmt_my_ppdb = $pdo->prepare("SELECT * FROM ppdb_registrations WHERE user_id = ? OR email = ? ORDER BY id DESC LIMIT 1");
+        $stmt_my_ppdb->execute([$user_id, $user_email]);
+        $my_ppdb_reg = $stmt_my_ppdb->fetch();
+
+        if (!empty($std_class)) {
+            $student_class_name = $pdo->query("SELECT name FROM classes WHERE id = " . (int)$std_class)->fetchColumn();
+        }
+    } catch (Exception $e) {}
 }
 
 // 6. Data Presensi & Kalender untuk Dashboard
@@ -410,70 +425,64 @@ try {
 <?php endif; ?>
 
 <!-- Welcome Banner -->
-<div class="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-r from-blue-900/30 via-slate-900/50 to-slate-900/30 p-6 sm:p-8 backdrop-blur shadow-2xl mb-8">
-    <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+<div class="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-r from-blue-900/30 via-slate-900/70 to-slate-900/40 p-6 sm:p-8 backdrop-blur shadow-2xl mb-8">
+    <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
             <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider mb-3 <?= getRoleBadge($user_role) ?>">
-                <span>Role:</span>
-                <span><?= htmlspecialchars(getRoleLabel($user_role)) ?></span>
+                <i class="<?= getRoleIcon($user_role) ?> text-[10px]"></i>
+                <span>Peran: <?= htmlspecialchars(getRoleLabel($user_role)) ?></span>
             </div>
-            <h1 class="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white">
-                Selamat Datang, <?= htmlspecialchars($user_name) ?>!
+            <h1 class="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
+                Selamat Datang, <?= htmlspecialchars($user_name) ?> 👋
             </h1>
-            <p class="mt-2 text-sm sm:text-base text-slate-400 max-w-2xl">
-                Anda berada di portal sistem manajemen sekolah. Semua fitur di bawah ini aktif dan terhubung secara langsung antar peran.
+            <p class="mt-2 text-sm text-slate-300 max-w-2xl leading-relaxed">
+                Akses semua layanan akademik, presensi, ujian CBT, dan administrasi sekolah secara terpadu melalui menu sidebar di sebelah kiri.
             </p>
         </div>
 
-        <div class="flex flex-wrap items-center gap-3">
-            <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
-                <i class="fa-solid fa-calendar-check text-emerald-400"></i> Presensi
-            </a>
-            <a href="akademik/calendar.php" class="rounded-xl border border-cyan-500/30 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
-                <i class="fa-solid fa-calendar-days text-cyan-400"></i> Kalender
-            </a>
-            <a href="Modul-ujian/exams.php" class="rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
-                <i class="fa-solid fa-file-pen text-blue-400"></i> Ujian & Latihan
-            </a>
-            <a href="informasi/announcements.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
-                <i class="fa-solid fa-bullhorn text-slate-300"></i> Pengumuman
-            </a>
+        <div class="flex flex-wrap items-center gap-2.5">
             <?php if ($user_role === 'administrator'): ?>
-                <a href="admin/users.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                <a href="admin/users.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
                     <i class="fa-solid fa-users"></i> Kelola Pengguna
                 </a>
-                <a href="admin/classes.php" class="rounded-xl border border-indigo-500/30 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                <a href="admin/classes.php" class="rounded-xl border border-indigo-500/30 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
                     <i class="fa-solid fa-school"></i> Rombel & Kelas
                 </a>
+                <a href="informasi/announcements.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-bullhorn text-slate-300"></i> Buat Pengumuman
+                </a>
             <?php elseif ($user_role === 'guru'): ?>
-                <a href="akademik/assignments.php" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
+                <a href="akademik/assignments.php" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
                     <i class="fa-solid fa-plus"></i> Buat Tugas
                 </a>
-                <a href="akademik/gradebook.php" class="rounded-xl border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                <a href="akademik/gradebook.php" class="rounded-xl border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
                     <i class="fa-solid fa-book-open"></i> Buku Nilai
                 </a>
-                <a href="akademik/report_card.php" class="rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
-                    <i class="fa-solid fa-chart-line"></i> E-Rapor
+                <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-clipboard-user"></i> Presensi Kelas
                 </a>
             <?php elseif ($user_role === 'siswa'): ?>
-                <a href="Modul-ujian/exam_card.php" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
-                    <i class="fa-solid fa-id-card"></i> Kartu Ujian
+                <a href="akademik/timetable.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-calendar-days"></i> Jadwal Pelajaran
                 </a>
-                <a href="akademik/report_card.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                <a href="Modul-ujian/exams.php" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-file-pen"></i> Ujian CBT
+                </a>
+                <a href="akademik/report_card.php" class="rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
                     <i class="fa-solid fa-chart-line"></i> E-Rapor
                 </a>
             <?php elseif ($user_role === 'orang_tua'): ?>
-                <a href="akademik/report_card.php<?= $linked_child ? '?student_id='.$linked_child['id'] : '' ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
+                <a href="akademik/report_card.php<?= $linked_child ? '?student_id='.$linked_child['id'] : '' ?>" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
                     <i class="fa-solid fa-chart-line"></i> Rapor Anak
                 </a>
-                <a href="surat/requests.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                <a href="surat/requests.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
                     <i class="fa-solid fa-file-lines"></i> Izin / Sakit
                 </a>
             <?php elseif ($user_role === 'staf'): ?>
-                <a href="surat/requests.php" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
+                <a href="surat/requests.php" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
                     <i class="fa-solid fa-inbox"></i> Surat Masuk
                 </a>
-                <a href="presensi/attendance_report.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2">
+                <a href="presensi/attendance_report.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
                     <i class="fa-solid fa-chart-pie"></i> Rekap Presensi
                 </a>
             <?php endif; ?>
@@ -481,108 +490,119 @@ try {
     </div>
 </div>
 
-<!-- Grid Modul & Akses Cepat -->
-<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
-    <a href="akademik/timetable.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-blue-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+<!-- Section Title: Modul Akses Cepat -->
+<div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-2">
+        <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 text-xs">
+            <i class="fa-solid fa-grip"></i>
+        </span>
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Akses Cepat Modul Utama</h3>
+    </div>
+    <span class="text-xs text-slate-400 hidden sm:inline">Pintasan praktis fitur sekolah harian</span>
+</div>
+
+<!-- Grid Modul & Akses Cepat (Rapi & Terstruktur) -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <a href="akademik/timetable.php" class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg backdrop-blur hover:border-blue-500/40 hover:bg-slate-900/90 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
         <div>
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-base text-blue-400 group-hover:scale-110 transition">
-                <i class="fa-solid fa-calendar-days"></i>
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400 group-hover:scale-110 transition duration-200">
+                <i class="fa-solid fa-calendar-days text-base"></i>
             </span>
-            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Jadwal KBM</h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Hari <?= $today_id_name ?></p>
+            <h4 class="text-sm font-bold text-white mt-3 group-hover:text-blue-400 transition">Jadwal KBM</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Hari <?= $today_id_name ?></p>
         </div>
-        <span class="text-[10px] sm:text-[11px] font-semibold text-blue-400 mt-2 block truncate">
+        <span class="text-xs font-semibold text-blue-400 mt-3 block truncate">
             <?= count($dash_today_schedules) > 0 ? count($dash_today_schedules) . ' Sesi Kelas' : 'Lihat Jadwal →' ?>
         </span>
     </a>
 
-    <a href="akademik/materials.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-emerald-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+    <a href="akademik/materials.php" class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg backdrop-blur hover:border-emerald-500/40 hover:bg-slate-900/90 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
         <div>
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-base text-emerald-400 group-hover:scale-110 transition">
-                <i class="fa-solid fa-book-open-reader"></i>
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 group-hover:scale-110 transition duration-200">
+                <i class="fa-solid fa-book-open-reader text-base"></i>
             </span>
-            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Bahan Ajar</h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Modul & Video</p>
+            <h4 class="text-sm font-bold text-white mt-3 group-hover:text-emerald-400 transition">Bahan Ajar</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Modul & E-Learning</p>
         </div>
-        <span class="text-[10px] sm:text-[11px] font-semibold text-emerald-400 mt-2 block">E-Learning →</span>
+        <span class="text-xs font-semibold text-emerald-400 mt-3 block">Buka Materi →</span>
     </a>
 
-    <a href="perpustakaan/books.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-teal-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+    <a href="perpustakaan/books.php" class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg backdrop-blur hover:border-teal-500/40 hover:bg-slate-900/90 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
         <div>
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/10 text-base text-teal-400 group-hover:scale-110 transition">
-                <i class="fa-solid fa-book"></i>
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-500/15 text-teal-400 group-hover:scale-110 transition duration-200">
+                <i class="fa-solid fa-book-bookmark text-base"></i>
             </span>
-            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Perpustakaan</h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Katalog & E-Book</p>
+            <h4 class="text-sm font-bold text-white mt-3 group-hover:text-teal-400 transition">Perpustakaan</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Katalog & E-Book</p>
         </div>
-        <span class="text-[10px] sm:text-[11px] font-semibold text-teal-400 mt-2 block">
+        <span class="text-xs font-semibold text-teal-400 mt-3 block">
             <?= $dash_book_count > 0 ? $dash_book_count . ' Judul Buku' : 'Buka Perpus →' ?>
         </span>
     </a>
 
-    <a href="keuangan/payments.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-amber-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+    <a href="keuangan/payments.php" class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg backdrop-blur hover:border-amber-500/40 hover:bg-slate-900/90 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
         <div>
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-base text-amber-400 group-hover:scale-110 transition">
-                <i class="fa-solid fa-wallet"></i>
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 group-hover:scale-110 transition duration-200">
+                <i class="fa-solid fa-wallet text-base"></i>
             </span>
-            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Keuangan SPP</h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Iuran Siswa</p>
+            <h4 class="text-sm font-bold text-white mt-3 group-hover:text-amber-400 transition">Keuangan SPP</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Iuran & Kas</p>
         </div>
-        <span class="text-[10px] sm:text-[11px] font-semibold text-amber-400 mt-2 block truncate">
+        <span class="text-xs font-semibold text-amber-400 mt-3 block truncate">
             <?= in_array($user_role, ['siswa', 'orang_tua'], true) ? ($dash_total_unpaid > 0 ? formatRupiah($dash_total_unpaid) : 'Lunas <i class="fa-solid fa-check text-emerald-400 ml-1"></i>') : 'Kelola Kas →' ?>
         </span>
     </a>
 
-    <a href="bk/counseling.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-purple-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+    <a href="bk/counseling.php" class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg backdrop-blur hover:border-purple-500/40 hover:bg-slate-900/90 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
         <div>
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/10 text-base text-purple-400 group-hover:scale-110 transition">
-                <i class="fa-solid fa-scale-balanced"></i>
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15 text-purple-400 group-hover:scale-110 transition duration-200">
+                <i class="fa-solid fa-scale-balanced text-base"></i>
             </span>
-            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Bimbingan BK</h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Prestasi & Disiplin</p>
+            <h4 class="text-sm font-bold text-white mt-3 group-hover:text-purple-400 transition">Bimbingan BK</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Prestasi & Disiplin</p>
         </div>
-        <span class="text-[10px] sm:text-[11px] font-semibold text-purple-400 mt-2 block">
+        <span class="text-xs font-semibold text-purple-400 mt-3 block">
             <?= in_array($user_role, ['siswa', 'orang_tua'], true) ? '+' . $dash_counseling_points['reward'] . ' Poin' : 'Rekam Kasus →' ?>
         </span>
     </a>
 
-    <a href="pesan/messages.php" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-cyan-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+    <a href="pesan/messages.php" class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg backdrop-blur hover:border-cyan-500/40 hover:bg-slate-900/90 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
         <div>
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/10 text-base text-cyan-400 group-hover:scale-110 transition">
-                <i class="fa-solid fa-comments"></i>
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-400 group-hover:scale-110 transition duration-200">
+                <i class="fa-solid fa-comments text-base"></i>
             </span>
-            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">Konsultasi</h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Pesan Internal</p>
+            <h4 class="text-sm font-bold text-white mt-3 group-hover:text-cyan-400 transition">Konsultasi</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Pesan & Diskusi</p>
         </div>
-        <span class="text-[10px] sm:text-[11px] font-semibold text-cyan-400 mt-2 block truncate">
+        <span class="text-xs font-semibold text-cyan-400 mt-3 block truncate">
             <?= $unread_msg_count > 0 ? $unread_msg_count . ' Pesan Baru <i class="fa-solid fa-bell text-cyan-400 ml-1"></i>' : 'Buka Obrolan →' ?>
         </span>
     </a>
 
-    <a href="<?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'presensi/scan_qr.php' : 'presensi/qr_card.php' ?>" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-indigo-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+    <a href="<?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'presensi/scan_qr.php' : 'presensi/qr_card.php' ?>" class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg backdrop-blur hover:border-indigo-500/40 hover:bg-slate-900/90 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
         <div>
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-base text-indigo-400 group-hover:scale-110 transition">
-                <i class="fa-solid <?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'fa-qrcode' : 'fa-id-card' ?>"></i>
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/15 text-indigo-400 group-hover:scale-110 transition duration-200">
+                <i class="fa-solid <?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'fa-qrcode' : 'fa-id-card' ?> text-base"></i>
             </span>
-            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">
-                <?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'Scan QR' : 'Kartu QR' ?>
+            <h4 class="text-sm font-bold text-white mt-3 group-hover:text-indigo-400 transition">
+                <?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'Scan QR' : 'Kartu Pelajar QR' ?>
             </h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Presensi Cepat</p>
+            <p class="text-xs text-slate-400 mt-0.5">Presensi Cepat</p>
         </div>
-        <span class="text-[10px] sm:text-[11px] font-semibold text-indigo-400 mt-2 block">
+        <span class="text-xs font-semibold text-indigo-400 mt-3 block">
             <?= in_array($user_role, ['guru', 'staf', 'administrator'], true) ? 'Kamera Absen →' : 'Lihat Kartu →' ?>
         </span>
     </a>
 
-    <a href="<?= in_array($user_role, ['administrator', 'staf'], true) ? 'admin/ppdb.php' : '../ppdb.php' ?>" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3.5 shadow-lg backdrop-blur hover:border-rose-500/40 hover:bg-slate-900/80 transition flex flex-col justify-between group">
+    <a href="<?= in_array($user_role, ['administrator', 'staf'], true) ? 'admin/ppdb.php' : '../ppdb/ppdb.php' ?>" class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-lg backdrop-blur hover:border-rose-500/40 hover:bg-slate-900/90 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
         <div>
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-500/10 text-base text-rose-400 group-hover:scale-110 transition">
-                <i class="fa-solid fa-graduation-cap"></i>
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/15 text-rose-400 group-hover:scale-110 transition duration-200">
+                <i class="fa-solid fa-graduation-cap text-base"></i>
             </span>
-            <h4 class="text-xs sm:text-sm font-bold text-white mt-2.5">PPDB Online</h4>
-            <p class="text-[11px] text-slate-400 mt-0.5">Siswa Baru</p>
+            <h4 class="text-sm font-bold text-white mt-3 group-hover:text-rose-400 transition">PPDB Online</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Siswa Baru</p>
         </div>
-        <span class="text-[10px] sm:text-[11px] font-semibold text-rose-400 mt-2 block truncate">
+        <span class="text-xs font-semibold text-rose-400 mt-3 block truncate">
             <?= in_array($user_role, ['administrator', 'staf'], true) ? ($dash_ppdb_pending > 0 ? $dash_ppdb_pending . ' Menunggu' : 'Panitia PPDB →') : 'Portal PPDB →' ?>
         </span>
     </a>
@@ -1308,6 +1328,151 @@ try {
 <!-- 5. TAMPILAN KHUSUS: SISWA -->
 <!-- ========================================================= -->
 <?php else: ?>
+
+    <!-- Banner Status Siswa / Pendaftaran PPDB -->
+    <?php if ($my_ppdb_reg): 
+        $reg_st = $my_ppdb_reg['status'];
+    ?>
+        <?php if ($reg_st === 'menunggu_verifikasi'): ?>
+            <div class="mb-6 rounded-3xl border border-amber-500/40 bg-gradient-to-r from-amber-950/30 via-slate-900/60 to-slate-900/40 p-5 sm:p-6 backdrop-blur shadow-xl">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="flex items-start gap-4">
+                        <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 text-xl shrink-0">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                        </span>
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2 mb-1">
+                                <span class="rounded-lg px-2.5 py-0.5 text-xs font-bold border border-amber-500/40 bg-amber-500/10 text-amber-300 uppercase tracking-wider">
+                                    PPDB: Menunggu Verifikasi Berkas
+                                </span>
+                                <span class="text-xs text-slate-400 font-mono">No. Reg: <?= htmlspecialchars($my_ppdb_reg['registration_no']) ?></span>
+                            </div>
+                            <h3 class="text-base font-bold text-white">Pendaftaran Anda Sedang Diperiksa Panitia</h3>
+                            <p class="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                                Berkas pendaftaran Anda telah diterima sistem dan sedang dalam antrean verifikasi oleh staf/panitia sekolah. Modul akademik (jadwal, tugas, ujian kelas) akan aktif penuh begitu Anda dinyatakan <strong>Diterima Resmi</strong>.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 sm:self-center shrink-0">
+                        <a href="../ppdb/ppdb_card.php?reg_id=<?= $my_ppdb_reg['id'] ?>" target="_blank" class="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-xs font-bold text-amber-300 transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-print"></i> Cetak Bukti PPDB
+                        </a>
+                        <a href="../ppdb/ppdb.php?tab=cek&no=<?= urlencode($my_ppdb_reg['registration_no']) ?>" target="_blank" class="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-slate-300 transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-magnifying-glass"></i> Cek Berkas
+                        </a>
+                    </div>
+                </div>
+            </div>
+        <?php elseif ($reg_st === 'diverifikasi'): ?>
+            <div class="mb-6 rounded-3xl border border-blue-500/40 bg-gradient-to-r from-blue-950/30 via-slate-900/60 to-slate-900/40 p-5 sm:p-6 backdrop-blur shadow-xl">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="flex items-start gap-4">
+                        <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-400 text-xl shrink-0">
+                            <i class="fa-solid fa-file-circle-check"></i>
+                        </span>
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2 mb-1">
+                                <span class="rounded-lg px-2.5 py-0.5 text-xs font-bold border border-blue-500/40 bg-blue-500/10 text-blue-300 uppercase tracking-wider">
+                                    PPDB: Berkas Sah & Terverifikasi
+                                </span>
+                                <span class="text-xs text-slate-400 font-mono">No. Reg: <?= htmlspecialchars($my_ppdb_reg['registration_no']) ?></span>
+                            </div>
+                            <h3 class="text-base font-bold text-white">Tahap Pemeringkatan & Seleksi Nilai</h3>
+                            <p class="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                                Berkas persyaratan Anda dinyatakan lengkap dan valid. Data Anda saat ini sedang dalam proses pemeringkatan seleksi masuk gelombang ini.
+                            </p>
+                        </div>
+                    </div>
+                    <a href="../ppdb/ppdb_card.php?reg_id=<?= $my_ppdb_reg['id'] ?>" target="_blank" class="px-3.5 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-xs font-bold text-blue-300 transition flex items-center gap-1.5 self-start sm:self-center shrink-0">
+                        <i class="fa-solid fa-print"></i> Kartu Pendaftaran
+                    </a>
+                </div>
+            </div>
+        <?php elseif ($reg_st === 'lulus_seleksi'): ?>
+            <div class="mb-6 rounded-3xl border border-indigo-500/40 bg-gradient-to-r from-indigo-950/35 via-purple-950/20 to-slate-900/40 p-5 sm:p-6 backdrop-blur shadow-xl">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="flex items-start gap-4">
+                        <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400 text-xl shrink-0">
+                            <i class="fa-solid fa-award"></i>
+                        </span>
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2 mb-1">
+                                <span class="rounded-lg px-2.5 py-0.5 text-xs font-bold border border-indigo-500/40 bg-indigo-500/20 text-indigo-300 uppercase tracking-wider">
+                                    🎉 LULUS SELEKSI PPDB
+                                </span>
+                                <span class="text-xs text-slate-400 font-mono">No. Reg: <?= htmlspecialchars($my_ppdb_reg['registration_no']) ?></span>
+                            </div>
+                            <h3 class="text-base font-bold text-white">Selamat! Anda Dinyatakan Lulus Seleksi Masuk</h3>
+                            <p class="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                                Panitia PPDB sedang memproses penempatan rombongan belajar (kelas) dan aktivasi akun siswa Anda. Silakan hubungi tata usaha atau pantau pengumuman daftar ulang.
+                            </p>
+                        </div>
+                    </div>
+                    <a href="../ppdb/ppdb_card.php?reg_id=<?= $my_ppdb_reg['id'] ?>" target="_blank" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-black text-white transition shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 self-start sm:self-center shrink-0">
+                        <i class="fa-solid fa-file-invoice"></i> Unduh Bukti Lulus
+                    </a>
+                </div>
+            </div>
+        <?php elseif ($reg_st === 'tidak_lulus'): ?>
+            <div class="mb-6 rounded-3xl border border-rose-500/40 bg-gradient-to-r from-rose-950/30 via-slate-900/60 to-slate-900/40 p-5 sm:p-6 backdrop-blur shadow-xl">
+                <div class="flex items-start gap-4">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400 text-xl shrink-0">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </span>
+                    <div>
+                        <span class="rounded-lg px-2.5 py-0.5 text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 uppercase tracking-wider">
+                            Pemberitahuan Seleksi PPDB
+                        </span>
+                        <h3 class="text-base font-bold text-white mt-1">Belum Memenuhi Kuota Seleksi</h3>
+                        <p class="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                            Mohon maaf, berdasarkan kuota kursi dan nilai seleksi, pendaftaran Anda belum memenuhi kualifikasi pada gelombang ini. Terima kasih atas partisipasi Anda.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        <?php elseif ($reg_st === 'diterima' || !empty($student_class_name)): ?>
+            <div class="mb-6 rounded-3xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/30 via-slate-900/60 to-slate-900/40 p-4 sm:p-5 backdrop-blur flex items-center justify-between gap-4 shadow-xl">
+                <div class="flex items-center gap-3.5">
+                    <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-lg shrink-0">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </span>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-emerald-300">Status: Siswa Resmi Aktif</span>
+                            <span class="text-white/20">•</span>
+                            <span class="text-xs font-semibold text-white">Kelas: <?= htmlspecialchars($student_class_name ?? 'X PPLG') ?></span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-0.5">Semua fitur KBM, Ujian CBT, E-Rapor, Presensi, dan Perpustakaan aktif 100%.</p>
+                    </div>
+                </div>
+                <a href="presensi/qr_card.php" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs font-semibold hover:bg-emerald-500/20 transition shrink-0">
+                    <i class="fa-solid fa-id-card"></i> Kartu Pelajar
+                </a>
+            </div>
+        <?php endif; ?>
+    <?php elseif (empty($std_class)): ?>
+        <div class="mb-6 rounded-3xl border border-blue-500/30 bg-gradient-to-r from-blue-950/30 via-slate-900/60 to-slate-900/40 p-5 sm:p-6 backdrop-blur shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex items-start gap-4">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/20 text-blue-400 text-xl shrink-0">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </span>
+                    <div>
+                        <span class="rounded-lg px-2.5 py-0.5 text-xs font-bold border border-blue-500/40 bg-blue-500/10 text-blue-300 uppercase tracking-wider">
+                            Akun Siswa Mandiri
+                        </span>
+                        <h3 class="text-base font-bold text-white mt-1">Belum Terdaftar di Rombel Kelas / PPDB</h3>
+                        <p class="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                            Akun Anda telah terdaftar sebagai siswa, namun belum memiliki penempatan rombel kelas. Jika Anda merupakan calon siswa baru, silakan lengkapi formulir pendaftaran PPDB Online agar berkas Anda diproses.
+                        </p>
+                    </div>
+                </div>
+                <a href="../ppdb/ppdb.php" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition shadow-lg shadow-blue-500/25 flex items-center gap-1.5 self-start sm:self-center shrink-0">
+                    <i class="fa-solid fa-file-signature"></i> Daftar PPDB Online
+                </a>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Checklist Tugas Siswa -->
