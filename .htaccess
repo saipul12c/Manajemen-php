@@ -5,13 +5,25 @@
 # Mencegah Directory Listing & Konflik MultiViews
 Options -Indexes -MultiViews
 
-# Custom Error Pages (Mengarahkan ke folder error aplikasi)
+# Custom Error Pages (Mengarahkan ke modul error aplikasi)
 ErrorDocument 400 /manajemen-php/error/400.php
 ErrorDocument 401 /manajemen-php/error/401.php
+ErrorDocument 402 /manajemen-php/error/402.php
 ErrorDocument 403 /manajemen-php/error/403.php
 ErrorDocument 404 /manajemen-php/error/404.php
+ErrorDocument 405 /manajemen-php/error/405.php
+ErrorDocument 408 /manajemen-php/error/408.php
+ErrorDocument 409 /manajemen-php/error/409.php
+ErrorDocument 410 /manajemen-php/error/410.php
+ErrorDocument 413 /manajemen-php/error/413.php
+ErrorDocument 414 /manajemen-php/error/414.php
+ErrorDocument 415 /manajemen-php/error/415.php
+ErrorDocument 422 /manajemen-php/error/422.php
+ErrorDocument 429 /manajemen-php/error/429.php
 ErrorDocument 500 /manajemen-php/error/500.php
+ErrorDocument 502 /manajemen-php/error/502.php
 ErrorDocument 503 /manajemen-php/error/503.php
+ErrorDocument 504 /manajemen-php/error/504.php
 
 # =========================================================
 # Modul URL Rewrite (Clean URLs & Keamanan)
@@ -21,6 +33,7 @@ ErrorDocument 503 /manajemen-php/error/503.php
 
     # Mencegah akses langsung ke folder atau file sistem sensitif
     RewriteRule ^(config|sql|includes)/ - [F,L]
+    RewriteRule ^error/(render|error_data)\.php$ - [F,L]
     RewriteRule (^|/)\. - [F,L]
     RewriteRule \.(env|sql|log|ini|md|bak|sh|lock)$ - [F,L]
 

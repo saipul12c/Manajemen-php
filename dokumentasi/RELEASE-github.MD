@@ -75,7 +75,6 @@
 
 ## 🏗️ Modul & Fitur Lengkap
 
-## 🛠️ Tech Stack
 
 **Full Changelog**: https://github.com/saipul12c/Manajemen-php/compare/v1.2.0...v.1.1.0
 
