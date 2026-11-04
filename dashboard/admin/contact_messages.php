@@ -29,33 +29,47 @@ try {
             `message` TEXT NOT NULL,
             `status` ENUM('baru', 'diproses', 'selesai') NOT NULL DEFAULT 'baru',
             `ip_address` VARCHAR(45) DEFAULT NULL,
-            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            `admin_notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     ");
+
+    $col_check = $pdo->query("SHOW COLUMNS FROM `contact_messages`")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('ticket_code', $col_check, true)) {
+        $pdo->exec("ALTER TABLE `contact_messages` ADD COLUMN `ticket_code` VARCHAR(50) DEFAULT NULL AFTER `id`");
+    }
+    if (!in_array('admin_notes', $col_check, true)) {
+        $pdo->exec("ALTER TABLE `contact_messages` ADD COLUMN `admin_notes` TEXT DEFAULT NULL AFTER `ip_address`");
+    }
+    if (!in_array('updated_at', $col_check, true)) {
+        $pdo->exec("ALTER TABLE `contact_messages` ADD COLUMN `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    }
 } catch (Exception $e) {}
 
 $message_alert = "";
 $message_type  = "";
 
 // -------------------------------------------------------------
-// 1. UPDATE STATUS PESAN
+// 1. UPDATE STATUS PESAN & TANGGAPAN ADMIN
 // -------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
     if (!validateCsrfToken()) {
         $message_alert = "Token keamanan tidak valid. Silakan muat ulang.";
         $message_type  = "error";
     } else {
-        $msg_id     = (int)($_POST['message_id'] ?? 0);
-        $new_status = trim($_POST['status'] ?? '');
-        $allowed    = ['baru', 'diproses', 'selesai'];
+        $msg_id      = (int)($_POST['message_id'] ?? 0);
+        $new_status  = trim($_POST['status'] ?? '');
+        $admin_notes = trim($_POST['admin_notes'] ?? '');
+        $allowed     = ['baru', 'diproses', 'selesai'];
 
         if ($msg_id > 0 && in_array($new_status, $allowed, true)) {
             try {
-                $stmt_up = $pdo->prepare("UPDATE contact_messages SET status = ? WHERE id = ?");
-                $stmt_up->execute([$new_status, $msg_id]);
-                logActivity($pdo, 'UPDATE_CONTACT_MSG', "Mengubah status pesan kontak ID $msg_id menjadi $new_status");
+                $stmt_up = $pdo->prepare("UPDATE contact_messages SET status = ?, admin_notes = ? WHERE id = ?");
+                $stmt_up->execute([$new_status, $admin_notes !== '' ? $admin_notes : null, $msg_id]);
+                logActivity($pdo, 'UPDATE_CONTACT_MSG', "Mengubah status pesan tiket ID $msg_id menjadi $new_status");
 
-                $message_alert = "Status pesan berhasil diperbarui menjadi " . strtoupper($new_status);
+                $message_alert = "Status tiket & catatan tanggapan berhasil disimpan.";
                 $message_type  = "success";
             } catch (Exception $e) {
                 $message_alert = "Gagal memperbarui status: " . $e->getMessage();
@@ -362,9 +376,16 @@ require_once __DIR__ . "/../includes/header.php";
 
                                 <!-- Kategori & Subjek -->
                                 <td class="px-4 py-4 max-w-xs">
-                                    <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border mb-1 <?= getContactCatBadge($msg['category']) ?>">
-                                        <?= htmlspecialchars(getContactCatLabel($msg['category'])) ?>
-                                    </span>
+                                    <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+                                        <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border <?= getContactCatBadge($msg['category']) ?>">
+                                            <?= htmlspecialchars(getContactCatLabel($msg['category'])) ?>
+                                        </span>
+                                        <?php if (!empty($msg['admin_notes'])): ?>
+                                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" title="Telah diberi respon tindak lanjut">
+                                                <i class="fa-solid fa-comment-dots text-[9px]"></i> Respon Ada
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
                                     <span class="block font-semibold text-slate-200 truncate" title="<?= htmlspecialchars($msg['subject']) ?>">
                                         <?= htmlspecialchars($msg['subject']) ?>
                                     </span>
@@ -496,32 +517,50 @@ require_once __DIR__ . "/../includes/header.php";
             <div id="modalMessage" class="rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap max-h-56 overflow-y-auto"></div>
         </div>
 
-        <!-- Form Ubah Status -->
-        <form method="POST" action="contact_messages.php" class="rounded-2xl border border-white/10 bg-white/5 p-4 mb-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <!-- Form Ubah Status & Tanggapan Admin -->
+        <form method="POST" action="contact_messages.php" class="rounded-2xl border border-white/10 bg-white/5 p-4 mb-5 space-y-4">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="update_status">
             <input type="hidden" name="message_id" id="modalMessageIdInput" value="">
 
-            <div class="flex items-center gap-2 w-full sm:w-auto">
-                <label class="text-xs font-semibold text-slate-300 shrink-0">Ubah Status:</label>
-                <select name="status" id="modalStatusSelect" class="rounded-xl border border-white/10 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none">
-                    <option value="baru">Baru</option>
-                    <option value="diproses">Sedang Diproses</option>
-                    <option value="selesai">Selesai / Terjawab</option>
-                </select>
-                <button type="submit" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-white transition cursor-pointer">
-                    Simpan
-                </button>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Status Penanganan Tiket:</label>
+                    <select name="status" id="modalStatusSelect" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none">
+                        <option value="baru">Baru (Menunggu Respon)</option>
+                        <option value="diproses">Sedang Diproses Staf</option>
+                        <option value="selesai">Selesai / Terjawab</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2 justify-end pt-2 sm:pt-4">
+                    <a id="modalWaBtn" href="#" target="_blank" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition flex items-center gap-1.5 shadow">
+                        <i class="fa-brands fa-whatsapp"></i> Balas WA
+                    </a>
+                    <a id="modalMailBtn" href="#" class="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3 py-2 text-xs font-bold text-white transition flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-envelope"></i> Balas Email
+                    </a>
+                </div>
             </div>
 
-            <!-- Tombol Balas WhatsApp / Email di dalam Modal -->
-            <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <a id="modalWaBtn" href="#" target="_blank" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-white transition flex items-center gap-1.5">
-                    <i class="fa-brands fa-whatsapp"></i> Balas WA
-                </a>
-                <a id="modalMailBtn" href="#" class="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3.5 py-1.5 text-xs font-bold text-white transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-envelope"></i> Balas Email
-                </a>
+            <!-- Respon / Catatan Resmi Tindak Lanjut -->
+            <div>
+                <label for="modalAdminNotes" class="block text-xs font-semibold text-slate-300 mb-1">
+                    Catatan Tindak Lanjut / Jawaban Resmi Sekolah (Dapat Dilihat Publik saat Melacak Tiket):
+                </label>
+                <textarea name="admin_notes" id="modalAdminNotes" rows="3"
+                          placeholder="Tuliskan jawaban resmi, verifikasi informasi, atau instruksi tindak lanjut untuk pengirim tiket ini..."
+                          class="w-full rounded-xl border border-white/10 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none leading-relaxed"></textarea>
+                <p class="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5">
+                    <i class="fa-solid fa-circle-info text-amber-400 text-xs"></i>
+                    <span>Tanggapan ini akan otomatis ditampilkan ketika pengguna melacak nomor tiket di halaman kontak tanpa login.</span>
+                </p>
+            </div>
+
+            <div class="flex justify-end pt-1">
+                <button type="submit" class="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 px-5 py-2 text-xs font-bold text-slate-950 transition cursor-pointer shadow-lg shadow-amber-500/20">
+                    <i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Status & Tanggapan
+                </button>
             </div>
         </form>
 
@@ -566,8 +605,9 @@ function openDetailModal(data) {
     else if (data.category === 'teknis') catBadge.className += 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300';
     else catBadge.className += 'border-slate-500/30 bg-slate-500/10 text-slate-300';
 
-    // Status Select
+    // Status Select & Notes
     document.getElementById('modalStatusSelect').value = data.status || 'baru';
+    document.getElementById('modalAdminNotes').value = data.admin_notes || '';
 
     // Link WhatsApp
     const waBtn = document.getElementById('modalWaBtn');

@@ -1,3 +1,86 @@
+# ⚡ Manajemen-PHP v1.2.0
+
+## ✨ Highlights
+
+## 🛠️ Perbaikan Bug dan Peningkatan Keamanan
+
+### 🔒 Keamanan & Kontrol Akses (Security Hardening)
+- 🛡️ **Pencegahan Akses Ilegal E-Rapor Siswa (IDOR/BOLA Fix) — *Special Credit to kta1kri***
+  - **Pelapor Keamanan:** `kta1kri` (Security Researcher)
+  - **Lokasi:** `dashboard/akademik/report_card.php`
+  - **Deskripsi:** Menutup celah *Broken Object-Level Authorization* (IDOR/BOLA) di mana siswa yang login sebelumnya dapat melihat isi lengkap buku rapor digital siswa lain (NISN, catatan wali kelas, nilai mata pelajaran, dan kehadiran) dengan memanipulasi parameter URL `?student_id=`.
+  - **Solusi:** Menerapkan kontrol akses berbasis peran (RBAC) ketat: siswa mutlak hanya dapat membuka rapor miliknya sendiri (`$target_student_id = $user_id`), orang tua divalidasi melalui relasi resmi tabel `parent_students`, dan hanya guru/staf/admin yang memiliki wewenang memilih siswa binaan.
+
+- 💰 **Pengamanan Kepemilikan Tagihan & Pembayaran (Anti-IDOR) — *Reported by kta1kri***
+  - **Pelapor Keamanan:** `kta1kri`
+  - **Lokasi:** `dashboard/keuangan/payments.php` (`submit_payment`)
+  - **Deskripsi:** Menutup celah di mana siswa sebelumnya dapat mengirimkan pengajuan pembayaran atas nomor tagihan (`bill_id`) siswa lain.
+  - **Solusi:** Menambahkan verifikasi kepemilikan tagihan di dalam transaksi basis data dengan penguncian baris (`FOR UPDATE`), memvalidasi batas ukuran file bukti transfer (maks. 5MB), dan memeriksa tipe MIME asli via `finfo`.
+
+- 👨‍👩‍👦 **Perbaikan Logika Pembayaran Tagihan Orang Tua Multi-Anak**
+  - **Lokasi:** `dashboard/keuangan/payments.php`
+  - **Deskripsi:** Memperbaiki *logic error* pada akun orang tua yang memiliki lebih dari satu anak, di mana sebelumnya sistem memblokir pembayaran tagihan anak kedua dan seterusnya. Kini orang tua dapat membayar tagihan seluruh anak yang sah terhubung di `parent_students`.
+
+- 🌐 **Pengamanan Signature Webhook Pembayaran Otomatis**
+  - **Lokasi:** `api/payment_webhook.php`
+  - **Deskripsi:** Menghilangkan celah bypass signature HMAC jika secret key belum disetel. Kini sistem menolak permintaan (`503 Service Unavailable`) jika konfigurasi belum lengkap, serta mewajibkan verifikasi signature menggunakan `hash_equals`.
+
+- 📑 **Penguatan Verifikasi Integritas Dokumen & Tanda Tangan Elektronik (TTE)**
+  - **Lokasi:** `verify_document.php`
+  - **Deskripsi:** Mencegah pemalsuan tautan verifikasi dokumen publik (*hash forgery*) dengan menghapus celah validasi parameter kosong dan mewajibkan pencocokan nomor berkas secara nyata terhadap pangkalan data arsip resmi sekolah (`service_requests`, `mail_archives`, `student_bills`, atau `ppdb_registrations`) sebelum dokumen dinyatakan sah.
+
+- 📻 **Penghapusan Kunci Bawaan & Pengamanan CORS API Presensi RFID**
+  - **Lokasi:** `api/rfid_attendance.php`
+  - **Deskripsi:** Menghapus nilai kunci bawaan (*hardcoded fallback key*) di kode sumber sehingga 100% bersumber dari konfigurasi database (`school_settings`), serta memperbaiki kebijakan CORS agar tidak merefleksikan header *Host/Origin* sembarangan.
+
+- 🔐 **Peningkatan Privasi Pengguna & Penangkalan Enumerasi pada Lupa Sandi**
+  - **Lokasi:** `auth/forgot_password.php`
+  - **Deskripsi:** Memperbaiki *logic flaw* pada fungsi `maskPhone()` di mana 2 digit terakhir nomor ponsel sebelumnya tercetak secara terbuka di layar pada tahap tantangan Google Phone Challenge. Masking diperketat menjadi format `0812-••••-••••`, penyamaran nama akun ditingkatkan, serta diterapkan pembatasan frekuensi (*rate limiting* per IP) untuk mencegah spam OTP WhatsApp (*WA Bombing*).
+
+- 🪪 **Pencegahan Kebocoran Masif Data Pribadi (PII) & IDOR pada Kartu Pendaftaran PPDB**
+  - **Lokasi:** `ppdb/ppdb_card.php` & `ppdb/ppdb_verify.php`
+  - **Deskripsi:** Menutup celah *Broken Access Control* / IDOR di mana kartu tanda bukti pendaftaran fisik PPDB sebelumnya dapat dibuka bebas tanpa otentikasi hanya dengan menebak parameter `?reg=PPDB-2026-XXXX`. Celah ini sebelumnya berpotensi membocorkan data pribadi (PII) sensitif seperti NIK, NISN, tanggal lahir, nama orang tua, kontak WhatsApp wali murid, dan alamat rumah.
+  - **Solusi:** Menerapkan otorisasi bertingkat (hanya dapat diakses panitia sekolah yang sedang login, sesi terverifikasi tanggal lahir di tab Cek Status, atau melalui token keamanan kriptografi permanen `qr_token` yang tercetak pada barcode kartu).
+
+- 🛡️ **Proteksi File Konfigurasi Sensitif & Larangan Eksekusi Skrip pada Folder Unggahan**
+  - **Lokasi:** `.htaccess` & `uploads/.htaccess`
+  - **Deskripsi:** Menutup celah pengunduhan langsung file lingkungan sensitif seperti `.env`, dotfiles (`.git`), file cadangan basis data (`.sql`, `.bak`), file log, dan folder internal sistem (`config`, `sql`, `includes`) di level web server Apache.
+  - **Solusi:** Memperketat rule pemblokiran di root `.htaccess` serta membuat konfigurasi pengaman baru di `uploads/.htaccess` dengan `php_flag engine off` dan `SetHandler default-handler` guna mematikan eksekusi skrip PHP secara total di seluruh subdirektori unggahan.
+
+- 🖋️ **Pencegahan Stored XSS pada Upload Berkas Scan Tanda Tangan Guru**
+  - **Lokasi:** `dashboard/profile.php`
+  - **Deskripsi:** Mencegah serangan *Stored Cross-Site Scripting* (XSS) melalui unggahan file tanda tangan berformat SVG yang berpotensi disusupi muatan skrip JavaScript berbahaya.
+  - **Solusi:** Menerapkan sanitasi otomatis berkas XML/SVG untuk membersihkan tag `<script>`, atribut event JavaScript (`onload`, `onerror`, dll.), serta elemen `<foreignObject>` sebelum disimpan ke server.
+
+- 🌐 **Pengaktifan Verifikasi SSL/TLS & Penangkalan MitM pada Koneksi API Eksternal**
+  - **Lokasi:** `config/database.php` (`testExternalApiConnection` & `callExternalApi`)
+  - **Deskripsi:** Mengaktifkan kembali validasi ketat sertifikat SSL/TLS (`CURLOPT_SSL_VERIFYPEER = true` dan `CURLOPT_SSL_VERIFYHOST = 2`) pada panggilan API ke pihak ketiga (Payment Gateway, WA Gateway, dll.) guna mencegah penyadapan kredensial transaksi (*Man-in-the-Middle*).
+
+- 🍪 **Inisialisasi Keamanan Cookie Sesi Terpusat (*Session Security*)**
+  - **Lokasi:** `config/database.php`
+  - **Deskripsi:** Menetapkan parameter keamanan cookie sesi (`HttpOnly`, `SameSite=Lax`, dan flag `Secure` saat berjalan di HTTPS) secara terpusat di baris teratas konfigurasi sistem sebelum sesi PHP dimulai.
+
+- 🔒 **Pembersihan Data Konseling Siswa (BK) dari Kueri Berita Publik**
+  - **Lokasi:** `berita.php`
+  - **Deskripsi:** Menghapus relasi join ke tabel `counseling_records` pada kueri pembacaan berita publik yang sebelumnya menarik data pelanggaran kedisiplinan dan nama siswa ke dalam memori eksekusi halaman artikel.
+
+- 📝 **Validasi CSRF Token & Pembatasan Percobaan Login CBT PPDB**
+  - **Lokasi:** `ppdb/ppdb_cbt.php`
+  - **Deskripsi:** Menambahkan validasi `validateCsrfToken()` pada form konfirmasi tanggal lahir peserta seleksi, serta menerapkan batas maksimal 5 kali percobaan salah sebelum akses ditunda sementara demi mencegah tebakan berulang.
+
+- 🛡️ **Pencegahan Kebocoran Struktur Database (*Exception Leak*) & Perbaikan Rate Limiter IP**
+  - **Lokasi:** `ppdb/ppdb_cbt.php`, `ppdb/ppdb.php`, `kontak.php`, `dashboard/perpustakaan/books.php`, & `auth/login.php`
+  - **Deskripsi:** Mengganti pengembalian mentah pesan error database (`$e->getMessage()`) ke publik dengan pesan umum yang aman, serta menyelaraskan pembacaan IP di `auth/login.php` menggunakan `getClientIp()` agar tidak memicu penguncian akun massal (*DoS*) di balik reverse proxy.
+
+
+## 🏗️ Modul & Fitur Lengkap
+
+## 🛠️ Tech Stack
+
+**Full Changelog**: https://github.com/saipul12c/Manajemen-php/compare/v1.2.0...v.1.1.0
+
+---
+
 # ⚡ Manajemen-PHP v1.1.0
 
 > Rilis Pembaruan Kedua — Sistem Manajemen Sekolah Terpadu dengan penambahan PPDB 4 Jalur Seleksi & QR Token SHA-256, Buku Kas Umum (BKU), Inventaris Sarpras, Buku Agenda Persuratan & SPT Guru/Pegawai standar kedinasan, Peningkatan Perpustakaan Digital (Auto-Fill ISBN & In-Browser E-Reader), Cetak Lembar Buku Induk Siswa (Standar Kemendikbud), serta Pusat Pengaduan Publik Tiket Tamu.
@@ -91,10 +174,9 @@
 
 ---
 
-**Full Changelog**: https://github.com/saipul12c/Manajemen-php/compare/v1.0.0...v1.1.0
+**Full Changelog**: https://github.com/saipul12c/Manajemen-php/compare/v1.0.0...v.1.1.0
 
 ---
-
 
 # ⚡ Manajemen-PHP v1.0.0
 

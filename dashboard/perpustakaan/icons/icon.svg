@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGradPerpus" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#78350f"/>
+      <stop offset="50%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="glowPerpus" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#f59e0b" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Background Rounded Squircle -->
+  <rect width="512" height="512" rx="115" fill="url(#bgGradPerpus)"/>
+
+  <!-- Inner Border Glow -->
+  <rect x="12" y="12" width="488" height="488" rx="103" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="0.2"/>
+
+  <!-- Center Open Book & Digital Glow -->
+  <g filter="url(#glowPerpus)">
+    <!-- Book Spine & Pages Shadow -->
+    <path d="M 256 180 Q 200 150 110 160 L 110 330 Q 200 320 256 350 Q 312 320 402 330 L 402 160 Q 312 150 256 180 Z" fill="#0f172a" stroke="#fbbf24" stroke-width="6"/>
+
+    <!-- Left Page Inner -->
+    <path d="M 250 190 Q 200 165 125 174 L 125 315 Q 200 305 250 334 Z" fill="#1e293b"/>
+    <!-- Left Lines -->
+    <line x1="145" y1="210" x2="225" y2="210" stroke="#fef3c7" stroke-width="4" stroke-linecap="round"/>
+    <line x1="145" y1="235" x2="225" y2="235" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+    <line x1="145" y1="260" x2="210" y2="260" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+    <line x1="145" y1="285" x2="220" y2="285" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Right Page Inner -->
+    <path d="M 262 190 Q 312 165 387 174 L 387 315 Q 312 305 262 334 Z" fill="#1e293b"/>
+    <!-- Right Lines & Barcode motif -->
+    <line x1="287" y1="210" x2="367" y2="210" stroke="#fef3c7" stroke-width="4" stroke-linecap="round"/>
+    <line x1="287" y1="235" x2="355" y2="235" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+    <!-- Digital Barcode inside right page -->
+    <rect x="290" y="260" width="4" height="24" fill="#fbbf24"/>
+    <rect x="298" y="260" width="8" height="24" fill="#fbbf24"/>
+    <rect x="310" y="260" width="3" height="24" fill="#fbbf24"/>
+    <rect x="317" y="260" width="6" height="24" fill="#fbbf24"/>
+    <rect x="327" y="260" width="10" height="24" fill="#fbbf24"/>
+    <rect x="341" y="260" width="4" height="24" fill="#fbbf24"/>
+    <rect x="349" y="260" width="7" height="24" fill="#fbbf24"/>
+
+    <!-- Ribbon / Bookmark -->
+    <path d="M 246 170 L 246 250 L 256 240 L 266 250 L 266 170 Z" fill="#ef4444"/>
+
+    <!-- Graduation Cap / E-Knowledge Icon at Top -->
+    <path d="M 256 95 L 320 125 L 256 155 L 192 125 Z" fill="#fbbf24" stroke="#ffffff" stroke-width="3"/>
+    <polygon points="256,155 310,130 310,145 256,170 202,145 202,130" fill="#f59e0b"/>
+    <line x1="310" y1="130" x2="310" y2="165" stroke="#fbbf24" stroke-width="3"/>
+    <circle cx="310" cy="168" r="4" fill="#ffffff"/>
+  </g>
+
+  <!-- Title Badge -->
+  <rect x="156" y="420" width="200" height="42" rx="21" fill="#0f172a" fill-opacity="0.9" stroke="#fbbf24" stroke-width="3"/>
+  <text x="256" y="447" font-family="system-ui, sans-serif" font-size="20" font-weight="800" fill="#fbbf24" text-anchor="middle" letter-spacing="3">PERPUS</text>
+</svg>

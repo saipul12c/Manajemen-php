@@ -120,6 +120,7 @@ $categories = [
     'Konsumsi & Rapat',
     'Pemeliharaan & Kebersihan',
     'Kegiatan Kesiswaan & Lomba',
+    'Gaji & Honor Guru / Pegawai',
     'Honor & Transport Tugas',
     'Pengadaan Buku & Bahan Ajar',
     'Lainnya'
@@ -329,6 +330,11 @@ require_once __DIR__ . "/../includes/header.php";
                             <td class="px-6 py-4">
                                 <span class="font-mono text-xs font-bold text-rose-400 block"><?= htmlspecialchars($exp['expense_no']) ?></span>
                                 <span class="text-xs text-slate-400 mt-0.5 block"><?= date('d F Y', strtotime($exp['expense_date'])) ?></span>
+                                <?php if (str_starts_with($exp['expense_no'], 'BKK-INV-') || stripos($exp['notes'] ?? '', 'Pengajuan Sarpras') !== false): ?>
+                                    <span class="inline-flex items-center gap-1 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-bold text-cyan-300 mt-1">
+                                        <i class="fa-solid fa-boxes-stacked"></i> Aset Sarpras
+                                    </span>
+                                <?php endif; ?>
                             </td>
 
                             <td class="px-6 py-4">

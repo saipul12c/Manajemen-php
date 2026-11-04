@@ -30,18 +30,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $end_date = !empty($_POST['end_date']) ? $_POST['end_date'] : null;
     $category = $_POST['category'] ?? 'kegiatan';
     $color = $_POST['color'] ?? 'blue';
+    $facility = trim($_POST['facility_location'] ?? '');
+
+    // Pastikan kolom facility_location ada pada calendar_events (Auto-Migration)
+    try {
+        $pdo->exec("ALTER TABLE calendar_events ADD COLUMN `facility_location` VARCHAR(100) DEFAULT NULL AFTER `color`");
+    } catch (Exception $e_col) {}
 
     if ($title === '' || empty($event_date)) {
         $message = "Nama kegiatan dan tanggal mulai wajib diisi.";
         $message_type = "error";
     } else {
-        $stmt_in = $pdo->prepare("
-            INSERT INTO calendar_events (title, description, event_date, end_date, category, color, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-        $stmt_in->execute([$title, $description ?: null, $event_date, $end_date, $category, $color, $user_id]);
-        $message = "Agenda kegiatan baru berhasil ditambahkan ke kalender.";
-        $message_type = "success";
+        $final_end = $end_date ?: $event_date;
+
+        // Smart Conflict Detection Sarpras & Kalender (Fase 3)
+        $has_conflict = false;
+        if ($facility !== '') {
+            $stmt_cf = $pdo->prepare("
+                SELECT title, event_date, end_date FROM calendar_events 
+                WHERE facility_location = ? 
+                  AND (
+                      (event_date <= ? AND COALESCE(end_date, event_date) >= ?) OR
+                      (event_date <= ? AND COALESCE(end_date, event_date) >= ?) OR
+                      (event_date >= ? AND COALESCE(end_date, event_date) <= ?)
+                  )
+                LIMIT 1
+            ");
+            $stmt_cf->execute([$facility, $event_date, $event_date, $final_end, $final_end, $event_date, $final_end]);
+            $conflict = $stmt_cf->fetch();
+
+            if ($conflict) {
+                $has_conflict = true;
+                $c_start = date('d M Y', strtotime($conflict['event_date']));
+                $c_end = !empty($conflict['end_date']) ? date('d M Y', strtotime($conflict['end_date'])) : $c_start;
+                $message = "⚠️ Bentrok Fasilitas Terdeteksi! Ruangan/Sarpras '{$facility}' sudah dipesan untuk agenda '{$conflict['title']}' ({$c_start} - {$c_end}). Silakan tentukan fasilitas lain atau sesuaikan jadwal.";
+                $message_type = "error";
+            }
+        }
+
+        if (!$has_conflict) {
+            $stmt_in = $pdo->prepare("
+                INSERT INTO calendar_events (title, description, event_date, end_date, category, color, facility_location, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt_in->execute([$title, $description ?: null, $event_date, $end_date, $category, $color, $facility ?: null, $user_id]);
+            
+            // Catat ke inventory_loans jika memilih fasilitas sarpras
+            if ($facility !== '') {
+                try {
+                    $item_id = (int)$pdo->query("SELECT id FROM inventory_items WHERE room_location = " . $pdo->quote($facility) . " LIMIT 1")->fetchColumn();
+                    if ($item_id > 0) {
+                        $user_name_borrow = $_SESSION['user_name'] ?? 'Penyelenggara Agenda';
+                        $stmt_loan = $pdo->prepare("
+                            INSERT INTO inventory_loans 
+                            (item_id, borrower_name, borrower_role, borrow_date, expected_return_date, status, purpose, recorded_by)
+                            VALUES (?, ?, ?, ?, ?, 'dipinjam', ?, ?)
+                        ");
+                        $stmt_loan->execute([$item_id, $user_name_borrow, $user_role, $event_date, $final_end, "Agenda Kalender: $title", $user_id]);
+                    }
+                } catch (Exception $e_loan) {}
+            }
+
+            $message = "Agenda kegiatan baru berhasil ditambahkan" . ($facility ? " dengan reservasi fasilitas '{$facility}' (Bebas Bentrok)." : " ke kalender.");
+            $message_type = "success";
+        }
     }
     } // end CSRF check
 }
@@ -134,15 +186,16 @@ foreach ($events as $ev) {
 
     while ($curr <= $limit) {
         $calendar_data[$curr][] = [
-            'id'          => $ev['id'],
-            'type'        => 'event',
-            'title'       => $ev['title'],
-            'description' => $ev['description'],
-            'category'    => $ev['category'],
-            'color'       => $ev['color'],
-            'author_name' => $ev['author_name'],
-            'created_by'  => $ev['created_by'],
-            'is_multi'    => ($ev['end_date'] && $ev['end_date'] !== $ev['event_date']),
+            'id'                => $ev['id'],
+            'type'              => 'event',
+            'title'             => $ev['title'],
+            'description'       => $ev['description'],
+            'category'          => $ev['category'],
+            'color'             => $ev['color'],
+            'facility_location' => $ev['facility_location'] ?? null,
+            'author_name'       => $ev['author_name'],
+            'created_by'        => $ev['created_by'],
+            'is_multi'          => ($ev['end_date'] && $ev['end_date'] !== $ev['event_date']),
         ];
         $curr = date('Y-m-d', strtotime($curr . ' +1 day'));
     }
@@ -520,6 +573,25 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
             </div>
 
+            <!-- Reservasi Fasilitas Sarpras & Smart Conflict Detection (Fase 3) -->
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                    <i class="fa-solid fa-building text-cyan-400 mr-1"></i> Reservasi Fasilitas / Ruangan Sarpras (Opsional)
+                </label>
+                <select name="facility_location" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white focus:border-cyan-500 focus:outline-none">
+                    <option value="">-- Tanpa Reservasi Ruangan / Fasilitas --</option>
+                    <option value="Aula Utama Sekolah">Aula Utama Sekolah</option>
+                    <option value="Laboratorium Komputer">Laboratorium Komputer</option>
+                    <option value="Laboratorium IPA & Sains">Laboratorium IPA & Sains</option>
+                    <option value="Lapangan Olahraga Utama">Lapangan Olahraga Utama</option>
+                    <option value="Ruang Rapat Guru">Ruang Rapat Guru</option>
+                    <option value="Ruang Multimedia / Podcast">Ruang Multimedia / Podcast</option>
+                    <option value="Perpustakaan Pusat">Perpustakaan Pusat</option>
+                    <option value="Ruang Tata Usaha">Ruang Tata Usaha</option>
+                </select>
+                <p class="text-[11px] text-slate-500 mt-1"><i class="fa-solid fa-shield-check text-cyan-400 mr-1"></i> Sistem otomatis mendeteksi dan mencegah bentrok jadwal dengan agenda lain.</p>
+            </div>
+
             <div>
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Keterangan / Deskripsi</label>
                 <textarea name="description" rows="3" placeholder="Rincian tempat, susunan acara, atau instruksi..." 
@@ -546,7 +618,13 @@ require_once __DIR__ . "/../includes/header.php";
 function showEventDetail(item, dateStr) {
     document.getElementById('detailTitle').textContent = item.title;
     document.getElementById('detailDate').innerHTML = '<i class="fa-regular fa-calendar mr-1.5"></i>' + dateStr;
-    document.getElementById('detailDesc').textContent = item.description || 'Tidak ada catatan tambahan untuk agenda ini.';
+    
+    let descHtml = '';
+    if (item.facility_location) {
+        descHtml += '<div class="mb-3 p-2.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-xs font-semibold flex items-center gap-2"><i class="fa-solid fa-building text-cyan-400"></i> Fasilitas Terintegrasi: ' + item.facility_location + '</div>';
+    }
+    descHtml += (item.description || 'Tidak ada catatan tambahan untuk agenda ini.');
+    document.getElementById('detailDesc').innerHTML = descHtml;
 
     const catBadge = document.getElementById('detailCategoryBadge');
     catBadge.textContent = item.category.toUpperCase();
@@ -566,6 +644,15 @@ function showEventDetail(item, dateStr) {
 
     <?php if ($can_manage): ?>
     if (item.type === 'event') {
+        const newsBtn = document.createElement('a');
+        newsBtn.href = '../informasi/news.php?action=create&source=calendar&event_id=' + encodeURIComponent(item.id) +
+            '&title=' + encodeURIComponent('Liputan Acara: ' + item.title) +
+            '&category=kegiatan' +
+            '&excerpt=' + encodeURIComponent((item.description || item.title).substring(0, 150));
+        newsBtn.className = 'inline-flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3.5 py-2 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 cursor-pointer';
+        newsBtn.innerHTML = '<i class="fa-solid fa-feather-pointed"></i> Tulis Liputan';
+        delContainer.appendChild(newsBtn);
+
         const delForm = document.createElement('form');
         delForm.method = 'POST';
         delForm.action = 'calendar.php?month=<?= $req_month ?>&year=<?= $req_year ?>';

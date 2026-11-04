@@ -71,33 +71,39 @@ foreach ($students as $stu) {
     $as_row = $stmt_as->fetch();
     $as_score = $as_row['avg_score'] !== null ? round((float)$as_row['avg_score'], 1) : 0.0;
 
-    // 3. UH
+    // 3. UH / SLM
     $stmt_uh = $pdo->prepare("
         SELECT AVG(s.score) as avg_score 
         FROM exam_submissions s
         JOIN exams e ON s.exam_id = e.id
-        WHERE s.student_id = ? AND e.category = 'ujian_harian'
+        WHERE s.student_id = ? 
+          AND e.category IN ('slm', 'ujian_harian', 'harian', 'kuis')
+          AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
     ");
     $stmt_uh->execute([$s_id]);
     $uh_score = round((float)($stmt_uh->fetchColumn() ?? 0), 1);
 
-    // 4. UTS
+    // 4. UTS / STS
     $stmt_uts = $pdo->prepare("
         SELECT s.score 
         FROM exam_submissions s
         JOIN exams e ON s.exam_id = e.id
-        WHERE s.student_id = ? AND e.category = 'uts'
+        WHERE s.student_id = ? 
+          AND e.category IN ('sts', 'uts')
+          AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
         ORDER BY s.id DESC LIMIT 1
     ");
     $stmt_uts->execute([$s_id]);
     $uts_score = round((float)($stmt_uts->fetchColumn() ?? 0), 1);
 
-    // 5. UKK
+    // 5. UKK / SAS / SAT
     $stmt_ukk = $pdo->prepare("
         SELECT s.score 
         FROM exam_submissions s
         JOIN exams e ON s.exam_id = e.id
-        WHERE s.student_id = ? AND e.category = 'ukk'
+        WHERE s.student_id = ? 
+          AND e.category IN ('sas', 'sat', 'ukk', 'uas')
+          AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
         ORDER BY s.id DESC LIMIT 1
     ");
     $stmt_ukk->execute([$s_id]);
@@ -388,7 +394,7 @@ $pass_pct  = $total_stu > 0 ? round(($count_pass / $total_stu) * 100, 1) : 0.0;
         <!-- Judul -->
         <div class="doc-title">
             <h3>LEGER REKAPITULASI NILAI HASIL BELAJAR SISWA</h3>
-            <p>Bobot: Presensi (10%) + Tugas (20%) + UH (20%) + UTS (25%) + UKK (25%) | Standar KKM: 75</p>
+            <p>Bobot: Presensi (10%) + Tugas (20%) + UH/SLM (20%) + UTS/STS (25%) + UKK/SAS/SAT (25%) | Standar KKM: 75</p>
         </div>
 
         <!-- Metadata -->
@@ -417,9 +423,9 @@ $pass_pct  = $total_stu > 0 ? round(($count_pass / $total_stu) * 100, 1) : 0.0;
                     <th style="width: 10%;">Kelas</th>
                     <th style="width: 7%;">Presensi</th>
                     <th style="width: 7%;">Tugas</th>
-                    <th style="width: 7%;">UH</th>
-                    <th style="width: 7%;">UTS</th>
-                    <th style="width: 7%;">UKK</th>
+                    <th style="width: 7%;">UH/SLM</th>
+                    <th style="width: 7%;">UTS/STS</th>
+                    <th style="width: 7%;">UKK/SAS</th>
                     <th style="width: 8%;">Nilai Akhir</th>
                     <th style="width: 6%;">Predikat</th>
                 </tr>

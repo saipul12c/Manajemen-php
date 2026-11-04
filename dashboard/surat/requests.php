@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $target_date = !empty($_POST['target_date']) ? $_POST['target_date'] : date('Y-m-d');
         $attachment_url = null;
 
-        // BUG-09 fix: Handle Upload Berkas / Surat Dokter dengan validasi MIME-type
+        // -09 fix: Handle Upload Berkas / Surat Dokter dengan validasi MIME-type
         if (isset($_FILES['attachment_file']) && $_FILES['attachment_file']['error'] === UPLOAD_ERR_OK) {
             $file_tmp  = $_FILES['attachment_file']['tmp_name'];
             $file_name = $_FILES['attachment_file']['name'];
@@ -63,14 +63,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $message = "Jenis surat permohonan wajib dipilih.";
                 $message_type = "error";
             } else {
-                $stmt_in = $pdo->prepare("
-                    INSERT INTO service_requests (user_id, request_type, target_date, notes, attachment_url, status) 
-                    VALUES (?, ?, ?, ?, ?, 'menunggu')
-                ");
-                $stmt_in->execute([$user_id, $request_type, $target_date, $notes, $attachment_url]);
-                logActivity($pdo, 'SUBMIT_REQUEST', "Mengajukan permohonan: $request_type");
-                $message = "Permohonan surat berhasil dikirim ke bagian Tata Usaha.";
-                $message_type = "success";
+                // Resolusi user target surat (Siswa vs Orang Tua mewakili Siswa)
+                $req_user_id = $user_id;
+                if ($user_role === 'orang_tua') {
+                    $child_input = (int)($_POST['student_id'] ?? 0);
+                    if ($child_input > 0) {
+                        $stmt_c = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? AND student_id = ? LIMIT 1");
+                        $stmt_c->execute([$user_id, $child_input]);
+                        $req_user_id = (int)($stmt_c->fetchColumn() ?: 0);
+                    }
+                    if ($req_user_id <= 0) {
+                        $stmt_c = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? LIMIT 1");
+                        $stmt_c->execute([$user_id]);
+                        $req_user_id = (int)($stmt_c->fetchColumn() ?: $user_id);
+                    }
+                }
+
+                // Validasi Integrasi BK untuk Surat Keterangan Berkelakuan Baik (SKBB)
+                $is_skbb_req = (stripos($request_type, 'Berkelakuan Baik') !== false || stripos($request_type, 'SKBB') !== false);
+                if ($is_skbb_req) {
+                    $stmt_bk_check = $pdo->prepare("
+                        SELECT COALESCE(SUM(points), 0) as total_pts, COUNT(*) as viol_count 
+                        FROM counseling_records 
+                        WHERE student_id = ? AND type = 'pelanggaran'
+                    ");
+                    $stmt_bk_check->execute([$req_user_id]);
+                    $bk_info = $stmt_bk_check->fetch();
+                    $bk_pts = (int)($bk_info['total_pts'] ?? 0);
+
+                    if ($bk_pts >= 30) {
+                        $message = "Pengajuan SKBB ditangguhkan oleh sistem: Siswa memiliki akumulasi $bk_pts poin pelanggaran kedisiplinan di modul Bimbingan Konseling (BK). Silakan temui Guru BK di ruang konseling untuk bimbingan/pemulihan karakter sebelum permohonan SKBB dapat diajukan.";
+                        $message_type = "error";
+                    }
+                }
+
+                if ($message_type !== 'error') {
+                    $stmt_in = $pdo->prepare("
+                        INSERT INTO service_requests (user_id, request_type, target_date, notes, attachment_url, status) 
+                        VALUES (?, ?, ?, ?, ?, 'menunggu')
+                    ");
+                    $stmt_in->execute([$req_user_id, $request_type, $target_date, $notes, $attachment_url]);
+                    logActivity($pdo, 'SUBMIT_REQUEST', "Mengajukan permohonan: $request_type untuk user #$req_user_id");
+                    $message = "Permohonan surat berhasil dikirim ke bagian Tata Usaha.";
+                    $message_type = "success";
+                }
             }
         }
     }
@@ -123,8 +159,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 }
             }
 
+            // Otomatisasi Kearsipan: Catat ke Buku Agenda Surat Keluar (AG-OUT)
+            $arch_id = recordServiceRequestToArchive($pdo, (int)$new_letter_id, $user_id);
+
             logActivity($pdo, 'CREATE_OFFICIAL_LETTER', "Menerbitkan $request_type untuk {$target_user['role']} {$target_user['name']} (#$new_letter_id)");
-            $message = "Surat resmi (" . htmlspecialchars($request_type) . ") untuk " . htmlspecialchars($target_user['name']) . " (" . ucfirst($target_user['role']) . ") berhasil diterbitkan dan siap dicetak!";
+            $message = "Surat resmi (" . htmlspecialchars($request_type) . ") untuk " . htmlspecialchars($target_user['name']) . " (" . ucfirst($target_user['role']) . ") berhasil diterbitkan, otomatis dicatat di Buku Agenda (AG-OUT), dan siap dicetak!";
             $message_type = "success";
         }
     }
@@ -187,6 +226,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             $stmt_att_sync->execute([$stu_id, $att_date, $att_status, $att_notes, $user_id]);
                         }
                     }
+
+                    // Otomatisasi Kearsipan: Catat ke Buku Agenda Surat Keluar (AG-OUT)
+                    $arch_id = recordServiceRequestToArchive($pdo, (int)$update_id, $user_id);
+
+                    // Kirim Notifikasi WhatsApp ke Pemohon
+                    try {
+                        $stmt_applicant = $pdo->prepare("SELECT name, phone FROM users WHERE id = ?");
+                        $stmt_applicant->execute([$req_data['user_id']]);
+                        $app_user = $stmt_applicant->fetch();
+                        if ($app_user && !empty($app_user['phone'])) {
+                            $wa_letter_msg = "Halo Bpk/Ibu/Sdr *{$app_user['name']}*,\n\n"
+                                           . "Permohonan surat Anda: *{$req_data['request_type']}* telah *SELESAI DIPROSES* oleh bagian Tata Usaha.\n\n"
+                                           . "Dokumen resmi ber-QR Code keabsahan kini dapat diunduh dan dicetak melalui Portal Layanan Surat Sekolah. Terima kasih.";
+                            sendWhatsAppNotification($pdo, $app_user['phone'], $app_user['name'], $wa_letter_msg, 'surat');
+                        }
+                    } catch (Exception $e_wa_req) {}
                 }
 
                 logActivity($pdo, 'UPDATE_REQUEST', "Mengubah status permohonan #$update_id menjadi: $new_status");
@@ -217,6 +272,20 @@ if ($is_staff) {
         WHERE u.role IN ('guru', 'staf')
         ORDER BY u.role DESC, u.name ASC
     ")->fetchAll();
+}
+
+$parent_children = [];
+if ($user_role === 'orang_tua') {
+    $stmt_pk = $pdo->prepare("
+        SELECT u.id, u.name, c.name as class_name 
+        FROM parent_students ps
+        JOIN users u ON ps.student_id = u.id
+        LEFT JOIN classes c ON u.class_id = c.id
+        WHERE ps.parent_id = ?
+        ORDER BY u.name ASC
+    ");
+    $stmt_pk->execute([$user_id]);
+    $parent_children = $stmt_pk->fetchAll();
 }
 
 // -------------------------------------------------------------
@@ -299,16 +368,28 @@ if ($is_staff) {
 
 // Master Jenis Surat Terstandarisasi
 $official_letter_types = [
-    'Surat Keterangan Aktif Siswa' => 'Keterangan bahwa siswa terdaftar aktif mengikuti KBM pada tahun ajaran berjalan.',
-    'Surat Keterangan Berkelakuan Baik (SKBB)' => 'Keterangan tidak pernah terlibat tindak kriminal, narkoba, atau tawuran.',
-    'Surat Keterangan Lulus (SKL) Sementara' => 'Keterangan kelulusan sementara sebelum ijazah asli fisik diterbitkan.',
+    'Surat Keterangan Aktif Siswa'               => 'Keterangan bahwa siswa terdaftar aktif mengikuti KBM pada tahun ajaran berjalan.',
+    'Surat Keterangan Berkelakuan Baik (SKBB)'   => 'Keterangan tidak pernah terlibat tindak kriminal, narkoba, atau tawuran.',
+    'Surat Keterangan Lulus (SKL) Sementara'     => 'Keterangan kelulusan sementara sebelum ijazah asli fisik diterbitkan.',
+    'Surat Keterangan Bebas Tanggungan Sekolah' => 'Surat verifikasi terpadu 3-in-1: Bebas tanggungan perpustakaan, lunas administrasi keuangan, dan bebas sanksi disiplin BK.',
     'Surat Undangan / Panggilan Orang Tua Murid' => 'Surat panggilan resmi kepada orang tua/wali murid untuk hadir ke sekolah.',
-    'Surat Keterangan Pindah / Mutasi Siswa' => 'Pelepasan siswa mutasi serta keterangan bebas tanggungan SPP & perpustakaan.',
-    'Surat Rekomendasi Beasiswa / Prestasi' => 'Rekomendasi resmi untuk pengajuan beasiswa, perlombaan, atau event kedinasan.',
-    'Surat Izin Dispensasi Acara / Kegiatan' => 'Dispensasi izin tidak mengikuti KBM karena kegiatan resmi / lomba sekolah.',
-    'Surat Izin Sakit Siswa' => 'Pengesahan izin sakit siswa berdasarkan keterangan dokter atau surat orang tua.',
+    'Surat Keterangan Pindah / Mutasi Siswa'     => 'Pelepasan siswa mutasi serta keterangan bebas tanggungan SPP & perpustakaan.',
+    'Surat Rekomendasi Beasiswa / Prestasi'      => 'Rekomendasi resmi untuk pengajuan beasiswa, perlombaan, atau event kedinasan.',
+    'Surat Izin Dispensasi Acara / Kegiatan'     => 'Dispensasi izin tidak mengikuti KBM karena kegiatan resmi / lomba sekolah.',
+    'Surat Izin Sakit Siswa'                     => 'Pengesahan izin sakit siswa berdasarkan keterangan dokter atau surat orang tua.',
     'Surat Perintah Tugas (SPT) Guru / Pegawai' => 'Surat tugas kedinasan, pelatihan/MGMP, atau kepengawasan untuk pendidik dan tenaga kependidikan.'
 ];
+
+// Identifikasi Clearance Siswa untuk Siswa / Orang Tua
+$clearance_student_id = 0;
+if ($user_role === 'siswa') {
+    $clearance_student_id = $user_id;
+} elseif ($user_role === 'orang_tua') {
+    $stmt_ch = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? LIMIT 1");
+    $stmt_ch->execute([$user_id]);
+    $clearance_student_id = (int)($stmt_ch->fetchColumn() ?: 0);
+}
+$student_clearance = ($clearance_student_id > 0) ? getStudentClearanceStatus($pdo, $clearance_student_id) : null;
 
 $page_title = "Layanan Surat Tata Usaha";
 require_once __DIR__ . "/../includes/header.php";
@@ -320,7 +401,7 @@ require_once __DIR__ . "/../includes/header.php";
             <span class="text-blue-400"><i class="fa-solid fa-envelope-open-text"></i></span> Layanan Surat Tata Usaha
         </h1>
         <p class="mt-1 text-sm text-slate-400">
-            <?= $is_staff ? 'Kelola permohonan surat siswa, terbitkan surat resmi, dan cetak dokumen berkop resmi sekolah.' : 'Ajukan surat keterangan aktif, SKBB, permohonan dispensasi, dan izin sakit resmi sekolah.' ?>
+            <?= $is_staff ? 'Kelola permohonan surat siswa, terbitkan surat resmi, dan cetak dokumen berkop resmi sekolah.' : 'Ajukan surat keterangan aktif, SKBB, bebas tanggungan 3-in-1, dispensasi, dan izin sakit resmi sekolah.' ?>
         </p>
     </div>
 
@@ -350,6 +431,86 @@ require_once __DIR__ . "/../includes/header.php";
             <span><?= htmlspecialchars($message) ?></span>
         </div>
         <button onclick="this.parentElement.remove()" class="text-xs font-semibold opacity-70 hover:opacity-100 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+<?php endif; ?>
+
+<!-- ========================================================= -->
+<!-- WIDGET INTEGRASI FASE 1: STATUS BEBAS TANGGUNGAN TERPADU 3-IN-1 -->
+<!-- ========================================================= -->
+<?php if ($student_clearance): ?>
+    <div class="mb-8 rounded-3xl border border-white/10 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-blue-950/40 p-5 sm:p-6 shadow-xl backdrop-blur">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-white/10">
+            <div>
+                <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-400">
+                    <i class="fa-solid fa-shield-halved"></i> One-Stop Student Clearance (3-in-1)
+                </span>
+                <h3 class="text-base sm:text-lg font-bold text-white mt-2">
+                    Status Bebas Tanggungan Siswa
+                </h3>
+                <p class="text-xs text-slate-400">Pengecekan otomatis real-time lintas modul Perpustakaan, Keuangan (SPP), dan Bimbingan Konseling.</p>
+            </div>
+            <div>
+                <?php if ($student_clearance['is_cleared']): ?>
+                    <span class="inline-flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-500/20 px-4 py-2 text-xs font-black uppercase text-emerald-300 shadow-lg shadow-emerald-500/10">
+                        <i class="fa-solid fa-circle-check text-base"></i> All Clear (Bebas Tanggungan)
+                    </span>
+                <?php else: ?>
+                    <span class="inline-flex items-center gap-2 rounded-2xl border border-rose-500/40 bg-rose-500/20 px-4 py-2 text-xs font-black uppercase text-rose-300 shadow-lg shadow-rose-500/10">
+                        <i class="fa-solid fa-triangle-exclamation text-base"></i> Ada Tanggungan Aktif
+                    </span>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+            <!-- 1. Perpustakaan -->
+            <div class="rounded-2xl border <?= $student_clearance['library']['status'] ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-rose-500/20 bg-rose-500/5' ?> p-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold <?= $student_clearance['library']['status'] ? 'text-emerald-400' : 'text-rose-400' ?> flex items-center gap-1.5">
+                        <i class="fa-solid fa-book"></i> Perpustakaan
+                    </span>
+                    <i class="fa-solid <?= $student_clearance['library']['status'] ? 'fa-check text-emerald-400' : 'fa-xmark text-rose-400' ?>"></i>
+                </div>
+                <p class="text-sm font-bold text-white mt-2">
+                    <?= $student_clearance['library']['status'] ? 'Bebas Pustaka' : $student_clearance['library']['active_loans'] . ' Buku Dipinjam' ?>
+                </p>
+                <p class="text-[11px] text-slate-400 mt-0.5">
+                    <?= $student_clearance['library']['fines'] > 0 ? 'Denda: Rp ' . number_format($student_clearance['library']['fines'], 0, ',', '.') : 'Tidak ada tunggakan buku / denda' ?>
+                </p>
+            </div>
+
+            <!-- 2. Keuangan SPP -->
+            <div class="rounded-2xl border <?= $student_clearance['finance']['status'] ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-rose-500/20 bg-rose-500/5' ?> p-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold <?= $student_clearance['finance']['status'] ? 'text-emerald-400' : 'text-rose-400' ?> flex items-center gap-1.5">
+                        <i class="fa-solid fa-wallet"></i> Keuangan (SPP)
+                    </span>
+                    <i class="fa-solid <?= $student_clearance['finance']['status'] ? 'fa-check text-emerald-400' : 'fa-xmark text-rose-400' ?>"></i>
+                </div>
+                <p class="text-sm font-bold text-white mt-2">
+                    <?= $student_clearance['finance']['status'] ? 'Lunas (Nihil)' : 'Tunggakan: Rp ' . number_format($student_clearance['finance']['total_unpaid'], 0, ',', '.') ?>
+                </p>
+                <p class="text-[11px] text-slate-400 mt-0.5">
+                    <?= $student_clearance['finance']['unpaid_bills'] > 0 ? $student_clearance['finance']['unpaid_bills'] . ' tagihan belum dibayar' : 'Seluruh tagihan sekolah lunas' ?>
+                </p>
+            </div>
+
+            <!-- 3. Bimbingan Konseling -->
+            <div class="rounded-2xl border <?= $student_clearance['counseling']['status'] ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5' ?> p-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold <?= $student_clearance['counseling']['status'] ? 'text-emerald-400' : 'text-amber-400' ?> flex items-center gap-1.5">
+                        <i class="fa-solid fa-handshake-angle"></i> Kedisiplinan BK
+                    </span>
+                    <i class="fa-solid <?= $student_clearance['counseling']['status'] ? 'fa-check text-emerald-400' : 'fa-triangle-exclamation text-amber-400' ?>"></i>
+                </div>
+                <p class="text-sm font-bold text-white mt-2">
+                    <?= $student_clearance['counseling']['status'] ? 'Tertib & Memenuhi Syarat' : 'Poin Pelanggaran: ' . $student_clearance['counseling']['points'] ?>
+                </p>
+                <p class="text-[11px] text-slate-400 mt-0.5">
+                    <?= $student_clearance['counseling']['achievements'] ?> Prestasi tercatat, <?= $student_clearance['counseling']['violations'] ?> catatan kedisiplinan
+                </p>
+            </div>
+        </div>
     </div>
 <?php endif; ?>
 
@@ -463,10 +624,44 @@ require_once __DIR__ . "/../includes/header.php";
                         <tr class="hover:bg-white/[0.02] transition">
                             <td class="px-6 py-4">
                                 <div class="font-semibold text-white flex items-center gap-2">
-                                    <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 text-xs shrink-0">
-                                        <i class="fa-solid fa-file-lines"></i>
-                                    </span>
                                     <span><?= htmlspecialchars($r['request_type']) ?></span>
+                                    <?php 
+                                    $is_clearance_letter = (stripos($r['request_type'], 'Bebas Tanggungan') !== false || stripos($r['request_type'], 'Lulus') !== false || stripos($r['request_type'], 'SKL') !== false || stripos($r['request_type'], 'Pindah') !== false);
+                                    if ($is_clearance_letter && $r['applicant_role'] === 'siswa'): 
+                                        $row_clearance = getStudentClearanceStatus($pdo, (int)$r['user_id']);
+                                    ?>
+                                        <?php if ($row_clearance['is_cleared']): ?>
+                                            <span class="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400" title="Verifikasi 3-in-1: Bebas Pustaka, SPP Lunas, BK Bersih">
+                                                <i class="fa-solid fa-shield-check"></i> 3-in-1 Clear
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-bold text-rose-400" title="Terdapat tanggungan aktif: Perpustakaan / SPP / BK">
+                                                <i class="fa-solid fa-triangle-exclamation"></i> Ada Tanggungan
+                                            </span>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+
+                                    <?php 
+                                    $is_skbb_row = (stripos($r['request_type'], 'Berkelakuan Baik') !== false || stripos($r['request_type'], 'SKBB') !== false);
+                                    if ($is_skbb_row && $r['applicant_role'] === 'siswa'):
+                                        $stmt_bk_row = $pdo->prepare("SELECT COALESCE(SUM(points), 0) as pts FROM counseling_records WHERE student_id = ? AND type = 'pelanggaran'");
+                                        $stmt_bk_row->execute([(int)$r['user_id']]);
+                                        $bk_pts_row = (int)$stmt_bk_row->fetchColumn();
+                                    ?>
+                                        <?php if ($bk_pts_row === 0): ?>
+                                            <span class="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400" title="Rekam disiplin bersih: 0 Poin">
+                                                <i class="fa-solid fa-certificate"></i> Disiplin Bersih (0 Poin)
+                                            </span>
+                                        <?php elseif ($bk_pts_row < 30): ?>
+                                            <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-400" title="Ada catatan pelanggaran ringan">
+                                                <i class="fa-solid fa-circle-exclamation"></i> <?= $bk_pts_row ?> Poin Pelanggaran
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-bold text-rose-400" title="Pelanggaran akumulatif: Perlu verifikasi Guru BK">
+                                                <i class="fa-solid fa-triangle-exclamation"></i> <?= $bk_pts_row ?> Poin (Perlu Verifikasi BK)
+                                            </span>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
                                 </div>
                                 <?php if (!empty($r['notes'])): ?>
                                     <div class="text-xs text-slate-400 mt-1 italic pl-9">
@@ -647,6 +842,17 @@ require_once __DIR__ . "/../includes/header.php";
         <form method="POST" enctype="multipart/form-data" class="space-y-4">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="submit_request">
+
+            <?php if ($user_role === 'orang_tua' && !empty($parent_children)): ?>
+                <div>
+                    <label class="mb-1 block text-xs font-semibold uppercase text-slate-300">Pilih Putra / Putri Terkait *</label>
+                    <select name="student_id" required class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+                        <?php foreach ($parent_children as $child): ?>
+                            <option value="<?= $child['id'] ?>"><?= htmlspecialchars($child['name']) ?> (<?= htmlspecialchars($child['class_name'] ?? 'Umum') ?>)</option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            <?php endif; ?>
 
             <div>
                 <label class="mb-1 block text-xs font-semibold uppercase text-slate-300">Jenis Surat yang Dibutuhkan *</label>

@@ -31,6 +31,42 @@ if (empty($student['qr_token'])) {
     $stmt_up->execute([$student['qr_token'], $student['id']]);
 }
 
+// Cek Hak Akses demi Perlindungan Data Pribadi (UU PDP)
+$token = trim($_GET['token'] ?? '');
+$is_admin_or_staff = isset($_SESSION['user_role']) && in_array($_SESSION['user_role'], ['administrator', 'staf', 'guru'], true);
+$is_session_verified = isset($_SESSION['ppdb_verified_reg']) && $_SESSION['ppdb_verified_reg'] === $student['registration_no'];
+$is_token_valid = !empty($token) && !empty($student['qr_token']) && hash_equals($student['qr_token'], $token);
+
+if (!$is_admin_or_staff && !$is_session_verified && !$is_token_valid) {
+    http_response_code(403);
+    ?>
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+        <meta charset="UTF-8">
+        <title>Akses Dibatasi - PPDB Online</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css">
+    </head>
+    <body class="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-900 border border-amber-500/30 rounded-3xl p-6 sm:p-8 text-center shadow-2xl">
+            <div class="h-14 w-14 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-2xl mx-auto mb-4">
+                <i class="fa-solid fa-user-shield"></i>
+            </div>
+            <h1 class="text-xl font-bold text-white mb-2">Verifikasi Identitas Diperlukan</h1>
+            <p class="text-xs text-slate-400 mb-6 leading-relaxed">
+                Demi melindungi kerahasiaan data pribadi calon siswa (NIK, NISN, Alamat & Kontak Wali), kartu pendaftaran fisik hanya dapat diakses melalui portal <strong>Cek Status Pendaftaran</strong> dengan mengonfirmasi tanggal lahir yang valid atau melalui tautan dengan token keamanan resmi.
+            </p>
+            <a href="ppdb.php?tab=cek&search=<?= urlencode($student['registration_no']) ?>" class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 text-xs font-bold text-white transition">
+                Masuk via Cek Status PPDB
+            </a>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
 $school_info = getSchoolSettings($pdo);
 
 // URL verifikasi resmi
@@ -110,8 +146,18 @@ $qr_image_url = "https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin
 
         <!-- Judul Dokumen -->
         <div class="text-center mb-6">
-            <h1 class="text-lg font-black text-slate-900 uppercase tracking-wider underline">KARTU TANDA BUKTI PENDAFTARAN</h1>
-            <p class="text-xs text-slate-600 mt-1">Harap kartu ini dicetak dan dibawa saat verifikasi berkas fisik serta tes wawancara.</p>
+            <?php if (($student['status'] ?? '') === 'diterima'): ?>
+                <div class="mb-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-1 text-xs font-black uppercase tracking-wider shadow-sm">
+                        <i class="fa-solid fa-circle-check text-emerald-600"></i> SURAT KETERANGAN RESMI: LULUS SELEKSI PPDB
+                    </span>
+                </div>
+                <h1 class="text-lg sm:text-xl font-black text-slate-900 uppercase tracking-wider underline">SURAT TANDA DITERIMA & KARTU SISWA BARU</h1>
+                <p class="text-xs text-slate-600 mt-1">Dokumen resmi bukti kelulusan seleksi dan penerimaan peserta didik baru tahun pelajaran 2026/2027.</p>
+            <?php else: ?>
+                <h1 class="text-lg font-black text-slate-900 uppercase tracking-wider underline">KARTU TANDA BUKTI PENDAFTARAN</h1>
+                <p class="text-xs text-slate-600 mt-1">Harap kartu ini dicetak dan dibawa saat verifikasi berkas fisik serta tes wawancara.</p>
+            <?php endif; ?>
         </div>
 
         <!-- Header No Registrasi & QR Code Digital -->
@@ -119,11 +165,16 @@ $qr_image_url = "https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin
             <div>
                 <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nomor Pendaftaran Resmi:</span>
                 <span class="text-2xl font-black text-slate-900 font-mono"><?= htmlspecialchars($student['registration_no']) ?></span>
-                <div class="flex items-center gap-2 mt-1.5">
+                <div class="flex flex-wrap items-center gap-2 mt-1.5">
                     <span class="inline-block rounded bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 text-[11px]">
                         Jalur <?= htmlspecialchars(getPpdbTrackLabel($student['track_type'] ?? 'reguler')) ?>
                     </span>
-                    <span class="text-xs text-slate-500">Tanggal Daftar: <?= date('d F Y', strtotime($student['created_at'])) ?></span>
+                    <?php if (($student['status'] ?? '') === 'diterima'): ?>
+                        <span class="inline-flex items-center gap-1 rounded bg-emerald-700 text-white font-extrabold px-2.5 py-0.5 text-[11px] shadow-sm">
+                            <i class="fa-solid fa-check-double"></i> DITERIMA RESMI
+                        </span>
+                    <?php endif; ?>
+                    <span class="text-xs text-slate-500">Tanggal: <?= date('d F Y', strtotime($student['created_at'])) ?></span>
                 </div>
             </div>
 
@@ -192,8 +243,22 @@ $qr_image_url = "https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin
                                 : <?= htmlspecialchars(getPpdbTrackLabel($student['track_type'] ?? 'reguler')) ?>
                                 <?php if (($student['track_type'] ?? '') === 'zonasi' && $student['distance_km']): ?>
                                     (Radius: <?= htmlspecialchars((string)$student['distance_km']) ?> KM)
-                                <?php elseif (($student['track_type'] ?? '') === 'prestasi' && $student['achievement_desc']): ?>
-                                    (<?= htmlspecialchars($student['achievement_desc']) ?>)
+                                <?php elseif (($student['track_type'] ?? '') === 'prestasi'): ?>
+                                    <?php 
+                                    $cardAchievements = !empty($student['achievements_json']) ? json_decode($student['achievements_json'], true) : [];
+                                    if (!empty($cardAchievements) && is_array($cardAchievements)):
+                                    ?>
+                                        <div class="mt-1 text-xs text-slate-700 font-normal">
+                                            <span class="font-bold text-amber-700"><i class="fa-solid fa-trophy mr-1 text-amber-500"></i> Daftar Sertifikat Prestasi Terlampir (<?= count($cardAchievements) ?>):</span>
+                                            <ol class="list-decimal list-inside mt-0.5 space-y-0.5 text-[11px] text-slate-600">
+                                                <?php foreach ($cardAchievements as $cIdx => $cItem): ?>
+                                                    <li><?= htmlspecialchars($cItem['title'] ?? '') ?> <span class="text-slate-500 font-semibold">[Tingkat <?= ucfirst($cItem['level'] ?? 'sekolah') ?>]</span></li>
+                                                <?php endforeach; ?>
+                                            </ol>
+                                        </div>
+                                    <?php elseif (!empty($student['achievement_desc'])): ?>
+                                        (<?= htmlspecialchars($student['achievement_desc']) ?><?= !empty($student['achievement_cert_doc']) ? ' • Sertifikat Terlampir' : '' ?>)
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -212,6 +277,53 @@ $qr_image_url = "https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <!-- JADWAL & LOKASI PELAKSANAAN UJIAN SELEKSI MASUK / OFFLINE -->
+        <div class="rounded-2xl border-2 border-emerald-600/30 bg-emerald-50/60 p-5 mb-6 text-xs text-slate-800 shadow-sm">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200 pb-2.5 mb-3">
+                <span class="font-extrabold text-emerald-950 uppercase tracking-wider text-xs flex items-center gap-2">
+                    <i class="fa-solid fa-calendar-check text-emerald-700 text-sm"></i>
+                    <span>Jadwal & Ruang Pelaksanaan Ujian Seleksi Masuk (Offline / Mandiri)</span>
+                </span>
+                <span class="px-2.5 py-0.5 rounded bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wide self-start sm:self-auto">
+                    <?= htmlspecialchars($student['exam_session'] ?: 'Sesi 1 (Reguler)') ?>
+                </span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center sm:text-left">
+                <div class="p-2.5 rounded-xl bg-white border border-emerald-200 shadow-2xs">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase block">Tanggal Ujian</span>
+                    <strong class="text-slate-900 text-xs mt-0.5 block font-bold">
+                        <?= !empty($student['exam_date']) ? date('d F Y', strtotime($student['exam_date'])) : 'Sesuai Jadwal Gelombang' ?>
+                    </strong>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white border border-emerald-200 shadow-2xs">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase block">Waktu / Jam Ujian</span>
+                    <strong class="text-slate-900 text-xs mt-0.5 block font-bold">
+                        <?= htmlspecialchars($student['exam_time'] ?: '08.00 - 10.00 WIB') ?>
+                    </strong>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white border border-emerald-200 shadow-2xs">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase block">Ruangan / Lab Ujian</span>
+                    <strong class="text-emerald-800 text-xs mt-0.5 block font-black">
+                        <?= htmlspecialchars($student['exam_room'] ?: 'Lab Komputer / Ruang Seleksi') ?>
+                    </strong>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white border border-emerald-200 shadow-2xs">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase block">Tempat / Lokasi</span>
+                    <strong class="text-slate-900 text-xs mt-0.5 block font-bold truncate" title="<?= htmlspecialchars($school_info['school_name'] ?? 'Gedung Utama Sekolah') ?>">
+                        <?= htmlspecialchars($school_info['school_name'] ?? 'Gedung Sekolah') ?>
+                    </strong>
+                </div>
+            </div>
+
+            <?php if (!empty($student['notes'])): ?>
+                <div class="mt-3 pt-2.5 border-t border-emerald-200/80 text-[11px] text-slate-700 flex items-start gap-1.5">
+                    <i class="fa-solid fa-circle-info text-emerald-600 mt-0.5 shrink-0"></i>
+                    <span><strong>Catatan Khusus Panitia:</strong> <?= htmlspecialchars($student['notes']) ?></span>
+                </div>
+            <?php endif; ?>
         </div>
 
         <!-- Ketentuan Jadwal Seleksi -->

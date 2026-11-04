@@ -17,13 +17,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $name = trim($_POST['name'] ?? '');
         $grade_level = trim($_POST['grade_level'] ?? '10');
         $academic_year = trim($_POST['academic_year'] ?? '2026/2027');
+        $homeroom_teacher_id = !empty($_POST['homeroom_teacher_id']) ? (int)$_POST['homeroom_teacher_id'] : null;
 
         if ($name === '') {
             $message = "Nama kelas wajib diisi.";
             $message_type = "error";
         } else {
-            $stmt = $pdo->prepare("INSERT INTO classes (name, grade_level, academic_year) VALUES (?, ?, ?)");
-            $stmt->execute([$name, $grade_level, $academic_year]);
+            $stmt = $pdo->prepare("INSERT INTO classes (name, grade_level, academic_year, homeroom_teacher_id) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$name, $grade_level, $academic_year, $homeroom_teacher_id]);
             logActivity($pdo, 'CREATE_CLASS', "Menambahkan kelas baru: $name");
             $message = "Kelas $name berhasil ditambahkan!";
             $message_type = "success";
@@ -31,7 +32,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// 2. HAPUS KELAS
+// 2. ASSIGN / UBAH WALI KELAS
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'assign_homeroom') {
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
+        $target_class = (int)($_POST['class_id'] ?? 0);
+        $homeroom_id = !empty($_POST['homeroom_teacher_id']) ? (int)$_POST['homeroom_teacher_id'] : null;
+
+        if ($target_class > 0) {
+            $stmt = $pdo->prepare("UPDATE classes SET homeroom_teacher_id = ? WHERE id = ?");
+            $stmt->execute([$homeroom_id, $target_class]);
+            logActivity($pdo, 'ASSIGN_HOMEROOM', "Menetapkan wali kelas untuk kelas ID: $target_class");
+            $message = "Wali kelas berhasil diperbarui!";
+            $message_type = "success";
+        }
+    }
+}
+
+// 3. HAPUS KELAS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_class') {
     if (!validateCsrfToken()) {
         $message = "Token keamanan tidak valid.";
@@ -46,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// 3. ASSIGN SISWA KE KELAS
+// 4. ASSIGN SISWA KE KELAS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'assign_student') {
     if (!validateCsrfToken()) {
         $message = "Token keamanan tidak valid.";
@@ -63,11 +83,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Query Daftar Kelas
+// Query Daftar Guru untuk Wali Kelas
+$teachers = $pdo->query("SELECT id, name FROM users WHERE role = 'guru' ORDER BY name ASC")->fetchAll();
+
+// Query Daftar Kelas dengan Nama Wali Kelas
 $classes_list = $pdo->query("
-    SELECT c.*, 
+    SELECT c.*, u.name as homeroom_name,
            (SELECT COUNT(*) FROM users WHERE class_id = c.id AND role = 'siswa') as student_count
     FROM classes c
+    LEFT JOIN users u ON c.homeroom_teacher_id = u.id
     ORDER BY c.grade_level ASC, c.name ASC
 ")->fetchAll();
 
@@ -91,10 +115,16 @@ require_once __DIR__ . "/../includes/header.php";
         </div>
     </div>
 
-    <button onclick="document.getElementById('modalAddClass').classList.remove('hidden')" 
-            class="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition cursor-pointer">
-        <i class="fa-solid fa-plus"></i> Tambah Kelas Baru
-    </button>
+    <div class="flex flex-wrap items-center gap-3">
+        <a href="promotion.php" 
+           class="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-4 py-2.5 text-sm font-semibold text-emerald-300 shadow-sm transition">
+            <i class="fa-solid fa-arrows-up-to-line text-emerald-400"></i> Kenaikan & Kelulusan Massal
+        </a>
+        <button onclick="document.getElementById('modalAddClass').classList.remove('hidden')" 
+                class="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition cursor-pointer">
+            <i class="fa-solid fa-plus"></i> Tambah Kelas Baru
+        </button>
+    </div>
 </div>
 
 <?php if ($message): ?>
@@ -124,9 +154,38 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
                 <h3 class="text-xl font-bold text-white"><?= htmlspecialchars($cl['name']) ?></h3>
                 <p class="text-xs text-slate-400 mt-1">Tahun Ajaran: <?= htmlspecialchars($cl['academic_year']) ?></p>
+
+                <div class="mt-3 p-3 rounded-2xl bg-white/5 border border-white/5">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+                            <i class="fa-solid fa-user-tie text-blue-400"></i> Wali Kelas:
+                        </span>
+                        <?php if (!empty($cl['homeroom_name'])): ?>
+                            <span class="text-xs font-bold text-blue-300"><?= htmlspecialchars($cl['homeroom_name']) ?></span>
+                        <?php else: ?>
+                            <span class="text-xs text-amber-400 font-semibold italic">Belum Ditentukan</span>
+                        <?php endif; ?>
+                    </div>
+                    <form method="POST" class="flex items-center gap-1.5 mt-2">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="action" value="assign_homeroom">
+                        <input type="hidden" name="class_id" value="<?= $cl['id'] ?>">
+                        <select name="homeroom_teacher_id" class="flex-1 rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-[11px] text-white">
+                            <option value="">-- Tetapkan Wali Kelas --</option>
+                            <?php foreach ($teachers as $tc): ?>
+                                <option value="<?= $tc['id'] ?>" <?= $cl['homeroom_teacher_id'] == $tc['id'] ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($tc['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <button type="submit" class="rounded-lg bg-blue-600/30 hover:bg-blue-600 px-2 py-1 text-[11px] font-semibold text-blue-200 hover:text-white transition cursor-pointer">
+                            Simpan
+                        </button>
+                    </form>
+                </div>
             </div>
 
-            <div class="mt-6 pt-4 border-t border-white/5 flex items-center justify-between">
+            <div class="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
                 <span class="text-xs text-slate-400">Total Siswa:</span>
                 <span class="text-lg font-black text-white"><?= $cl['student_count'] ?> anak</span>
             </div>
@@ -221,6 +280,15 @@ require_once __DIR__ . "/../includes/header.php";
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Tahun Ajaran</label>
                     <input type="text" name="academic_year" value="2026/2027" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white">
                 </div>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Wali Kelas (Opsional)</label>
+                <select name="homeroom_teacher_id" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white">
+                    <option value="">-- Pilih Wali Kelas --</option>
+                    <?php foreach ($teachers as $tc): ?>
+                        <option value="<?= $tc['id'] ?>"><?= htmlspecialchars($tc['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="pt-4 flex justify-end gap-2 border-t border-white/10">
                 <button type="button" onclick="document.getElementById('modalAddClass').classList.add('hidden')" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10">Batal</button>

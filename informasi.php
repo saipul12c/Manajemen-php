@@ -88,6 +88,25 @@ try {
     $stmt_ev->execute();
     $upcoming_events = $stmt_ev->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
+
+// -------------------------------------------------------------
+// 4. QUERY BERITA & LIPUTAN SEKOLAH TERKINI (Terintegrasi)
+// -------------------------------------------------------------
+$stat_total_news = 0;
+$public_news_list = [];
+try {
+    $stat_total_news = (int)$pdo->query("SELECT COUNT(*) FROM news WHERE status = 'published'")->fetchColumn();
+    $stmt_news_pub = $pdo->prepare("
+        SELECT n.*, u.name as author_name, u.role as author_role
+        FROM news n
+        JOIN users u ON n.author_id = u.id
+        WHERE n.status = 'published'
+        ORDER BY n.is_featured DESC, n.published_at DESC
+        LIMIT 4
+    ");
+    $stmt_news_pub->execute();
+    $public_news_list = $stmt_news_pub->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
 ?>
 <!DOCTYPE html>
 <html lang="id" class="dark scroll-smooth">
@@ -156,21 +175,25 @@ try {
                     </div>
 
                     <!-- Ringkasan Statistik -->
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
-                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[100px]">
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 shrink-0">
+                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[90px]">
                             <p class="text-xs text-slate-400 font-medium">Pengumuman</p>
                             <p class="text-xl font-extrabold text-sky-400 mt-0.5"><?= $stat_total_announcements ?></p>
                         </div>
-                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[100px]">
+                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[90px]">
+                            <p class="text-xs text-slate-400 font-medium">Berita & Kabar</p>
+                            <p class="text-xl font-extrabold text-blue-400 mt-0.5"><?= $stat_total_news ?></p>
+                        </div>
+                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[90px]">
                             <p class="text-xs text-slate-400 font-medium">Penting / Pin</p>
                             <p class="text-xl font-extrabold text-amber-400 mt-0.5"><?= $stat_urgent_count ?></p>
                         </div>
-                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[100px]">
+                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[90px]">
                             <p class="text-xs text-slate-400 font-medium">Agenda</p>
                             <p class="text-xl font-extrabold text-emerald-400 mt-0.5"><?= $stat_events_count ?></p>
                         </div>
-                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[100px]">
-                            <p class="text-xs text-slate-400 font-medium">Lampiran File</p>
+                        <div class="glass-card rounded-2xl p-3.5 text-center min-w-[90px]">
+                            <p class="text-xs text-slate-400 font-medium">Lampiran</p>
                             <p class="text-xl font-extrabold text-indigo-400 mt-0.5"><?= $stat_attachment_count ?></p>
                         </div>
                     </div>
@@ -517,11 +540,86 @@ try {
                                 <span class="text-xs text-emerald-400 font-bold group-hover:translate-x-1 transition">Daftar →</span>
                             </div>
                         </a>
+
+                        <a href="berita.php" class="block rounded-2xl bg-slate-900/80 border border-sky-500/20 p-3.5 hover:border-sky-500/40 hover:bg-slate-900 transition group">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600/20 text-sky-400 group-hover:scale-105 transition">
+                                        <i class="fa-solid fa-newspaper"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs font-semibold text-white group-hover:text-sky-300 transition">Portal Berita Sekolah</p>
+                                        <p class="text-[11px] text-slate-400">Liputan kegiatan, prestasi & karya guru</p>
+                                    </div>
+                                </div>
+                                <span class="text-xs text-sky-400 font-bold group-hover:translate-x-1 transition">Buka →</span>
+                            </div>
+                        </a>
                     </div>
 
                 </div>
 
             </div>
+
+            <!-- SEKSI TERINTEGRASI: BERITA & LIPUTAN SEKOLAH TERKINI -->
+            <?php if (!empty($public_news_list)): ?>
+                <div class="mt-14 pt-10 border-t border-white/10 space-y-6">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20 mb-2">
+                                <i class="fa-solid fa-newspaper text-xs"></i> Kabar Sekolah
+                            </span>
+                            <h2 class="text-2xl font-extrabold text-white">Berita & Artikel Sekolah Terkini</h2>
+                            <p class="text-xs sm:text-sm text-slate-400 mt-1">
+                                Informasi terpadu karya dewan guru, staf redaksi, dan prestasi siswa-siswi sekolah.
+                            </p>
+                        </div>
+                        <a href="berita.php" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shadow-md shadow-blue-600/20 transition self-start sm:self-auto">
+                            <span>Buka Portal Berita Lengkap</span>
+                            <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        </a>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                        <?php foreach ($public_news_list as $n): ?>
+                            <?php 
+                                $n_cat = NEWS_CATEGORIES[$n['category']] ?? ['label' => ucfirst($n['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
+                                $n_thumb = !empty($n['thumbnail']) ? 'uploads/news/' . htmlspecialchars($n['thumbnail']) : null;
+                            ?>
+                            <a href="berita.php?id=<?= $n['id'] ?>" class="glass-card rounded-2xl overflow-hidden hover:border-sky-500/40 hover:bg-slate-900/95 transition duration-300 flex flex-col justify-between group shadow-lg">
+                                <div>
+                                    <div class="h-32 w-full bg-slate-950 relative overflow-hidden">
+                                        <?php if ($n_thumb): ?>
+                                            <img src="<?= $n_thumb ?>" alt="<?= htmlspecialchars($n['title']) ?>" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                                        <?php else: ?>
+                                            <div class="w-full h-full bg-slate-900 flex items-center justify-center text-slate-700">
+                                                <i class="fa-solid fa-newspaper text-3xl"></i>
+                                            </div>
+                                        <?php endif; ?>
+                                        <div class="absolute top-2 left-2">
+                                            <span class="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase backdrop-blur-md border <?= $n_cat['badge'] ?>">
+                                                <?= htmlspecialchars($n_cat['label']) ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="p-4 space-y-1.5">
+                                        <h3 class="text-xs sm:text-sm font-bold text-white line-clamp-2 group-hover:text-sky-400 transition leading-snug">
+                                            <?= htmlspecialchars($n['title']) ?>
+                                        </h3>
+                                        <p class="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                                            <?= htmlspecialchars($n['excerpt'] ?: strip_tags($n['content'])) ?>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="p-4 pt-0 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-400 mt-2">
+                                    <span><?= date('d M Y', strtotime($n['published_at'] ?? $n['created_at'])) ?></span>
+                                    <span class="text-sky-400 font-bold group-hover:underline">Baca Selengkapnya →</span>
+                                </div>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
 
         </div>
 

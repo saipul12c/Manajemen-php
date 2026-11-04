@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         SELECT u.id, u.name, u.role, u.nisn, u.gender, c.name as class_name
         FROM users u
         LEFT JOIN classes c ON u.class_id = c.id
-        WHERE (u.nisn = ? OR u.id = ? OR u.username = ?)
+        WHERE (u.nisn = ? OR u.id = ? OR u.email = ?)
         LIMIT 1
     ");
     $stmt->execute([$cleaned, is_numeric($cleaned) ? (int)$cleaned : 0, $cleaned]);
@@ -406,6 +406,12 @@ include __DIR__ . "/../includes/header.php";
                     <div class="p-2 text-center text-[10px] text-slate-400">
                         Arahkan QR Code Kartu Pelajar tepat di depan kamera
                     </div>
+                    <!-- Pilihan Kamera Kiosk -->
+                    <div class="px-2 pb-2">
+                        <select id="kioskCameraSelect" onchange="onKioskCameraChange()" class="w-full rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-teal-500 focus:outline-none">
+                            <option value="">Deteksi perangkat kamera...</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -642,14 +648,65 @@ function playKioskChime() {
     } catch(e) {}
 }
 
+let selectedKioskCameraId = null;
+
+document.addEventListener("DOMContentLoaded", () => {
+    initKioskCameraDevices();
+});
+
+function initKioskCameraDevices() {
+    const select = document.getElementById('kioskCameraSelect');
+    if (!select || typeof Html5Qrcode === "undefined" || !Html5Qrcode.getCameras) return;
+
+    Html5Qrcode.getCameras().then(devices => {
+        select.innerHTML = '';
+        if (devices && devices.length > 0) {
+            devices.forEach((device, index) => {
+                const opt = document.createElement('option');
+                opt.value = device.id;
+                opt.text = device.label || `Kamera ${index + 1}`;
+                select.appendChild(opt);
+            });
+            if (!selectedKioskCameraId) {
+                selectedKioskCameraId = devices[0].id;
+            } else {
+                select.value = selectedKioskCameraId;
+            }
+        } else {
+            select.innerHTML = '<option value="">Tidak ada kamera terdeteksi</option>';
+        }
+    }).catch(() => {
+        select.innerHTML = '<option value="">(Nyalakan kamera untuk deteksi)</option>';
+    });
+}
+
+function onKioskCameraChange() {
+    const select = document.getElementById('kioskCameraSelect');
+    if (select) {
+        selectedKioskCameraId = select.value;
+    }
+    if (kioskScanner && kioskScanActive) {
+        kioskScanner.stop().then(() => {
+            kioskScanActive = false;
+            startKioskCamera();
+        });
+    }
+}
+
 function startKioskCamera() {
     if (!kioskScanner) {
         kioskScanner = new Html5Qrcode("kioskReader");
     }
 
-    const config = { fps: 10, qrbox: { width: 200, height: 200 }, aspectRatio: 1.0 };
+    const config = { fps: 12, qrbox: { width: 200, height: 200 }, aspectRatio: 1.0 };
+    const select = document.getElementById('kioskCameraSelect');
+    if (select && select.value) {
+        selectedKioskCameraId = select.value;
+    }
+    const cameraTarget = selectedKioskCameraId ? selectedKioskCameraId : { facingMode: "user" };
+
     kioskScanner.start(
-        { facingMode: "user" },
+        cameraTarget,
         config,
         (decodedText) => {
             processVisitorScan(decodedText);
@@ -658,6 +715,7 @@ function startKioskCamera() {
     ).then(() => {
         kioskScanActive = true;
         document.getElementById('kioskCameraOverlay').classList.add('hidden');
+        initKioskCameraDevices();
     }).catch(err => alert("Gagal menyalakan kamera: " + err));
 }
 

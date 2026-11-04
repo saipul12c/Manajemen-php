@@ -45,9 +45,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             ");
 
             foreach ($statuses as $student_id => $st) {
-                $st_val = in_array($st, ['hadir', 'sakit', 'izin', 'alpa'], true) ? $st : 'hadir';
+                $st_val = in_array($st, ['hadir', 'terlambat', 'sakit', 'izin', 'alpa'], true) ? $st : 'hadir';
                 $note_val = trim($notes[$student_id] ?? '');
                 $stmt_upsert->execute([(int)$student_id, $attendance_date, $st_val, $note_val ?: null, $user_id]);
+
+                // Integrasi WhatsApp Gateway & Early Warning System (EWS) Presensi -> BK -> WA Orang Tua (Fase 2)
+                if ($st_val === 'alpa' || $st_val === 'sakit') {
+                    try {
+                        $stmt_parent = $pdo->prepare("
+                            SELECT u_p.name as parent_name, u_p.phone as parent_phone, u_s.name as student_name 
+                            FROM parent_students ps
+                            JOIN users u_p ON ps.parent_id = u_p.id
+                            JOIN users u_s ON ps.student_id = u_s.id
+                            WHERE ps.student_id = ?
+                            LIMIT 1
+                        ");
+                        $stmt_parent->execute([(int)$student_id]);
+                        $p_info = $stmt_parent->fetch();
+
+                        // Cek akumulasi alpa untuk Early Warning System (EWS)
+                        $is_ews_triggered = false;
+                        $recent_alpa_count = 0;
+                        if ($st_val === 'alpa') {
+                            $stmt_alpa_cnt = $pdo->prepare("
+                                SELECT COUNT(*) FROM student_attendance 
+                                WHERE student_id = ? AND status = 'alpa' AND date >= DATE_SUB(?, INTERVAL 30 DAY)
+                            ");
+                            $stmt_alpa_cnt->execute([(int)$student_id, $attendance_date]);
+                            $recent_alpa_count = (int)$stmt_alpa_cnt->fetchColumn();
+
+                            if ($recent_alpa_count >= 3) {
+                                $is_ews_triggered = true;
+                                // Auto-buat tiket pembinaan di counseling_records jika belum pernah dibuat dalam 14 hari terakhir
+                                $stmt_bk_chk = $pdo->prepare("
+                                    SELECT id FROM counseling_records 
+                                    WHERE student_id = ? AND category = 'kedisiplinan' 
+                                      AND title LIKE '%Alpa Berulang%' 
+                                      AND date >= DATE_SUB(?, INTERVAL 14 DAY)
+                                ");
+                                $stmt_bk_chk->execute([(int)$student_id, $attendance_date]);
+                                if (!$stmt_bk_chk->fetch()) {
+                                    $stmt_ins_bk = $pdo->prepare("
+                                        INSERT INTO counseling_records 
+                                        (student_id, recorded_by, type, category, title, notes, points, action_taken, date)
+                                        VALUES (?, ?, 'pelanggaran', 'kedisiplinan', ?, ?, 10, ?, ?)
+                                    ");
+                                    $bk_title = "Peringatan Dini Ketidakhadiran (Alpa Berulang: {$recent_alpa_count}x)";
+                                    $bk_desc = "Sistem EWS mendeteksi siswa telah mengumpulkan {$recent_alpa_count} kali alpa dalam 30 hari terakhir. Diperlukan konseling wali kelas & bimbingan konseling.";
+                                    $bk_act = "Panggilan Wali Murid & Pembinaan Guru BK";
+                                    $stmt_ins_bk->execute([(int)$student_id, $user_id, $bk_title, $bk_desc, $bk_act, $attendance_date]);
+                                    logActivity($pdo, 'EWS_ALPA_BK', "Auto-tiket EWS BK dibuat untuk siswa #$student_id ($recent_alpa_count alpa)");
+                                }
+                            }
+                        }
+
+                        if ($p_info && !empty($p_info['parent_phone'])) {
+                            if ($is_ews_triggered) {
+                                $wa_msg = "⚠️ *PERINGATAN DINI KETIDAKHADIRAN (EWS)*\n"
+                                        . "Yth. Bpk/Ibu *{$p_info['parent_name']}*,\n\n"
+                                        . "Ananda *{$p_info['student_name']}* tercatat ALPA hari ini (" . date('d/m/Y', strtotime($attendance_date)) . ") dan telah mengumpulkan *{$recent_alpa_count}x ketidakhadiran tanpa keterangan* dalam 30 hari terakhir.\n\n"
+                                        . "Catatan ini otomatis diteruskan ke Wali Kelas dan Guru BK untuk pembinaan. Mohon segera mengonfirmasi alasan ketidakhadiran ananda kepada pihak sekolah. Terima kasih.";
+                            } else {
+                                $wa_msg = "Yth. Bpk/Ibu " . $p_info['parent_name'] . ", ananda " . $p_info['student_name'] . " hari ini (" . date('d M Y', strtotime($attendance_date)) . ") tercatat " . strtoupper($st_val) . " pada KBM sekolah" . ($note_val ? " (Catatan: $note_val)" : "") . ". Mohon konfirmasi atau hubungi wali kelas. Terima kasih.";
+                            }
+                            sendWhatsAppNotification($pdo, $p_info['parent_phone'], $p_info['parent_name'], $wa_msg, 'presensi');
+                        }
+                    } catch (Exception $e_wa) {
+                        // Jangan hentikan transaksi presensi jika kirim WA error
+                    }
+                }
             }
 
             $pdo->commit();
@@ -96,6 +162,7 @@ if ($can_manage) {
             u.name as student_name,
             u.email as student_email,
             COUNT(CASE WHEN sa.status = 'hadir' THEN 1 END) as total_hadir,
+            COUNT(CASE WHEN sa.status = 'terlambat' THEN 1 END) as total_terlambat,
             COUNT(CASE WHEN sa.status = 'sakit' THEN 1 END) as total_sakit,
             COUNT(CASE WHEN sa.status = 'izin' THEN 1 END) as total_izin,
             COUNT(CASE WHEN sa.status = 'alpa' THEN 1 END) as total_alpa,
@@ -113,27 +180,38 @@ if ($can_manage) {
     // -------------------------------------------------------------
     // 3. DATA UNTUK SISWA & ORANG TUA
     // -------------------------------------------------------------
-    // BUG-12 fix: Jangan fallback ke siswa random. Cari siswa yang memang terhubung via parent_students
+    // -12 fix: Jangan fallback ke siswa random. Cari siswa yang memang terhubung via parent_students
     $target_student_id = $user_id;
     $linked_student = null;
+    $parent_children = [];
     if ($user_role === 'orang_tua') {
         try {
             $stmt_child = $pdo->prepare("
-                SELECT u.id, u.name, u.nisn 
+                SELECT u.id, u.name, u.nisn, c.name as class_name 
                 FROM parent_students ps
                 JOIN users u ON ps.student_id = u.id
+                LEFT JOIN classes c ON u.class_id = c.id
                 WHERE ps.parent_id = ? 
-                LIMIT 1
+                ORDER BY u.name ASC
             ");
             $stmt_child->execute([$user_id]);
-            $linked_student = $stmt_child->fetch();
-        } catch (Exception $e) {}
+            $parent_children = $stmt_child->fetchAll();
+            $p_kids_ids = array_map('intval', array_column($parent_children, 'id'));
 
-        if ($linked_student) {
-            $target_student_id = (int) $linked_student['id'];
-        } else {
-            $target_student_id = 0; // Tidak ada siswa terhubung
-        }
+            $req_kid = isset($_GET['student_id']) && is_numeric($_GET['student_id']) ? (int)$_GET['student_id'] : (isset($_GET['child_id']) ? (int)$_GET['child_id'] : 0);
+            if ($req_kid > 0 && in_array($req_kid, $p_kids_ids, true)) {
+                $target_student_id = $req_kid;
+            } else {
+                $target_student_id = !empty($p_kids_ids) ? (int)$p_kids_ids[0] : 0;
+            }
+
+            foreach ($parent_children as $pk) {
+                if ((int)$pk['id'] === $target_student_id) {
+                    $linked_student = $pk;
+                    break;
+                }
+            }
+        } catch (Exception $e) {}
     }
 
     // Riwayat presensi siswa
@@ -152,6 +230,7 @@ if ($can_manage) {
     $stmt_stats = $pdo->prepare("
         SELECT 
             COUNT(CASE WHEN status = 'hadir' THEN 1 END) as hadir,
+            COUNT(CASE WHEN status = 'terlambat' THEN 1 END) as terlambat,
             COUNT(CASE WHEN status = 'sakit' THEN 1 END) as sakit,
             COUNT(CASE WHEN status = 'izin' THEN 1 END) as izin,
             COUNT(CASE WHEN status = 'alpa' THEN 1 END) as alpa,
@@ -160,10 +239,10 @@ if ($can_manage) {
         WHERE student_id = ?
     ");
     $stmt_stats->execute([$target_student_id]);
-    $student_stats = $stmt_stats->fetch() ?: ['hadir' => 0, 'sakit' => 0, 'izin' => 0, 'alpa' => 0, 'total' => 0];
+    $student_stats = $stmt_stats->fetch() ?: ['hadir' => 0, 'terlambat' => 0, 'sakit' => 0, 'izin' => 0, 'alpa' => 0, 'total' => 0];
     
     $total_days = (int) ($student_stats['total'] ?? 0);
-    $hadir_days = (int) ($student_stats['hadir'] ?? 0);
+    $hadir_days = (int) ($student_stats['hadir'] ?? 0) + (int) ($student_stats['terlambat'] ?? 0);
     $attendance_rate = $total_days > 0 ? round(($hadir_days / $total_days) * 100, 1) : 100;
 }
 
@@ -319,6 +398,16 @@ if (!function_exists('hariIndo')) {
                                                 <span>Hadir</span>
                                             </label>
 
+                                            <!-- Terlambat -->
+                                            <label class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-slate-950/80 text-xs font-medium text-slate-300 has-[:checked]:border-orange-500/50 has-[:checked]:bg-orange-500/20 has-[:checked]:text-orange-300 transition">
+                                                <input type="radio" 
+                                                       name="status[<?= $stu['id'] ?>]" 
+                                                       value="terlambat" 
+                                                       class="radio-status radio-terlambat accent-orange-500" 
+                                                       <?= $current_status === 'terlambat' ? 'checked' : '' ?>>
+                                                <span>Terlambat</span>
+                                            </label>
+
                                             <!-- Sakit -->
                                             <label class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-slate-950/80 text-xs font-medium text-slate-300 has-[:checked]:border-amber-500/50 has-[:checked]:bg-amber-500/20 has-[:checked]:text-amber-300 transition">
                                                 <input type="radio" 
@@ -430,6 +519,7 @@ if (!function_exists('hariIndo')) {
                         <th class="px-6 py-4">No</th>
                         <th class="px-6 py-4">Nama Siswa</th>
                         <th class="px-4 py-4 text-center">Hadir (H)</th>
+                        <th class="px-4 py-4 text-center">Terlambat (T)</th>
                         <th class="px-4 py-4 text-center">Sakit (S)</th>
                         <th class="px-4 py-4 text-center">Izin (I)</th>
                         <th class="px-4 py-4 text-center">Alpa (A)</th>
@@ -439,14 +529,14 @@ if (!function_exists('hariIndo')) {
                 <tbody class="divide-y divide-white/5">
                     <?php if (empty($monthly_recap)): ?>
                         <tr>
-                            <td colspan="7" class="px-6 py-12 text-center text-slate-400">
+                            <td colspan="8" class="px-6 py-12 text-center text-slate-400">
                                 Belum ada data presensi pada periode bulan ini.
                             </td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($monthly_recap as $i => $rec): 
                             $tot = (int) $rec['total_recorded'];
-                            $had = (int) $rec['total_hadir'];
+                            $had = (int) $rec['total_hadir'] + (int) ($rec['total_terlambat'] ?? 0);
                             $pct = ($tot > 0) ? round(($had / $tot) * 100, 1) : 0;
                         ?>
                             <tr class="hover:bg-white/[0.02] transition">
@@ -458,6 +548,11 @@ if (!function_exists('hariIndo')) {
                                 <td class="px-4 py-4 text-center">
                                     <span class="inline-block px-2.5 py-1 rounded-lg font-semibold text-xs border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
                                         <?= $rec['total_hadir'] ?>
+                                    </span>
+                                </td>
+                                <td class="px-4 py-4 text-center">
+                                    <span class="inline-block px-2.5 py-1 rounded-lg font-semibold text-xs border border-orange-500/30 bg-orange-500/10 text-orange-300">
+                                        <?= $rec['total_terlambat'] ?? 0 ?>
                                     </span>
                                 </td>
                                 <td class="px-4 py-4 text-center">
@@ -500,7 +595,7 @@ if (!function_exists('hariIndo')) {
 
     <?php if ($user_role === 'orang_tua'): ?>
         <?php if ($linked_student): ?>
-            <div class="mb-6 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-4 flex items-center justify-between text-indigo-200">
+            <div class="mb-6 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-4 flex flex-wrap items-center justify-between gap-3 text-indigo-200">
                 <div class="flex items-center gap-3">
                     <span class="text-xl text-indigo-400"><i class="fa-solid fa-user-graduate"></i></span>
                     <div>
@@ -508,6 +603,18 @@ if (!function_exists('hariIndo')) {
                         <p class="text-sm font-semibold text-white"><?= htmlspecialchars($linked_student['name']) ?> <span class="font-mono text-xs text-slate-400">(NISN: <?= htmlspecialchars($linked_student['nisn'] ?? '-') ?>)</span></p>
                     </div>
                 </div>
+                <?php if (count($parent_children) > 1): ?>
+                    <form method="GET" class="inline-flex items-center gap-2">
+                        <span class="text-xs font-bold text-indigo-300">Ganti Data Anak:</span>
+                        <select name="student_id" onchange="this.form.submit()" class="rounded-xl border border-indigo-500/40 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white focus:outline-none">
+                            <?php foreach ($parent_children as $pk): ?>
+                                <option value="<?= $pk['id'] ?>" <?= ($target_student_id == $pk['id']) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($pk['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </form>
+                <?php endif; ?>
             </div>
         <?php else: ?>
             <div class="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-center gap-3 text-amber-200">

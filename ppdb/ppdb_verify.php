@@ -16,9 +16,13 @@ if (!empty($token)) {
     $stmt->execute([$token]);
     $student = $stmt->fetch();
 } elseif (!empty($reg_no)) {
-    $stmt = $pdo->prepare("SELECT * FROM ppdb_registrations WHERE registration_no = ? LIMIT 1");
-    $stmt->execute([$reg_no]);
-    $student = $stmt->fetch();
+    $is_staff_or_admin = isset($_SESSION['user_role']) && in_array($_SESSION['user_role'], ['administrator', 'staf', 'guru'], true);
+    $is_session_verified = isset($_SESSION['ppdb_verified_reg']) && $_SESSION['ppdb_verified_reg'] === $reg_no;
+    if ($is_staff_or_admin || $is_session_verified) {
+        $stmt = $pdo->prepare("SELECT * FROM ppdb_registrations WHERE registration_no = ? LIMIT 1");
+        $stmt->execute([$reg_no]);
+        $student = $stmt->fetch();
+    }
 }
 
 $school_info = getSchoolSettings($pdo);
@@ -36,6 +40,28 @@ $school_info = getSchoolSettings($pdo);
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+        }
+        ::-webkit-scrollbar, *::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track, *::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb, *::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.3);
+            border-radius: 9999px;
+            transition: background-color 0.2s ease;
+        }
+        ::-webkit-scrollbar-thumb:hover, *::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.6);
+        }
+        ::-webkit-scrollbar-corner, *::-webkit-scrollbar-corner {
+            background: transparent;
+        }
     </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 antialiased flex flex-col justify-between p-4 sm:p-8">
@@ -127,7 +153,7 @@ $school_info = getSchoolSettings($pdo);
                     <span class="text-[11px] text-slate-500">
                         <i class="fa-solid fa-lock text-emerald-400 mr-1"></i> Terenkripsi SHA-256 Digital Signature
                     </span>
-                    <a href="ppdb_card.php?reg=<?= urlencode($student['registration_no']) ?>" target="_blank"
+                    <a href="ppdb_card.php?reg=<?= urlencode($student['registration_no']) ?>&token=<?= urlencode($student['qr_token'] ?? '') ?>" target="_blank"
                        class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-600/20 transition">
                         <i class="fa-solid fa-print"></i> Cetak Kartu Fisik
                     </a>

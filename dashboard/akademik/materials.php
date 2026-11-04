@@ -14,7 +14,16 @@ $message_type = "";
 // Buat folder upload jika belum ada
 $upload_dir = __DIR__ . "/../../uploads/materials";
 if (!is_dir($upload_dir)) {
-    mkdir($upload_dir, 0777, true);
+    mkdir($upload_dir, 0755, true);
+}
+
+// Auto-migrasi kolom library_book_id untuk integrasi katalog perpustakaan
+try {
+    $pdo->query("SELECT library_book_id FROM learning_materials LIMIT 1");
+} catch (Exception $e) {
+    try {
+        $pdo->exec("ALTER TABLE learning_materials ADD COLUMN library_book_id INT NULL DEFAULT NULL AFTER link_url");
+    } catch (Exception $ex) {}
 }
 
 // -------------------------------------------------------------
@@ -31,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $description = trim($_POST['description'] ?? '');
         $file_type = $_POST['file_type'] ?? 'document';
         $link_url = trim($_POST['link_url'] ?? '');
+        $library_book_id = !empty($_POST['library_book_id']) ? (int)$_POST['library_book_id'] : null;
         $file_url = null;
 
         // Handle File Upload jika ada
@@ -57,10 +67,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $message_type = "error";
         } elseif (empty($message)) {
             $stmt_in = $pdo->prepare("
-                INSERT INTO learning_materials (title, subject, class_id, teacher_id, description, file_url, link_url, file_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO learning_materials (title, subject, class_id, teacher_id, description, file_url, link_url, file_type, library_book_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            $stmt_in->execute([$title, $subject, $class_id, $user_id, $description ?: null, $file_url, $link_url ?: null, $file_type]);
+            $stmt_in->execute([$title, $subject, $class_id, $user_id, $description ?: null, $file_url, $link_url ?: null, $file_type, $library_book_id]);
 
             logActivity($pdo, 'CREATE_MATERIAL', "Mengunggah materi pembelajaran $title");
             $message = "Materi pembelajaran berhasil dipublikasikan.";
@@ -120,15 +130,23 @@ if (isset($_GET['download']) && is_numeric($_GET['download'])) {
 $classes = $pdo->query("SELECT id, name FROM classes ORDER BY name ASC")->fetchAll();
 $subjects = $pdo->query("SELECT DISTINCT name FROM subjects ORDER BY name ASC")->fetchAll(PDO::FETCH_COLUMN);
 
+// Ambil koleksi buku perpustakaan untuk referensi materi
+$library_books = [];
+try {
+    $library_books = $pdo->query("SELECT id, title, author, category, shelf_location, ebook_file FROM library_books ORDER BY title ASC")->fetchAll();
+} catch (Exception $e) {}
+
 $filter_subject = trim($_GET['subject'] ?? '');
 $filter_class = isset($_GET['class_id']) && $_GET['class_id'] !== '' ? (int)$_GET['class_id'] : null;
 $search = trim($_GET['q'] ?? '');
 
 $sql = "
-    SELECT m.*, u.name as teacher_name, c.name as class_name
+    SELECT m.*, u.name as teacher_name, c.name as class_name,
+           lb.title as book_title, lb.author as book_author, lb.shelf_location as book_shelf, lb.ebook_file as book_ebook, lb.category as book_category
     FROM learning_materials m
     JOIN users u ON m.teacher_id = u.id
     LEFT JOIN classes c ON m.class_id = c.id
+    LEFT JOIN library_books lb ON m.library_book_id = lb.id
     WHERE 1=1
 ";
 $params = [];
@@ -282,6 +300,28 @@ require_once __DIR__ . "/../includes/header.php";
                                 <?= nl2br(htmlspecialchars($m['description'])) ?>
                             </p>
                         <?php endif; ?>
+
+                        <!-- E-Book Perpustakaan Reference Integration -->
+                        <?php if (!empty($m['library_book_id']) && !empty($m['book_title'])): ?>
+                            <div class="mt-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/40 p-2.5 flex items-center justify-between gap-2.5">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 text-sm">
+                                        <i class="fa-solid fa-book"></i>
+                                    </span>
+                                    <div class="min-w-0">
+                                        <span class="block text-[10px] font-bold uppercase tracking-wider text-emerald-400">Referensi Buku Perpustakaan</span>
+                                        <span class="block font-semibold text-white text-xs truncate"><?= htmlspecialchars($m['book_title']) ?></span>
+                                        <span class="block text-[10px] text-slate-400"><?= htmlspecialchars($m['book_author'] ?? '-') ?> • <?= htmlspecialchars($m['book_shelf'] ?? 'Rak Perpus') ?></span>
+                                    </div>
+                                </div>
+                                <a href="../perpustakaan/books.php?q=<?= urlencode($m['book_title']) ?>" target="_blank"
+                                   title="Buka Koleksi Perpustakaan"
+                                   class="shrink-0 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 px-2.5 py-1 text-[11px] font-bold text-white transition flex items-center gap-1 shadow-sm">
+                                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                    <span>Buku</span>
+                                </a>
+                            </div>
+                        <?php endif; ?>
                     </div>
 
                     <!-- Bottom Action & Download Count -->
@@ -379,6 +419,24 @@ require_once __DIR__ . "/../includes/header.php";
             <div>
                 <label class="block text-xs font-semibold text-slate-300 mb-1">Tautan Eksternal / Video YouTube (Opsional)</label>
                 <input type="url" name="link_url" placeholder="https://www.youtube.com/watch?v=... atau Google Drive" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                    <span class="flex items-center gap-1.5 text-emerald-400">
+                        <i class="fa-solid fa-book"></i> Tautkan Referensi Buku / E-Book Perpustakaan (Opsional)
+                    </span>
+                    <span class="text-[10px] text-slate-400 font-normal">Koleksi: <?= count($library_books) ?> Buku</span>
+                </label>
+                <select name="library_book_id" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none">
+                    <option value="">-- Tidak Ditautkan ke Buku Tertentu --</option>
+                    <?php foreach ($library_books as $lb): ?>
+                        <option value="<?= $lb['id'] ?>">
+                            <?= htmlspecialchars($lb['title']) ?> (<?= htmlspecialchars($lb['author'] ?? '-') ?>) - <?= htmlspecialchars($lb['shelf_location'] ?? 'Rak Perpus') ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="text-[11px] text-slate-500 mt-1">Siswa dapat langsung membuka katalog buku/e-book perpustakaan yang relevan dengan topik ini.</p>
             </div>
 
             <div>

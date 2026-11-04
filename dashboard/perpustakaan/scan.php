@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             SELECT u.id, u.name, u.role, u.nisn, u.gender, c.name as class_name
             FROM users u
             LEFT JOIN classes c ON u.class_id = c.id
-            WHERE (u.nisn = ? OR u.id = ? OR u.username = ?) AND u.role IN ('siswa', 'guru', 'staf')
+            WHERE (u.nisn = ? OR u.id = ? OR u.email = ?) AND u.role IN ('siswa', 'guru', 'staf')
             LIMIT 1
         ");
         $stmt->execute([$cleaned, is_numeric($cleaned) ? (int)$cleaned : 0, $cleaned]);
@@ -389,6 +389,16 @@ include __DIR__ . "/../includes/header.php";
                             class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5 cursor-pointer">
                         <i class="fa-solid fa-power-off text-emerald-400"></i> <span id="cameraStatusText">Buka Kamera</span>
                     </button>
+                </div>
+
+                <!-- Pilihan Perangkat Kamera -->
+                <div class="mt-2.5 mb-1 flex items-center gap-2 rounded-xl border border-white/5 bg-slate-950/70 p-2">
+                    <label for="libCameraSelect" class="text-xs text-slate-400 font-semibold shrink-0 flex items-center gap-1">
+                        <i class="fa-solid fa-video text-teal-400"></i> Kamera:
+                    </label>
+                    <select id="libCameraSelect" onchange="onLibCameraChange()" class="flex-1 rounded-lg border border-white/10 bg-slate-900 px-2.5 py-1 text-xs text-slate-200 focus:border-teal-500 focus:outline-none">
+                        <option value="">Deteksi perangkat kamera...</option>
+                    </select>
                 </div>
 
                 <!-- Video Viewport Scanner -->
@@ -764,6 +774,50 @@ function playAudioBeep(type = 'success') {
 // ----------------------------------------------------
 let html5QrCode = null;
 let isCameraRunning = false;
+let selectedLibCameraId = null;
+
+document.addEventListener("DOMContentLoaded", () => {
+    initLibCameraDevices();
+});
+
+function initLibCameraDevices() {
+    const select = document.getElementById('libCameraSelect');
+    if (!select || typeof Html5Qrcode === "undefined" || !Html5Qrcode.getCameras) return;
+
+    Html5Qrcode.getCameras().then(devices => {
+        select.innerHTML = '';
+        if (devices && devices.length > 0) {
+            devices.forEach((device, index) => {
+                const opt = document.createElement('option');
+                opt.value = device.id;
+                opt.text = device.label || `Kamera ${index + 1}`;
+                select.appendChild(opt);
+            });
+            if (!selectedLibCameraId) {
+                selectedLibCameraId = devices[0].id;
+            } else {
+                select.value = selectedLibCameraId;
+            }
+        } else {
+            select.innerHTML = '<option value="">Tidak ada kamera terdeteksi</option>';
+        }
+    }).catch(() => {
+        select.innerHTML = '<option value="">(Buka kamera untuk deteksi perangkat)</option>';
+    });
+}
+
+function onLibCameraChange() {
+    const select = document.getElementById('libCameraSelect');
+    if (select) {
+        selectedLibCameraId = select.value;
+    }
+    if (html5QrCode && isCameraRunning) {
+        html5QrCode.stop().then(() => {
+            isCameraRunning = false;
+            startCamera();
+        });
+    }
+}
 
 function toggleCamera() {
     if (isCameraRunning) {
@@ -782,13 +836,19 @@ function startCamera() {
     }
 
     const config = {
-        fps: 12,
+        fps: 15,
         qrbox: { width: 250, height: 250 },
         aspectRatio: 1.333334
     };
 
+    const select = document.getElementById('libCameraSelect');
+    if (select && select.value) {
+        selectedLibCameraId = select.value;
+    }
+    const cameraTarget = selectedLibCameraId ? selectedLibCameraId : { facingMode: "environment" };
+
     html5QrCode.start(
-        { facingMode: "environment" },
+        cameraTarget,
         config,
         onScanSuccess,
         onScanFailure
@@ -797,6 +857,9 @@ function startCamera() {
         document.getElementById('cameraPlaceholder').classList.add('hidden');
         document.getElementById('scannerOverlay').classList.remove('hidden');
         document.getElementById('cameraStatusText').textContent = 'Matikan Kamera';
+
+        // Refresh label perangkat setelah izin disetujui browser
+        initLibCameraDevices();
     }).catch(err => {
         alert("Tidak dapat mengakses kamera: " + err);
     });

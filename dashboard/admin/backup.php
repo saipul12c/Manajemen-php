@@ -8,10 +8,12 @@ $user_id = (int)$_SESSION['user_id'];
 $message = "";
 $message_type = "";
 
+$action = $_POST['action'] ?? $_GET['action'] ?? '';
+
 // -------------------------------------------------------------
-// 1. GENERATE & DOWNLOAD FULL DATABASE SQL DUMP
+// 1. GENERATE & DOWNLOAD FULL DATABASE SQL DUMP (-10: Support POST)
 // -------------------------------------------------------------
-if (isset($_GET['action']) && $_GET['action'] === 'download_sql') {
+if ($action === 'download_sql') {
     if (!validateCsrfToken()) {
         die("Token keamanan tidak valid.");
     }
@@ -35,20 +37,26 @@ if (isset($_GET['action']) && $_GET['action'] === 'download_sql') {
     $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
 
     foreach ($tables as $table) {
-        echo "-- ---------------------------------------------------------\n";
-        echo "-- Struktur Tabel untuk `$table`\n";
-        echo "-- ---------------------------------------------------------\n";
-        echo "DROP TABLE IF EXISTS `$table`;\n";
+        // -9 fix: Validasi nama tabel dan escaping backtick untuk cegah SQL injection pada dump
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+            continue;
+        }
+        $escaped_table = str_replace('`', '``', $table);
 
-        $create_table = $pdo->query("SHOW CREATE TABLE `$table`")->fetch();
+        echo "-- ---------------------------------------------------------\n";
+        echo "-- Struktur Tabel untuk `$escaped_table`\n";
+        echo "-- ---------------------------------------------------------\n";
+        echo "DROP TABLE IF EXISTS `$escaped_table`;\n";
+
+        $create_table = $pdo->query("SHOW CREATE TABLE `$escaped_table`")->fetch();
         echo $create_table['Create Table'] . ";\n\n";
 
         // Dump data
-        $rows = $pdo->query("SELECT * FROM `$table`")->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $pdo->query("SELECT * FROM `$escaped_table`")->fetchAll(PDO::FETCH_ASSOC);
         if (!empty($rows)) {
-            echo "-- Dumping data untuk tabel `$table`\n";
+            echo "-- Dumping data untuk tabel `$escaped_table`\n";
             $columns = array_keys($rows[0]);
-            $col_list = "`" . implode("`, `", $columns) . "`";
+            $col_list = "`" . implode("`, `", array_map(fn($c) => str_replace('`', '``', $c), $columns)) . "`";
 
             foreach ($rows as $row) {
                 $values = [];
@@ -59,7 +67,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download_sql') {
                         $values[] = $pdo->quote($val);
                     }
                 }
-                echo "INSERT INTO `$table` ($col_list) VALUES (" . implode(", ", $values) . ");\n";
+                echo "INSERT INTO `$escaped_table` ($col_list) VALUES (" . implode(", ", $values) . ");\n";
             }
             echo "\n";
         }
@@ -70,14 +78,15 @@ if (isset($_GET['action']) && $_GET['action'] === 'download_sql') {
 }
 
 // -------------------------------------------------------------
-// 2. EXPORT TABEL TERTENTU KE FORMAT CSV
+// 2. EXPORT TABEL TERTENTU KE FORMAT CSV (-10: Support POST)
 // -------------------------------------------------------------
-if (isset($_GET['action']) && $_GET['action'] === 'export_csv') {
+if ($action === 'export_csv') {
     if (!validateCsrfToken()) {
         die("Token keamanan tidak valid.");
     }
 
-    $table_name = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['table'] ?? '');
+    $raw_table = $_POST['table'] ?? $_GET['table'] ?? '';
+    $table_name = preg_replace('/[^a-zA-Z0-9_]/', '', $raw_table);
     if (empty($table_name)) {
         die("Nama tabel tidak valid.");
     }
@@ -92,7 +101,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'export_csv') {
     // BOM UTF-8 agar karakter Indonesia dan simbol terbaca rapi di Excel
     fputs($output, "\xEF\xBB\xBF");
 
-    $rows = $pdo->query("SELECT * FROM `$table_name`")->fetchAll(PDO::FETCH_ASSOC);
+    // -9 fix: Escape backtick pada query tabel CSV
+    $escaped_table = str_replace('`', '``', $table_name);
+    $rows = $pdo->query("SELECT * FROM `$escaped_table`")->fetchAll(PDO::FETCH_ASSOC);
     if (!empty($rows)) {
         fputcsv($output, array_keys($rows[0]));
         foreach ($rows as $row) {
@@ -150,9 +161,13 @@ require_once __DIR__ . "/../includes/header.php";
             </p>
         </div>
 
-        <a href="backup.php?action=download_sql&csrf_token=<?= generateCsrfToken() ?>" class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/30 hover:bg-blue-500 transition cursor-pointer self-start sm:self-auto">
-            <i class="fa-solid fa-download"></i> Unduh Backup SQL Penuh (1-Klik)
-        </a>
+        <form method="POST" action="backup.php" class="inline self-start sm:self-auto m-0 p-0">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="download_sql">
+            <button type="submit" class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/30 hover:bg-blue-500 transition cursor-pointer">
+                <i class="fa-solid fa-download"></i> Unduh Backup SQL Penuh (1-Klik)
+            </button>
+        </form>
     </div>
 
     <!-- Health & Stats Overview -->
@@ -231,9 +246,14 @@ require_once __DIR__ . "/../includes/header.php";
                                 <?= htmlspecialchars($tbl['collation']) ?>
                             </td>
                             <td class="px-5 py-3.5 text-right">
-                                <a href="backup.php?action=export_csv&table=<?= urlencode($tbl['name']) ?>&csrf_token=<?= generateCsrfToken() ?>" class="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition">
-                                    <i class="fa-solid fa-file-csv text-emerald-400"></i> Ekspor CSV
-                                </a>
+                                <form method="POST" action="backup.php" class="inline m-0 p-0">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="action" value="export_csv">
+                                    <input type="hidden" name="table" value="<?= htmlspecialchars($tbl['name']) ?>">
+                                    <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition cursor-pointer">
+                                        <i class="fa-solid fa-file-csv text-emerald-400"></i> Ekspor CSV
+                                    </button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>

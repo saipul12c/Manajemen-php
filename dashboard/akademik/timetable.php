@@ -233,7 +233,16 @@ require_once __DIR__ . "/../includes/header.php";
     <!-- Print Title Header -->
     <div class="hidden print:block text-center mb-6">
         <h2 class="text-xl font-bold uppercase text-black">SMA BINA BANGSA NUSANTARA</h2>
-        <p class="text-sm text-gray-600">Jadwal Pelajaran Kelas <?= htmlspecialchars($classes[array_search($selected_class_id, array_column($classes, 'id'))]['name'] ?? 'Semua') ?> - Tahun Pelajaran 2026/2027</p>
+        <?php 
+            $print_class_name = 'Semua';
+            foreach ($classes as $c_item) {
+                if ((int)$c_item['id'] === (int)$selected_class_id) {
+                    $print_class_name = $c_item['name'];
+                    break;
+                }
+            }
+        ?>
+        <p class="text-sm text-gray-600">Jadwal Pelajaran Kelas <?= htmlspecialchars($print_class_name) ?> - Tahun Pelajaran 2026/2027</p>
         <hr class="border-black my-2">
     </div>
 

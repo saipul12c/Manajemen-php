@@ -1,0 +1,21 @@
+# =========================================================
+# Mencegah eksekusi skrip di dalam direktori uploads
+# =========================================================
+
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+    php_flag engine off
+</IfModule>
+
+# Hapus handler skrip dan pastikan disajikan sebagai file statis biasa
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phps .cgi .pl .asp .aspx .shtml
+SetHandler default-handler
+
+# Matikan eksekusi CGI dan directory listing
+Options -ExecCGI -Indexes
+

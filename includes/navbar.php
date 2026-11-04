@@ -26,6 +26,42 @@ $user_role = $_SESSION['user_role'] ?? '';
 $user_name = $_SESSION['user_name'] ?? '';
 ?>
 
+<!-- Global Slim Modern Scrollbar Style -->
+<style>
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+    }
+
+    ::-webkit-scrollbar,
+    *::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    ::-webkit-scrollbar-track,
+    *::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb,
+    *::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.3);
+        border-radius: 9999px;
+        transition: background-color 0.2s ease;
+    }
+
+    ::-webkit-scrollbar-thumb:hover,
+    *::-webkit-scrollbar-thumb:hover {
+        background: rgba(148, 163, 184, 0.6);
+    }
+
+    ::-webkit-scrollbar-corner,
+    *::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+</style>
+
 <!-- ================= GLOBAL NAVBAR ================= -->
 <header class="sticky top-0 z-50 border-b border-white/10 bg-slate-950/85 backdrop-blur-md">
     <div class="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 py-3.5">
@@ -55,6 +91,11 @@ $user_name = $_SESSION['user_name'] ?? '';
                 <i class="fa-solid fa-bullhorn mr-1 text-sky-400"></i> Informasi
             </a>
 
+            <a href="<?= $base_path ?>berita.php" 
+               class="px-3 py-1.5 text-xs font-semibold rounded-full transition <?= $nav_active === 'berita' ? 'text-blue-400 bg-blue-600/20 border border-blue-500/30 shadow-sm' : 'text-slate-300 hover:text-white hover:bg-white/10' ?>">
+                <i class="fa-solid fa-newspaper mr-1 text-blue-400"></i> Berita
+            </a>
+
             <a href="<?= $base_path ?>about.php" 
                class="px-3 py-1.5 text-xs font-semibold rounded-full transition <?= $nav_active === 'about' ? 'text-indigo-400 bg-indigo-600/20 border border-indigo-500/30 shadow-sm' : 'text-slate-300 hover:text-white hover:bg-white/10' ?>">
                 <i class="fa-solid fa-circle-info mr-1 text-indigo-400"></i> Tentang Kami
@@ -73,6 +114,11 @@ $user_name = $_SESSION['user_name'] ?? '';
             <a href="<?= $base_path ?>kontak.php" 
                class="px-3 py-1.5 text-xs font-semibold rounded-full transition <?= $nav_active === 'kontak' ? 'text-amber-400 bg-amber-600/20 border border-amber-500/30 shadow-sm' : 'text-slate-300 hover:text-white hover:bg-white/10' ?>">
                 <i class="fa-solid fa-envelope mr-1 text-amber-400"></i> Kontak
+            </a>
+
+            <a href="<?= $base_path ?>apps.php" 
+               class="px-3 py-1.5 text-xs font-semibold rounded-full transition <?= $nav_active === 'apps' ? 'text-teal-400 bg-teal-600/20 border border-teal-500/30 shadow-sm' : 'text-teal-300/90 hover:text-white hover:bg-white/10' ?>">
+                <i class="fa-solid fa-mobile-screen-button mr-1 text-teal-400"></i> Aplikasi
             </a>
         </nav>
 
@@ -111,6 +157,10 @@ $user_name = $_SESSION['user_name'] ?? '';
            class="flex items-center gap-2.5 px-3 py-2 text-sm font-medium rounded-xl transition <?= $nav_active === 'informasi' ? 'text-sky-400 bg-sky-600/10 font-bold' : 'text-slate-300 hover:text-white hover:bg-white/5' ?>">
             <i class="fa-solid fa-bullhorn w-5 text-sky-400"></i> Papan Informasi
         </a>
+        <a href="<?= $base_path ?>berita.php" 
+           class="flex items-center gap-2.5 px-3 py-2 text-sm font-medium rounded-xl transition <?= $nav_active === 'berita' ? 'text-blue-400 bg-blue-600/10 font-bold' : 'text-slate-300 hover:text-white hover:bg-white/5' ?>">
+            <i class="fa-solid fa-newspaper w-5 text-blue-400"></i> Berita Sekolah
+        </a>
         <a href="<?= $base_path ?>about.php" 
            class="flex items-center gap-2.5 px-3 py-2 text-sm font-medium rounded-xl transition <?= $nav_active === 'about' ? 'text-indigo-400 bg-indigo-600/10 font-bold' : 'text-slate-300 hover:text-white hover:bg-white/5' ?>">
             <i class="fa-solid fa-circle-info w-5 text-indigo-400"></i> Tentang Kami
@@ -126,6 +176,10 @@ $user_name = $_SESSION['user_name'] ?? '';
         <a href="<?= $base_path ?>kontak.php" 
            class="flex items-center gap-2.5 px-3 py-2 text-sm font-medium rounded-xl transition <?= $nav_active === 'kontak' ? 'text-amber-400 bg-amber-600/10 font-bold' : 'text-slate-300 hover:text-white hover:bg-white/5' ?>">
             <i class="fa-solid fa-envelope w-5 text-amber-400"></i> Kontak Bantuan
+        </a>
+        <a href="<?= $base_path ?>apps.php" 
+           class="flex items-center gap-2.5 px-3 py-2 text-sm font-medium rounded-xl transition <?= $nav_active === 'apps' ? 'text-teal-400 bg-teal-600/10 font-bold' : 'text-teal-300 hover:text-white hover:bg-white/5' ?>">
+            <i class="fa-solid fa-mobile-screen-button w-5 text-teal-400"></i> Unduh Aplikasi Sekolah
         </a>
 
         <div class="pt-3 border-t border-white/10">

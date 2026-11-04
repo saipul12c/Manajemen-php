@@ -11,12 +11,32 @@
 CREATE DATABASE IF NOT EXISTS `website_login` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE `website_login`;
 
+-- 0. Tabel Rombel & Kelas (classes)
+CREATE TABLE IF NOT EXISTS `classes` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(100) NOT NULL,
+    `grade_level` VARCHAR(20) NOT NULL DEFAULT '10',
+    `academic_year` VARCHAR(30) NOT NULL DEFAULT '2026/2027',
+    `homeroom_teacher_id` INT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `classes` (`id`, `name`, `grade_level`, `academic_year`, `homeroom_teacher_id`) VALUES
+(1, 'X-MIPA-1', '10', '2026/2027', 3),
+(2, 'XI-MIPA-2', '11', '2026/2027', NULL),
+(3, 'XII-IPS-1', '12', '2026/2027', NULL)
+ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
+
 -- 1. Tabel `users`
 CREATE TABLE IF NOT EXISTS `users` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` VARCHAR(100) NOT NULL,
     `email` VARCHAR(100) NOT NULL UNIQUE,
     `password` VARCHAR(255) NOT NULL,
+    `two_factor_secret` VARCHAR(64) DEFAULT NULL,
+    `two_factor_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+    `two_factor_confirmed_at` DATETIME DEFAULT NULL,
     `role` ENUM('administrator', 'staf', 'guru', 'orang_tua', 'siswa') NOT NULL DEFAULT 'siswa',
     `class_id` INT DEFAULT NULL,
     `nisn` VARCHAR(20) DEFAULT NULL,
@@ -95,7 +115,9 @@ CREATE TABLE IF NOT EXISTS `exams` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `title` VARCHAR(200) NOT NULL,
     `subject` VARCHAR(100) NOT NULL,
-    `category` ENUM('uts', 'ukk', 'ujian_harian', 'latihan_harian', 'latihan_mingguan', 'latihan_bulanan') NOT NULL,
+    `class_id` INT DEFAULT NULL,
+    `education_level` ENUM('semua', 'sd', 'smp', 'sma', 'smk') NOT NULL DEFAULT 'semua',
+    `category` VARCHAR(50) NOT NULL DEFAULT 'sts',
     `type` ENUM('ujian', 'latihan') NOT NULL DEFAULT 'ujian',
     `description` TEXT DEFAULT NULL,
     `duration_minutes` INT DEFAULT 0,
@@ -103,27 +125,32 @@ CREATE TABLE IF NOT EXISTS `exams` (
     `token` VARCHAR(20) DEFAULT NULL,
     `randomize_questions` TINYINT(1) DEFAULT 0,
     `hide_answers_until_due` TINYINT(1) DEFAULT 0,
+    `lockdown_enabled` TINYINT(1) DEFAULT 1,
+    `allowed_ip_range` VARCHAR(255) DEFAULT NULL,
     `start_time` DATETIME DEFAULT NULL,
     `due_date` DATETIME NOT NULL,
     `teacher_id` INT NOT NULL,
     `status` ENUM('aktif', 'selesai', 'draft') NOT NULL DEFAULT 'aktif',
+    `is_ppdb` TINYINT(1) NOT NULL DEFAULT 0,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_exams_teacher` FOREIGN KEY (`teacher_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 7. Tabel `exam_questions` (Butir Soal Campuran: Pilihan Ganda & Esai/Uraian)
+-- 7. Tabel `exam_questions` (Butir Soal Campuran: Pilihan Ganda Tunggal/Kompleks, Benar/Salah, Isian Singkat, & Esai)
 CREATE TABLE IF NOT EXISTS `exam_questions` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `exam_id` INT NOT NULL,
-    `question_type` ENUM('multiple_choice', 'essay') DEFAULT 'multiple_choice',
+    `question_type` VARCHAR(50) DEFAULT 'multiple_choice',
     `max_score` DECIMAL(5,2) DEFAULT 10.00,
     `question_text` TEXT NOT NULL,
     `image_url` VARCHAR(255) DEFAULT NULL,
+    `audio_url` VARCHAR(255) DEFAULT NULL,
     `option_a` TEXT DEFAULT NULL,
     `option_b` TEXT DEFAULT NULL,
     `option_c` TEXT DEFAULT NULL,
     `option_d` TEXT DEFAULT NULL,
-    `correct_answer` VARCHAR(10) DEFAULT NULL,
+    `option_e` TEXT DEFAULT NULL,
+    `correct_answer` TEXT DEFAULT NULL,
     `explanation` TEXT DEFAULT NULL,
     CONSTRAINT `fk_questions_exam` FOREIGN KEY (`exam_id`) REFERENCES `exams` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -184,7 +211,9 @@ CREATE TABLE IF NOT EXISTS `classes` (
     `name` VARCHAR(100) NOT NULL,
     `grade_level` VARCHAR(20) NOT NULL DEFAULT '10',
     `academic_year` VARCHAR(50) NOT NULL DEFAULT '2026/2027',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    `homeroom_teacher_id` INT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_class_homeroom` FOREIGN KEY (`homeroom_teacher_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 12. Tabel `parent_students` (Relasi Akun Orang Tua & Siswa)
@@ -566,11 +595,21 @@ CREATE TABLE IF NOT EXISTS `ppdb_registrations` (
     `birth_cert_doc` VARCHAR(255) DEFAULT NULL,
     `family_card_doc` VARCHAR(255) DEFAULT NULL,
     `photo_doc` VARCHAR(255) DEFAULT NULL,
+    `achievement_cert_doc` VARCHAR(255) DEFAULT NULL,
+    `achievements_json` LONGTEXT DEFAULT NULL,
     `document_status` ENUM('lengkap', 'perlu_revisi', 'ditolak') NOT NULL DEFAULT 'lengkap',
     `rejection_reason` TEXT DEFAULT NULL,
     `status` ENUM('menunggu_verifikasi', 'diverifikasi', 'lulus_seleksi', 'tidak_lulus', 'diterima') NOT NULL DEFAULT 'menunggu_verifikasi',
     `selection_score` DECIMAL(5,2) DEFAULT NULL,
     `notes` TEXT DEFAULT NULL,
+    `exam_date` DATE DEFAULT NULL,
+    `exam_time` VARCHAR(50) DEFAULT NULL,
+    `exam_room` VARCHAR(100) DEFAULT NULL,
+    `exam_session` VARCHAR(50) DEFAULT NULL,
+    `cbt_answers` LONGTEXT DEFAULT NULL,
+    `cbt_doubt_answers` LONGTEXT DEFAULT NULL,
+    `cbt_start_time` DATETIME DEFAULT NULL,
+    `cbt_status` ENUM('belum_mulai', 'sedang_mengerjakan', 'selesai') NOT NULL DEFAULT 'belum_mulai',
     `user_id` INT DEFAULT NULL,
     `qr_token` VARCHAR(64) DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -690,6 +729,11 @@ CREATE TABLE IF NOT EXISTS `student_report_notes` (
     `semester` VARCHAR(20) NOT NULL DEFAULT 'Ganjil',
     `homeroom_notes` TEXT DEFAULT NULL,
     `extracurricular` TEXT DEFAULT NULL,
+    `decision_status` VARCHAR(50) NOT NULL DEFAULT 'belum_ditetapkan',
+    `target_next_class` VARCHAR(50) DEFAULT NULL,
+    `subject_descriptions` LONGTEXT DEFAULT NULL,
+    `pkl_internship` LONGTEXT DEFAULT NULL,
+    `ukk_vocational` LONGTEXT DEFAULT NULL,
     `created_by` INT DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -736,6 +780,8 @@ CREATE TABLE IF NOT EXISTS `ppdb_registrations` (
     `birth_cert_doc` VARCHAR(255) DEFAULT NULL,
     `family_card_doc` VARCHAR(255) DEFAULT NULL,
     `photo_doc` VARCHAR(255) DEFAULT NULL,
+    `achievement_cert_doc` VARCHAR(255) DEFAULT NULL,
+    `achievements_json` LONGTEXT DEFAULT NULL,
     `document_status` ENUM('lengkap', 'perlu_revisi', 'ditolak') NOT NULL DEFAULT 'lengkap',
     `rejection_reason` TEXT DEFAULT NULL,
     `status` ENUM('menunggu_verifikasi', 'diverifikasi', 'lulus_seleksi', 'tidak_lulus', 'diterima') NOT NULL DEFAULT 'menunggu_verifikasi',
@@ -759,8 +805,478 @@ INSERT INTO `ppdb_registrations` (
 (2, 'PPDB-2026-0002', 'Siti Nurhaliza', '0089876543', '3201015609080002', 'P', 'Bandung', '2008-09-25', 'Islam', '085712349876', 'siti.ppdb@gmail.com', 'Jl. Anggrek No. 04, Cilandak, Jakarta Selatan', 'SMP Negeri 5 Jakarta', 'IPS (Ilmu Pengetahuan Sosial)', 'zonasi', 1.80, NULL, NULL, NULL, 85.00, 84.00, 90.00, 87.00, 93.50, 'Bambang Supriyanto', '085812349876', 'PNS', 'lengkap', 'menunggu_verifikasi', 93.50, 'Jarak domisili terverifikasi melalui titik peta KK.', 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2')
 ON DUPLICATE KEY UPDATE `full_name`=VALUES(`full_name`);
 
+-- =========================================================
+-- 23. Tabel `news` (Berita & Artikel Sekolah Terintegrasi)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `news` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `title` VARCHAR(255) NOT NULL,
+    `slug` VARCHAR(255) NOT NULL UNIQUE,
+    `excerpt` TEXT DEFAULT NULL,
+    `content` LONGTEXT NOT NULL,
+    `category` ENUM('kegiatan', 'prestasi', 'akademik', 'artikel', 'fasilitas', 'umum') NOT NULL DEFAULT 'kegiatan',
+    `thumbnail` VARCHAR(255) DEFAULT NULL,
+    `book_id` INT DEFAULT NULL,
+    `event_id` INT DEFAULT NULL,
+    `counseling_id` INT DEFAULT NULL,
+    `author_id` INT NOT NULL,
+    `status` ENUM('draft', 'pending', 'published', 'rejected') NOT NULL DEFAULT 'draft',
+    `approved_by` INT DEFAULT NULL,
+    `approved_at` DATETIME DEFAULT NULL,
+    `rejection_note` TEXT DEFAULT NULL,
+    `views` INT NOT NULL DEFAULT 0,
+    `is_featured` TINYINT(1) NOT NULL DEFAULT 0,
+    `published_at` DATETIME DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_news_author` FOREIGN KEY (`author_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_news_approver` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+INSERT INTO `news` (`id`, `title`, `slug`, `excerpt`, `content`, `category`, `thumbnail`, `author_id`, `status`, `approved_by`, `approved_at`, `views`, `is_featured`, `published_at`) VALUES
+(1, 'Siswa SMA Teladan Raih Medali Emas Olimpiade Sains Nasional (OSN) 2026', 'siswa-sma-teladan-raih-medali-emas-olimpiade-sains-nasional-osn-2026', 'Kabar membanggakan datang dari kontingen sains sekolah yang berhasil menorehkan prestasi tertinggi di tingkat nasional.', '<p>Civitas akademika SMA Teladan kembali menorehkan prestasi gemilang di kancah nasional. Siswa perwakilan sekolah berhasil meraih <strong>Medali Emas</strong> pada ajang <em>Olimpiade Sains Nasional (OSN) 2026</em> bidang Astronomi dan Informatika yang diselenggarakan oleh Balai Pengembangan Talenta Indonesia (BPTI).</p><p>Kepala Sekolah menyampaikan rasa syukur dan apresiasi setinggi-tingginya kepada para siswa pembina dan bapak/ibu guru yang telah mendedikasikan waktu dalam program pembinaan intensif selama enam bulan terakhir. Semoga prestasi ini menjadi pemantik semangat bagi seluruh peserta didik lainnya.</p>', 'prestasi', NULL, 3, 'published', 1, NOW(), 142, 1, NOW()),
+(2, 'Pentas Seni & Budaya Nusantara Meriahkan Perayaan Bulan Bahasa', 'pentas-seni-budaya-nusantara-meriahkan-perayaan-bulan-bahasa', 'Ratusan siswa menampilkan karya seni tari tradisi, teater sastra, dan pameran literasi kreatif di panggung terbuka sekolah.', '<p>Suasana semarak dan penuh warna menghiasi halaman utama sekolah dalam perhelatan <strong>Pentas Seni & Budaya Nusantara</strong>. Kegiatan tahunan ini diselenggarakan dalam rangka memperingati Bulan Bahasa dan Sastra Nasional dengan tema <em>\"Mewujudkan Generasi Berkebinekaan Global yang Berakar Budaya Lokal\"</em>.</p><p>Berbagai pertunjukan memukau ditampilkan oleh siswa dari kelas X hingga XII, mulai dari sendratari daerah, musikalisasi puisi karya sastrawan ternama, drama musikal bertema kepahlawanan, hingga stan bazar kuliner tradisional yang diinisiasi oleh kelompok kewirausahaan siswa.</p>', 'kegiatan', NULL, 2, 'published', NULL, NOW(), 89, 1, NOW()),
+(3, 'Workshop Inovasi Pembelajaran Berbasis AI untuk Guru dan Pendidik', 'workshop-inovasi-pembelajaran-berbasis-ai-untuk-guru-dan-pendidik', 'Pelatihan pemanfaatan teknologi kecerdasan buatan etis guna menyusun bahan ajar adaptif dan asesmen interaktif.', '<p>Sebagai langkah mempercepat transformasi digital sekolah, diselenggarakan workshop bertajuk <strong>\"Pemanfaatan Etis Kecerdasan Buatan (AI) dalam Desain Pembelajaran Berdiferensiasi\"</strong> yang diikuti oleh 45 guru mata pelajaran.</p><p>Narasumber ahli teknologi pendidikan memaparkan teknik menyusun instrumen penilaian autentik, simulasi pembuatan rubrik digital, dan pemanfaatan asisten kecerdasan buatan untuk mengidentifikasi kebutuhan belajar individual setiap peserta didik secara lebih cepat dan akurat.</p>', 'akademik', NULL, 1, 'published', NULL, NOW(), 64, 0, NOW()),
+(4, 'Kunjungan Studi Literasi & Pengenalan Riset ke Balai Konservasi Alam', 'kunjungan-studi-literasi-pengenalan-riset-ke-balai-konservasi-alam', 'Siswa kelas XI melakukan observasi lapangan dan analisis keanekaragaman hayati dalam program pembelajaran luar kelas.', '<p>Siswa-siswi peminatan Biologi dan Geografi mengadakan kunjungan ilmiah lapangan ke Balai Konservasi Alam Daerah. Kegiatan ini bertujuan memperkuat wawasan ekologi dan memberikan pengalaman observasi empiris terhadap flora dan fauna endemik yang dilindungi.</p><p>Laporan hasil observasi akan dipublikasikan dalam bentuk majalah dinding ilmiah serta infografis digital di perpustakaan sekolah.</p>', 'kegiatan', NULL, 3, 'pending', NULL, NULL, 0, 0, NULL)
+ON DUPLICATE KEY UPDATE `title`=VALUES(`title`);
 
+-- =========================================================
+-- 24. Modul Tata Usaha: Arsip Surat Masuk & Keluar (mail_archives)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `mail_archives` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `mail_type` ENUM('masuk', 'keluar') NOT NULL DEFAULT 'masuk',
+    `agenda_no` VARCHAR(50) NOT NULL,
+    `reference_no` VARCHAR(100) NOT NULL,
+    `sender_or_recipient` VARCHAR(200) NOT NULL,
+    `mail_date` DATE NOT NULL,
+    `received_or_sent_date` DATE NOT NULL,
+    `subject` VARCHAR(255) NOT NULL,
+    `description` TEXT DEFAULT NULL,
+    `disposition_instruction` TEXT DEFAULT NULL,
+    `disposition_target` VARCHAR(150) DEFAULT NULL,
+    `attachment_file` VARCHAR(255) DEFAULT NULL,
+    `recorded_by` INT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- =========================================================
+-- 25. Modul Sarpras: Inventaris Barang & Aset Sekolah (inventory_items)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `inventory_items` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `item_code` VARCHAR(50) NOT NULL UNIQUE,
+    `item_name` VARCHAR(150) NOT NULL,
+    `category` VARCHAR(100) NOT NULL DEFAULT 'Elektronik',
+    `room_location` VARCHAR(100) NOT NULL DEFAULT 'Ruang Lab Komputer',
+    `condition_status` ENUM('baik', 'rusak_ringan', 'rusak_berat') NOT NULL DEFAULT 'baik',
+    `quantity` INT NOT NULL DEFAULT 1,
+    `unit` VARCHAR(30) NOT NULL DEFAULT 'Unit',
+    `funding_source` VARCHAR(100) DEFAULT 'BOS',
+    `purchase_year` INT DEFAULT 2026,
+    `purchase_cost` DECIMAL(12,2) DEFAULT 0.00,
+    `notes` TEXT DEFAULT NULL,
+    `recorded_by` INT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+INSERT INTO `inventory_items` (`item_code`, `item_name`, `category`, `room_location`, `condition_status`, `quantity`, `unit`, `funding_source`, `purchase_year`, `purchase_cost`, `notes`, `recorded_by`) VALUES
+('INV-2026-001', 'Proyektor Epson EB-X500', 'Elektronik & Multimedia', 'Ruang Multimedia / R. Guru', 'baik', 4, 'Unit', 'BOS Reguler', 2026, 6500000.00, 'Dapat dipinjam guru untuk presentasi KBM.', 2),
+('INV-2026-002', 'Laptop Lenovo ThinkPad L14', 'Elektronik & Multimedia', 'Laboratorium Komputer', 'baik', 25, 'Unit', 'DAK Fisik', 2026, 11200000.00, 'Unit client ujian CBT dan praktikum siswa.', 2),
+('INV-2026-003', 'Mikroskop Binokuler Olympus CX23', 'Alat Peraga Lab IPA', 'Laboratorium Biologi', 'baik', 8, 'Set', 'BOS Kinerja', 2025, 14500000.00, 'Lengkap dengan lensa okuler dan preparat awetan.', 2)
+ON DUPLICATE KEY UPDATE `item_name`=VALUES(`item_name`);
 
+-- =========================================================
+-- 26. Modul Sarpras: Peminjaman Inventaris (inventory_loans)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `inventory_loans` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `item_id` INT NOT NULL,
+    `borrower_name` VARCHAR(150) NOT NULL,
+    `borrower_role` VARCHAR(50) NOT NULL DEFAULT 'guru',
+    `borrower_phone` VARCHAR(30) DEFAULT NULL,
+    `user_id` INT DEFAULT NULL,
+    `borrow_date` DATE NOT NULL,
+    `expected_return_date` DATE NOT NULL,
+    `actual_return_date` DATE DEFAULT NULL,
+    `status` ENUM('menunggu', 'dipinjam', 'kembali', 'ditolak') NOT NULL DEFAULT 'dipinjam',
+    `purpose` VARCHAR(255) NOT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `approval_notes` TEXT DEFAULT NULL,
+    `recorded_by` INT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_inv_loan_item` FOREIGN KEY (`item_id`) REFERENCES `inventory_items` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- 27. Modul Keuangan: Buku Kas Umum / Pengeluaran (financial_expenses)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `financial_expenses` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `expense_no` VARCHAR(50) NOT NULL UNIQUE,
+    `category` VARCHAR(100) NOT NULL DEFAULT 'ATK & Operasional Kantor',
+    `title` VARCHAR(200) NOT NULL,
+    `expense_date` DATE NOT NULL,
+    `amount` DECIMAL(12,2) NOT NULL,
+    `recipient` VARCHAR(150) DEFAULT NULL,
+    `receipt_doc` VARCHAR(255) DEFAULT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `recorded_by` INT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- 28. Modul Tambahan Guru: Jurnal Mengajar Harian (teaching_journals)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `teaching_journals` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `teacher_id` INT NOT NULL,
+    `class_id` INT NOT NULL,
+    `subject_id` INT DEFAULT NULL,
+    `subject_name` VARCHAR(100) NOT NULL,
+    `date` DATE NOT NULL,
+    `start_time` TIME NOT NULL,
+    `end_time` TIME NOT NULL,
+    `topic` VARCHAR(255) NOT NULL,
+    `competency_notes` TEXT DEFAULT NULL,
+    `student_attendance_summary` VARCHAR(150) DEFAULT NULL,
+    `class_condition_notes` TEXT DEFAULT NULL,
+    `status` ENUM('terlaksana', 'inval', 'kendala') NOT NULL DEFAULT 'terlaksana',
+    `substitute_teacher_id` INT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_journal_teacher` FOREIGN KEY (`teacher_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_journal_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- 29. Modul Tambahan Guru: Perangkat Ajar & Kurikulum (curriculum_documents)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `curriculum_documents` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `teacher_id` INT NOT NULL,
+    `subject_name` VARCHAR(100) NOT NULL,
+    `grade_level` VARCHAR(20) NOT NULL DEFAULT '10',
+    `academic_year` VARCHAR(30) NOT NULL DEFAULT '2026/2027',
+    `semester` ENUM('Ganjil', 'Genap') NOT NULL DEFAULT 'Ganjil',
+    `doc_type` ENUM('modul_ajar', 'rpp', 'silabus', 'prota', 'promes', 'kktp', 'lainnya') NOT NULL DEFAULT 'modul_ajar',
+    `title` VARCHAR(200) NOT NULL,
+    `file_url` VARCHAR(255) DEFAULT NULL,
+    `description` TEXT DEFAULT NULL,
+    `status` ENUM('draft', 'diajukan', 'disetujui', 'revisi') NOT NULL DEFAULT 'draft',
+    `reviewed_by` INT DEFAULT NULL,
+    `review_notes` TEXT DEFAULT NULL,
+    `reviewed_at` DATETIME DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_curriculum_teacher` FOREIGN KEY (`teacher_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- 30. Modul Tambahan Guru: Presensi Mandiri Guru (teacher_attendance)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `teacher_attendance` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `teacher_id` INT NOT NULL,
+    `date` DATE NOT NULL,
+    `check_in_time` TIME DEFAULT NULL,
+    `check_out_time` TIME DEFAULT NULL,
+    `status` ENUM('hadir', 'terlambat', 'izin', 'sakit', 'cuti') NOT NULL DEFAULT 'hadir',
+    `notes` TEXT DEFAULT NULL,
+    `proof_doc` VARCHAR(255) DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_teacher_attendance_date` (`teacher_id`, `date`),
+    CONSTRAINT `fk_t_att_teacher` FOREIGN KEY (`teacher_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Sample Seed Data untuk Fitur Guru Baru
+INSERT INTO `teaching_journals` (`teacher_id`, `class_id`, `subject_name`, `date`, `start_time`, `end_time`, `topic`, `competency_notes`, `student_attendance_summary`, `class_condition_notes`, `status`) VALUES
+(3, 1, 'Matematika Wajib', CURRENT_DATE(), '07:30:00', '09:00:00', 'Penyelesaian Sistem Persamaan Linier Tiga Variabel (SPLTV)', 'Siswa mampu menentukan himpunan penyelesaian dengan metode eliminasi-substitusi gabungan.', 'Hadir: 31, Izin: 1, Sakit: 0, Alpa: 0', 'KBM berjalan interaktif dan kondusif, seluruh siswa aktif berdiskusi.', 'terlaksana'),
+(3, 2, 'Matematika Peminatan', DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), '09:15:00', '10:45:00', 'Persamaan Trigonometri Dasar Sinus dan Cosinus', 'Pemahaman konsep kuadran dan rumus sudut berelasi dalam lingkaran satuan.', 'Hadir: 30, Izin: 0, Sakit: 2, Alpa: 0', 'Siswa antusias mengerjakan latihan mandiri di papan tulis.', 'terlaksana');
+
+INSERT INTO `curriculum_documents` (`teacher_id`, `subject_name`, `grade_level`, `academic_year`, `semester`, `doc_type`, `title`, `description`, `status`, `review_notes`) VALUES
+(3, 'Matematika', '10', '2026/2027', 'Ganjil', 'modul_ajar', 'Modul Ajar SPLTV Berbasis Pembelajaran Saintifik', 'Modul ajar lengkap dengan lembar kerja peserta didik (LKPD) dan rubrik asesmen formatif.', 'disetujui', 'Komponen asesmen dan langkah KBM sudah sesuai Kurikulum Merdeka.'),
+(3, 'Matematika', '10', '2026/2027', 'Ganjil', 'silabus', 'Alur Tujuan Pembelajaran (ATP) Matematika Fase E', 'Peta alur tujuan pembelajaran dan capaian kompetensi semester ganjil dan genap.', 'diajukan', NULL);
+
+INSERT INTO `teacher_attendance` (`teacher_id`, `date`, `check_in_time`, `check_out_time`, `status`, `notes`) VALUES
+(3, CURRENT_DATE(), '06:55:00', NULL, 'hadir', 'Tiba sebelum bel pagi, siap mengajar KBM jam pertama.');
+
+-- =========================================================
+-- 31. Modul Integrasi: WhatsApp Gateway Notification Logs (wa_notification_logs)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `wa_notification_logs` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `recipient_phone` VARCHAR(30) NOT NULL,
+    `recipient_name` VARCHAR(150) NOT NULL,
+    `message` TEXT NOT NULL,
+    `category` ENUM('presensi', 'keuangan', 'pengumuman', 'akademik', 'sistem') NOT NULL DEFAULT 'sistem',
+    `status` ENUM('terkirim', 'pending', 'gagal') NOT NULL DEFAULT 'terkirim',
+    `gateway_provider` VARCHAR(50) NOT NULL DEFAULT 'Fonnte (Simulated)',
+    `response_payload` TEXT DEFAULT NULL,
+    `sent_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- 32. Modul Penggajian & Honor Guru/Staf (teacher_payrolls)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `teacher_payrolls` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `payroll_code` VARCHAR(50) NOT NULL UNIQUE,
+    `teacher_id` INT NOT NULL,
+    `month_period` VARCHAR(30) NOT NULL,
+    `base_salary` DECIMAL(12,2) NOT NULL DEFAULT 3000000.00,
+    `position_allowance` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `teaching_hours` INT NOT NULL DEFAULT 0,
+    `teaching_rate_per_hour` DECIMAL(12,2) NOT NULL DEFAULT 50000.00,
+    `total_teaching_honor` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `attendance_deductions` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `net_salary` DECIMAL(12,2) NOT NULL DEFAULT 3000000.00,
+    `payment_date` DATE DEFAULT NULL,
+    `status` ENUM('draft', 'disetujui', 'dibayar') NOT NULL DEFAULT 'draft',
+    `payment_method` VARCHAR(50) DEFAULT 'Transfer Bank',
+    `notes` TEXT DEFAULT NULL,
+    `created_by` INT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_teacher_payroll_month` (`teacher_id`, `month_period`),
+    CONSTRAINT `fk_payroll_teacher` FOREIGN KEY (`teacher_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Auto-migration kolom baru pada tabel eksisting
+ALTER TABLE `exam_submissions` ADD COLUMN IF NOT EXISTS `violation_count` INT NOT NULL DEFAULT 0 AFTER `status`;
+ALTER TABLE `exam_submissions` ADD COLUMN IF NOT EXISTS `is_locked` TINYINT(1) NOT NULL DEFAULT 0 AFTER `violation_count`;
+ALTER TABLE `teacher_attendance` ADD COLUMN IF NOT EXISTS `latitude` DECIMAL(10,8) DEFAULT NULL AFTER `proof_doc`;
+ALTER TABLE `teacher_attendance` ADD COLUMN IF NOT EXISTS `longitude` DECIMAL(11,8) DEFAULT NULL AFTER `latitude`;
+ALTER TABLE `teacher_attendance` ADD COLUMN IF NOT EXISTS `distance_meters` INT DEFAULT NULL AFTER `longitude`;
+ALTER TABLE `student_bills` ADD COLUMN IF NOT EXISTS `payment_channel` VARCHAR(50) DEFAULT NULL AFTER `status`;
+ALTER TABLE `student_bills` ADD COLUMN IF NOT EXISTS `gateway_trx_id` VARCHAR(100) DEFAULT NULL AFTER `payment_channel`;
+ALTER TABLE `student_bills` ADD COLUMN IF NOT EXISTS `va_number` VARCHAR(50) DEFAULT NULL AFTER `gateway_trx_id`;
+ALTER TABLE `student_bills` ADD COLUMN IF NOT EXISTS `paid_at` DATETIME DEFAULT NULL AFTER `va_number`;
+ALTER TABLE `ppdb_registrations` ADD COLUMN IF NOT EXISTS `achievement_cert_doc` VARCHAR(255) DEFAULT NULL AFTER `photo_doc`;
+ALTER TABLE `ppdb_registrations` ADD COLUMN IF NOT EXISTS `achievements_json` LONGTEXT DEFAULT NULL AFTER `achievement_cert_doc`;
+
+-- Seed Konfigurasi Tambahan Fase 1-5
+INSERT IGNORE INTO `school_settings` (`setting_key`, `setting_value`) VALUES
+('wa_gateway_provider', 'Fonnte (Simulated)'),
+('wa_gateway_token', 'fonnte_demo_token_2026'),
+('wa_gateway_enabled', '1'),
+('wa_sender_number', '081234567890'),
+('school_latitude', '-6.208800'),
+('school_longitude', '106.845600'),
+('school_radius_meters', '150'),
+('cbt_max_violations', '3'),
+('cbt_strict_mode', '1'),
+('payroll_teaching_rate_hour', '50000'),
+('payroll_homeroom_allowance', '500000'),
+('payroll_base_salary_default', '3000000');
+
+-- Sample Log Notifikasi WA
+INSERT INTO `wa_notification_logs` (`recipient_phone`, `recipient_name`, `message`, `category`, `status`, `gateway_provider`) VALUES
+('081234567890', 'Bpk. Hendra Wijaya', 'Yth. Bpk/Ibu Hendra Wijaya, ananda Ahmad Fauzi hari ini Jumat, 26 Sep 2026 tercatat HADIR tepat waktu di SMA Bina Bangsa. Terima kasih.', 'presensi', 'terkirim', 'Fonnte (Simulated)'),
+('081234567890', 'Bpk. Hendra Wijaya', 'Yth. Wali Murid Ahmad Fauzi, tagihan SPP Bulan September 2026 sebesar Rp 350.000 telah LUNAS terverifikasi otomatis melalui Virtual Account BCA. Kuitansi resmi dapat diunduh pada portal.', 'keuangan', 'terkirim', 'Fonnte (Simulated)'),
+('081298765432', 'Ibu Siti Rahmawati', 'Pemberitahuan: Jadwal Ujian Tengah Semester (UTS) Gasal akan diselenggarakan mulai Senin pekan depan. Harap mendampingi belajar ananda di rumah.', 'pengumuman', 'terkirim', 'Fonnte (Simulated)');
+
+-- Sample Payroll Penggajian Guru
+INSERT INTO `teacher_payrolls` (`payroll_code`, `teacher_id`, `month_period`, `base_salary`, `position_allowance`, `teaching_hours`, `teaching_rate_per_hour`, `total_teaching_honor`, `attendance_deductions`, `net_salary`, `payment_date`, `status`, `payment_method`, `notes`, `created_by`) VALUES
+('PAY-202609-001', 3, 'September 2026', 3200000.00, 500000.00, 48, 50000.00, 2400000.00, 0.00, 6100000.00, '2026-09-25', 'dibayar', 'Transfer BNI', 'Gaji pokok + Tunjangan Wali Kelas X MIPA 1 + Honor KBM 48 JP.', 1);
+
+-- =========================================================
+-- Tabel `external_apis` (Manajemen API Eksternal & Gateway Luar)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `external_apis` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `api_code` VARCHAR(50) NOT NULL UNIQUE,
+    `name` VARCHAR(150) NOT NULL,
+    `category` ENUM('whatsapp', 'payment', 'ai', 'mail', 'maps', 'weather', 'custom') NOT NULL DEFAULT 'custom',
+    `provider` VARCHAR(100) NOT NULL DEFAULT 'Custom Provider',
+    `endpoint_url` TEXT NOT NULL,
+    `api_key` TEXT DEFAULT NULL,
+    `api_secret` TEXT DEFAULT NULL,
+    `auth_type` ENUM('none', 'bearer', 'basic', 'header', 'query') NOT NULL DEFAULT 'bearer',
+    `auth_header_name` VARCHAR(100) DEFAULT 'Authorization',
+    `http_method` ENUM('GET', 'POST', 'PUT', 'DELETE') NOT NULL DEFAULT 'POST',
+    `custom_headers` TEXT DEFAULT NULL,
+    `payload_template` TEXT DEFAULT NULL,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `environment` ENUM('production', 'sandbox') NOT NULL DEFAULT 'production',
+    `timeout_seconds` INT NOT NULL DEFAULT 10,
+    `last_tested_at` DATETIME DEFAULT NULL,
+    `last_status_code` INT DEFAULT NULL,
+    `last_response` TEXT DEFAULT NULL,
+    `description` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `external_apis` 
+(`api_code`, `name`, `category`, `provider`, `endpoint_url`, `api_key`, `api_secret`, `auth_type`, `auth_header_name`, `http_method`, `custom_headers`, `payload_template`, `is_active`, `environment`, `timeout_seconds`, `description`)
+VALUES
+('wa_gateway', 'WhatsApp Notification Gateway', 'whatsapp', 'Fonnte (Official/Demo)', 'https://api.fonnte.com/send', 'fonnte_demo_token_2026', '', 'header', 'Authorization', 'POST', '{"Accept":"application/json"}', '{\n  "target": "{target_phone}",\n  "message": "{message_text}"\n}', 1, 'production', 10, 'Layanan API pengiriman pesan WhatsApp otomatis untuk notifikasi presensi, tagihan SPP, dan pengumuman sekolah.'),
+('payment_gateway', 'Payment Gateway & Virtual Account (Midtrans)', 'payment', 'Midtrans Snap & Core API', 'https://app.sandbox.midtrans.com/snap/v1/transactions', 'SB-Mid-server-demo-token-2026', 'SB-Mid-client-demo-token-2026', 'basic', 'Authorization', 'POST', '{"Accept":"application/json","Content-Type":"application/json"}', '{\n  "transaction_details": {\n    "order_id": "BILL-EXAMPLE-001",\n    "gross_amount": 350000\n  }\n}', 1, 'sandbox', 15, 'Integrasi gateway pembayaran online instan untuk tagihan SPP siswa (QRIS, VA BCA, Mandiri, BNI, BRI).'),
+('ai_service', 'AI Assistant & Auto-Grading (Gemini / OpenAI)', 'ai', 'Google Gemini AI', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent', 'AIzaSyDemoKeyExample2026', '', 'query', 'key', 'POST', '{"Content-Type":"application/json"}', '{\n  "contents\": [\n    {\n      "parts": [\n        {"text": "Analisis dan beri penilaian ringkas untuk jawaban esai ini..."}\n      ]\n    }\n  ]\n}', 1, 'production', 20, 'Kecerdasan Buatan (LLM) untuk asisten penyusunan materi KBM, bank soal otomatis, dan evaluasi esai siswa CBT.'),
+('email_service', 'Layanan Email Transaksional & SMTP API', 'mail', 'SendGrid / Resend API', 'https://api.sendgrid.com/v3/mail/send', 'SG.demo_sendgrid_token_example', '', 'bearer', 'Authorization', 'POST', '{"Content-Type":"application/json"}', '{\n  "personalizations\": [\n    {"to": [{"email": "{recipient_email}"}]}\n  ],\n  "from": {"email": "noreply@binabangsa.sch.id"},\n  "subject": "{subject}",\n  "content": [{"type": "text/plain", "value": "{body}"}]\n}', 1, 'production', 10, 'Pengiriman surat elektronik otomatis untuk kuitansi pembayaran SPP, kartu ujian siswa, dan verifikasi PPDB.'),
+('maps_geocoding', 'Peta Lokasi & Geocoding Geofencing', 'maps', 'Nominatim OpenStreetMap', 'https://nominatim.openstreetmap.org/search', '', '', 'none', 'Authorization', 'GET', '{"User-Agent":"ManajemenPHP-SchoolSystem/1.0"}', '{}', 1, 'production', 10, 'Verifikasi koordinat GPS latitude/longitude sekolah dan validasi radius geofencing presensi mandiri guru.'),
+('weather_api', 'Prakiraan Cuaca Terbuka (BMKG / Open-Meteo)', 'weather', 'Open-Meteo Weather API', 'https://api.open-meteo.com/v1/forecast?latitude=-6.2088&longitude=106.8456&current_weather=true', '', '', 'none', '', 'GET', '{"Accept":"application/json"}', '{}', 1, 'production', 8, 'Data cuaca dan prakiraan suhu lingkungan sekolah secara langsung untuk monitoring kegiatan upacara dan olahraga luar ruangan.');
+
+-- =========================================================
+-- MODUL PROJEK PENGUATAN PROFIL PELAJAR PANCASILA (P5)
+-- Standar BSKAP Kemendikbudristek (Kurikulum Merdeka)
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS `p5_projects` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `title` VARCHAR(200) NOT NULL,
+    `theme` VARCHAR(100) NOT NULL,
+    `description` TEXT NOT NULL,
+    `academic_year` VARCHAR(30) NOT NULL DEFAULT '2026/2027',
+    `phase` VARCHAR(20) NOT NULL DEFAULT 'Fase E',
+    `target_class_ids` VARCHAR(255) DEFAULT NULL,
+    `coordinator_teacher_id` INT NOT NULL,
+    `status` ENUM('aktif', 'selesai', 'draf') NOT NULL DEFAULT 'aktif',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX (`theme`),
+    INDEX (`academic_year`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `p5_project_dimensions` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `project_id` INT NOT NULL,
+    `dimension` VARCHAR(120) NOT NULL,
+    `element` VARCHAR(150) NOT NULL,
+    `sub_element` VARCHAR(200) NOT NULL,
+    `target_capaian` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (`project_id`),
+    CONSTRAINT `fk_p5_dim_project` FOREIGN KEY (`project_id`) REFERENCES `p5_projects` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `p5_student_assessments` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `project_id` INT NOT NULL,
+    `dimension_id` INT NOT NULL,
+    `student_id` INT NOT NULL,
+    `predicate` ENUM('BB', 'MB', 'BSH', 'SB') NOT NULL DEFAULT 'BSH',
+    `evaluated_by` INT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_p5_assessment` (`project_id`, `dimension_id`, `student_id`),
+    INDEX (`student_id`),
+    INDEX (`project_id`),
+    CONSTRAINT `fk_p5_as_project` FOREIGN KEY (`project_id`) REFERENCES `p5_projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_p5_as_dim` FOREIGN KEY (`dimension_id`) REFERENCES `p5_project_dimensions` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_p5_as_student` FOREIGN KEY (`student_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `p5_student_notes` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `project_id` INT NOT NULL,
+    `student_id` INT NOT NULL,
+    `facilitator_notes` TEXT DEFAULT NULL,
+    `evaluated_by` INT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_p5_note` (`project_id`, `student_id`),
+    CONSTRAINT `fk_p5_note_project` FOREIGN KEY (`project_id`) REFERENCES `p5_projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_p5_note_student` FOREIGN KEY (`student_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ========================================================
+-- MODUL EKSTRAKURIKULER & PRESTASI SISWA
+-- ========================================================
+CREATE TABLE IF NOT EXISTS `extracurriculars` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `code` VARCHAR(50) NOT NULL UNIQUE,
+    `name` VARCHAR(150) NOT NULL,
+    `category` ENUM('Olahraga', 'Seni & Budaya', 'Keagamaan', 'Sains & Teknologi', 'Kepemimpinan & Organisasi', 'Bahasa & Literasi', 'Lainnya') NOT NULL DEFAULT 'Lainnya',
+    `description` TEXT DEFAULT NULL,
+    `instructor_id` INT DEFAULT NULL,
+    `location` VARCHAR(150) DEFAULT NULL,
+    `schedule_day` ENUM('Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu') NOT NULL DEFAULT 'Jumat',
+    `start_time` TIME NOT NULL DEFAULT '15:30:00',
+    `end_time` TIME NOT NULL DEFAULT '17:00:00',
+    `max_members` INT NOT NULL DEFAULT 40,
+    `badge_color` VARCHAR(50) DEFAULT 'indigo',
+    `icon` VARCHAR(100) DEFAULT 'fa-star',
+    `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX (`instructor_id`),
+    INDEX (`category`),
+    INDEX (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `extracurricular_members` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `extracurricular_id` INT NOT NULL,
+    `student_id` INT NOT NULL,
+    `academic_year` VARCHAR(20) NOT NULL DEFAULT '2024/2025',
+    `semester` ENUM('1', '2') NOT NULL DEFAULT '1',
+    `role` ENUM('Ketua', 'Wakil Ketua', 'Sekretaris', 'Bendahara', 'Anggota') NOT NULL DEFAULT 'Anggota',
+    `status` ENUM('active', 'pending', 'rejected', 'graduated') NOT NULL DEFAULT 'active',
+    `report_predicate` ENUM('A', 'B', 'C', 'D') DEFAULT NULL,
+    `report_notes` TEXT DEFAULT NULL,
+    `joined_date` DATE DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_ekskul_member` (`extracurricular_id`, `student_id`, `academic_year`, `semester`),
+    INDEX (`student_id`),
+    INDEX (`extracurricular_id`),
+    INDEX (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `extracurricular_activities` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `extracurricular_id` INT NOT NULL,
+    `title` VARCHAR(200) NOT NULL,
+    `activity_date` DATE NOT NULL,
+    `start_time` TIME NOT NULL,
+    `end_time` TIME NOT NULL,
+    `activity_type` ENUM('Latihan Rutin', 'Pentas / Pertandingan', 'Ujian Tingkat / Pelantikan', 'Bakti Sosial', 'Lainnya') NOT NULL DEFAULT 'Latihan Rutin',
+    `location` VARCHAR(150) DEFAULT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `created_by` INT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (`extracurricular_id`),
+    INDEX (`activity_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `extracurricular_attendance` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `activity_id` INT NOT NULL,
+    `student_id` INT NOT NULL,
+    `status` ENUM('hadir', 'izin', 'sakit', 'alpa') NOT NULL DEFAULT 'hadir',
+    `remarks` VARCHAR(255) DEFAULT NULL,
+    `recorded_by` INT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_activity_attendance` (`activity_id`, `student_id`),
+    INDEX (`student_id`),
+    INDEX (`activity_id`),
+    INDEX (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `extracurricular_achievements` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `extracurricular_id` INT DEFAULT NULL,
+    `student_id` INT NOT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `competition_name` VARCHAR(255) NOT NULL,
+    `level` ENUM('Sekolah', 'Kecamatan', 'Kabupaten', 'Provinsi', 'Nasional', 'Internasional') NOT NULL DEFAULT 'Kabupaten',
+    `rank_position` VARCHAR(100) NOT NULL DEFAULT 'Juara 1',
+    `award_date` DATE NOT NULL,
+    `organizer` VARCHAR(200) DEFAULT NULL,
+    `certificate_number` VARCHAR(150) DEFAULT NULL,
+    `certificate_file` VARCHAR(255) DEFAULT NULL,
+    `verification_status` ENUM('verified', 'pending', 'rejected') NOT NULL DEFAULT 'verified',
+    `verified_by` INT DEFAULT NULL,
+    `description` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX (`student_id`),
+    INDEX (`extracurricular_id`),
+    INDEX (`level`),
+    INDEX (`verification_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

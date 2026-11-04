@@ -21,9 +21,19 @@ $target_student_id = null;
 if ($user_role === 'siswa') {
     $target_student_id = $user_id;
 } elseif ($user_role === 'orang_tua') {
-    $stmt_child = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? LIMIT 1");
-    $stmt_child->execute([$user_id]);
-    $target_student_id = (int) $stmt_child->fetchColumn();
+    $req_child = isset($_GET['student_id']) && is_numeric($_GET['student_id']) ? (int)$_GET['student_id'] : 0;
+    if ($req_child > 0) {
+        $stmt_verify = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? AND student_id = ? LIMIT 1");
+        $stmt_verify->execute([$user_id, $req_child]);
+        if ($stmt_verify->fetchColumn()) {
+            $target_student_id = $req_child;
+        }
+    }
+    if (!$target_student_id) {
+        $stmt_child = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? LIMIT 1");
+        $stmt_child->execute([$user_id]);
+        $target_student_id = (int) $stmt_child->fetchColumn();
+    }
 } else {
     // Staf & Admin bisa memilih siswa dari query string atau form pencarian
     if (isset($_GET['student_id']) && is_numeric($_GET['student_id'])) {
@@ -311,28 +321,20 @@ include __DIR__ . "/../includes/header.php";
                 </p>
             </div>
 
-            <!-- TANDA TANGAN & QR CODE -->
-            <div class="mt-10 pt-6 flex justify-between items-end font-sans text-xs">
-                <!-- QR Code Verification Badge -->
-                <div class="text-center border border-slate-300 p-2.5 rounded-xl bg-slate-50">
-                    <div id="verifyQrcode" class="flex justify-center mb-1">
-                        <!-- Render QR canvas -->
-                        <div class="h-16 w-16 bg-slate-900 text-white flex items-center justify-center rounded text-[10px] font-mono">
-                            VERIFIED
-                        </div>
-                    </div>
-                    <span class="text-[9px] text-slate-500 font-mono block">Dokumen Sah Terverifikasi</span>
-                    <span class="text-[8px] text-slate-400 font-mono"><?= substr(md5($letter_no), 0, 12) ?></span>
+            <!-- TANDA TANGAN RESMI & TTE VERIFIKASI -->
+            <div class="mt-8 pt-4 flex flex-col sm:flex-row justify-between items-end gap-6 font-sans text-xs">
+                <div class="max-w-xs text-[11px] text-slate-500 border-l-2 border-teal-500 pl-3">
+                    <p class="font-semibold text-slate-700">Catatan Keabsahan:</p>
+                    <p>Dokumen ini diterbitkan secara otomatis oleh Sistem Informasi Perpustakaan dan diakui sah oleh manajemen sekolah sebagai bukti pemenuhan bebas pinjaman.</p>
                 </div>
 
-                <!-- Bagian Tanda Tangan -->
-                <div class="text-center w-56">
-                    <p class="text-slate-600">Dikeluarkan di: Jakarta</p>
-                    <p class="text-slate-600">Pada tanggal: <?= date('d F Y') ?></p>
-                    <p class="font-bold text-slate-800 mt-2 mb-14">Kepala Perpustakaan Sekolah,</p>
-                    
-                    <p class="font-bold text-slate-900 underline uppercase">Dra. Hj. Nurul Hidayati, M.Pd</p>
-                    <p class="text-[11px] text-slate-600 font-mono">NIP. 19780512 200501 2 006</p>
+                <div>
+                    <?= renderOfficialSignatureHtml($pdo, 'library_head', [
+                        'doc_type' => 'BEBAS_PUSTAKA',
+                        'doc_num' => $letter_no,
+                        'doc_title' => 'Surat Keterangan Bebas Perpustakaan',
+                        'student_name' => $student_info['name'] ?? ''
+                    ]) ?>
                 </div>
             </div>
 

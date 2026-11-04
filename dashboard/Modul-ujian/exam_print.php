@@ -21,9 +21,11 @@ if ($exam_id <= 0) {
 
 // Ambil info ujian
 $stmt_e = $pdo->prepare("
-    SELECT e.*, u.name as teacher_name, u.email as teacher_email 
+    SELECT e.*, u.name as teacher_name, u.email as teacher_email, u.nip as teacher_nip, u.title_degree as teacher_degree, u.signature_image as teacher_signature_image,
+           c.name as class_name 
     FROM exams e 
     JOIN users u ON e.teacher_id = u.id 
+    LEFT JOIN classes c ON e.class_id = c.id 
     WHERE e.id = ?
 ");
 $stmt_e->execute([$exam_id]);
@@ -440,6 +442,16 @@ $doc_number = sprintf("421.5 / %03d / BA-CBT / %s / %s", $exam['id'], date('m'),
                 <td class="value"><?= htmlspecialchars($exam['title']) ?> (<?= htmlspecialchars($cat_label) ?>)</td>
             </tr>
             <tr>
+                <td class="label">Jenjang Pendidikan</td>
+                <td class="colon">:</td>
+                <td class="value"><?= htmlspecialchars(getExamLevelLabel($exam['education_level'] ?? 'all')) ?></td>
+            </tr>
+            <tr>
+                <td class="label">Target Kelas / Rombel</td>
+                <td class="colon">:</td>
+                <td class="value"><?= !empty($exam['class_name']) ? htmlspecialchars($exam['class_name']) : 'Semua Rombel (Terbuka)' ?></td>
+            </tr>
+            <tr>
                 <td class="label">Guru Pengampu / Pengawas</td>
                 <td class="colon">:</td>
                 <td class="value"><?= htmlspecialchars($exam['teacher_name']) ?></td>
@@ -546,22 +558,30 @@ $doc_number = sprintf("421.5 / %03d / BA-CBT / %s / %s", $exam['id'], date('m'),
         </table>
 
         <!-- LEMBAR TANDA TANGAN & PENGESAHAN -->
-        <div class="signatures">
-            <div class="sign-box">
-                <p>Mengetahui,</p>
-                <p>Wakil Kepala Sekolah Bidang Kurikulum</p>
-                <div class="sign-space"></div>
-                <p class="sign-name">Dr. H. Muhammad Arifin, M.Pd.</p>
-                <p class="sign-nip">NIP. 19780512 200312 1 004</p>
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 35px; page-break-inside: avoid;">
+            <div>
+                <p style="font-size: 9.5pt; color: #475569; margin-bottom: 4px; text-align: center;">Mengetahui,</p>
+                <?= renderOfficialSignatureHtml($pdo, 'curriculum_head', [
+                    'doc_type' => 'DOKUMEN_UJIAN',
+                    'doc_num' => 'UJIAN-' . $exam['id'] . '/' . date('Y'),
+                    'doc_title' => 'Lembar Hasil & Soal Ujian',
+                    'show_city_date' => false,
+                    'align' => 'center'
+                ]) ?>
             </div>
 
-            <div class="sign-box">
-                <p>Ditetapkan di: Jakarta</p>
-                <p>Pada Tanggal: <?= $info_tgl_cetak['tanggal'] ?></p>
-                <p style="margin-top: 2px;">Guru Pengampu / Pengawas Ujian,</p>
-                <div class="sign-space"></div>
-                <p class="sign-name"><?= htmlspecialchars($exam['teacher_name']) ?></p>
-                <p class="sign-nip"><?= !empty($exam['teacher_email']) ? htmlspecialchars($exam['teacher_email']) : 'NIP. - / Akun Resmi' ?></p>
+            <div>
+                <?= renderOfficialSignatureHtml($pdo, 'teacher', [
+                    'teacher_id' => $exam['teacher_id'],
+                    'custom_name' => !empty($exam['teacher_name']) ? ($exam['teacher_name'] . (!empty($exam['teacher_degree']) ? ', ' . $exam['teacher_degree'] : '')) : null,
+                    'custom_nip' => $exam['teacher_nip'] ?? null,
+                    'custom_signature_image' => $exam['teacher_signature_image'] ?? null,
+                    'custom_title' => 'Guru Pengampu / Pengawas Ujian',
+                    'doc_type' => 'DOKUMEN_UJIAN',
+                    'doc_num' => 'UJIAN-' . $exam['id'] . '/' . date('Y'),
+                    'show_city_date' => true,
+                    'align' => 'center'
+                ]) ?>
             </div>
         </div>
 

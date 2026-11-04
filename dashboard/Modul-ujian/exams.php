@@ -27,19 +27,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     $title = trim($_POST['title'] ?? '');
     $subject = trim($_POST['subject'] ?? '');
-    $category = trim($_POST['category'] ?? 'uts');
+    $category = trim($_POST['category'] ?? 'sts');
+    $education_level = in_array($_POST['education_level'] ?? '', ['semua', 'sd', 'smp', 'sma', 'smk']) ? $_POST['education_level'] : 'semua';
+    $class_id = !empty($_POST['class_id']) ? (int)$_POST['class_id'] : null;
     $description = trim($_POST['description'] ?? '');
     $duration_minutes = (int) ($_POST['duration_minutes'] ?? 0);
     $passing_grade = (int) ($_POST['passing_grade'] ?? 75);
     $token = !empty($_POST['token']) ? strtoupper(trim($_POST['token'])) : null;
     $randomize_questions = isset($_POST['randomize_questions']) ? 1 : 0;
     $hide_answers_until_due = isset($_POST['hide_answers_until_due']) ? 1 : 0;
+    $lockdown_enabled = isset($_POST['lockdown_enabled']) ? 1 : 0;
+    $allowed_ip_range = !empty($_POST['allowed_ip_range']) ? trim($_POST['allowed_ip_range']) : null;
     $start_time = !empty($_POST['start_time']) ? trim($_POST['start_time']) : date('Y-m-d H:i:s');
     $due_date = trim($_POST['due_date'] ?? '');
 
     // Validasi kategori
     if (!array_key_exists($category, EXAM_CATEGORIES)) {
-        $category = 'uts';
+        $category = 'sts';
     }
 
     $type = EXAM_CATEGORIES[$category]['type'];
@@ -48,13 +52,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $message = "Judul, mata pelajaran, dan batas waktu wajib diisi.";
         $message_type = "error";
     } else {
+        $is_ppdb = isset($_POST['is_ppdb']) ? 1 : 0;
         $stmt_in = $pdo->prepare("
-            INSERT INTO exams (title, subject, category, type, description, duration_minutes, passing_grade, token, randomize_questions, hide_answers_until_due, start_time, due_date, teacher_id, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif')
+            INSERT INTO exams (title, subject, class_id, education_level, category, type, description, duration_minutes, passing_grade, token, randomize_questions, hide_answers_until_due, lockdown_enabled, allowed_ip_range, start_time, due_date, teacher_id, status, is_ppdb)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?)
         ");
         $stmt_in->execute([
-            $title, $subject, $category, $type, $description, 
-            $duration_minutes, $passing_grade, $token, $randomize_questions, $hide_answers_until_due, $start_time, $due_date, $user_id
+            $title, $subject, $class_id, $education_level, $category, $type, $description, 
+            $duration_minutes, $passing_grade, $token, $randomize_questions, $hide_answers_until_due, $lockdown_enabled, $allowed_ip_range, $start_time, $due_date, $user_id, $is_ppdb
         ]);
         $new_exam_id = $pdo->lastInsertId();
 
@@ -85,14 +90,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // -------------------------------------------------------------
-// 3. FILTER & PENCARIAN
+// 3. DAFTAR KELAS & INFO SISWA (TARGET KELAS)
+// -------------------------------------------------------------
+$classes_list = [];
+try {
+    $stmt_cls = $pdo->query("SELECT id, name, grade_level FROM classes ORDER BY grade_level ASC, name ASC");
+    $classes_list = $stmt_cls->fetchAll();
+} catch (Exception $e_c) {}
+
+$student_class_id = null;
+if ($user_role === 'siswa') {
+    $stmt_u = $pdo->prepare("SELECT class_id FROM users WHERE id = ?");
+    $stmt_u->execute([$user_id]);
+    $student_class_id = $stmt_u->fetchColumn();
+}
+
+// -------------------------------------------------------------
+// 4. FILTER & PENCARIAN
 // -------------------------------------------------------------
 $tab = $_GET['tab'] ?? 'all'; // all, ujian, latihan
 $filter_cat = $_GET['category'] ?? '';
+$filter_level = $_GET['level'] ?? '';
+$filter_class = !empty($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
 $search = trim($_GET['search'] ?? '');
 
 $sql_exams = "
-    SELECT e.*, u.name as teacher_name,
+    SELECT e.*, u.name as teacher_name, c.name as target_class_name,
            (SELECT COUNT(*) FROM exam_questions WHERE exam_id = e.id) as question_count,
            (SELECT COUNT(*) FROM exam_submissions WHERE exam_id = e.id) as submission_count
 ";
@@ -101,7 +124,9 @@ if ($user_role === 'siswa') {
     $sql_exams .= ", es.score as student_score, es.total_correct as student_correct, es.total_questions as student_total_q, es.submitted_at as student_submitted_at, es.remedial_granted, es.is_remedial, es.previous_score";
 }
 
-$sql_exams .= " FROM exams e JOIN users u ON e.teacher_id = u.id";
+$sql_exams .= " FROM exams e 
+                JOIN users u ON e.teacher_id = u.id
+                LEFT JOIN classes c ON e.class_id = c.id";
 
 if ($user_role === 'siswa') {
     $sql_exams .= " LEFT JOIN exam_submissions es ON es.exam_id = e.id AND es.student_id = " . (int)$user_id;
@@ -109,6 +134,18 @@ if ($user_role === 'siswa') {
 
 $sql_exams .= " WHERE 1=1";
 $params_query = [];
+
+// Pembatasan Akses Siswa: Siswa hanya dapat melihat ujian kelasnya atau ujian global sekolah
+if ($user_role === 'siswa') {
+    if (!empty($student_class_id)) {
+        $sql_exams .= " AND (e.class_id IS NULL OR e.class_id = 0 OR e.class_id = ?)";
+        $params_query[] = (int)$student_class_id;
+    } else {
+        $sql_exams .= " AND (e.class_id IS NULL OR e.class_id = 0)";
+    }
+    // Ujian seleksi PPDB tidak ditampilkan di daftar ujian harian siswa
+    $sql_exams .= " AND (e.is_ppdb = 0 OR e.is_ppdb IS NULL)";
+}
 
 if ($tab === 'ujian') {
     $sql_exams .= " AND e.type = 'ujian'";
@@ -119,6 +156,16 @@ if ($tab === 'ujian') {
 if ($filter_cat !== '' && array_key_exists($filter_cat, EXAM_CATEGORIES)) {
     $sql_exams .= " AND e.category = ?";
     $params_query[] = $filter_cat;
+}
+
+if ($filter_level !== '' && array_key_exists($filter_level, EXAM_EDUCATION_LEVELS)) {
+    $sql_exams .= " AND (e.education_level = ? OR e.education_level = 'semua')";
+    $params_query[] = $filter_level;
+}
+
+if ($filter_class > 0) {
+    $sql_exams .= " AND e.class_id = ?";
+    $params_query[] = $filter_class;
 }
 
 if ($search !== '') {
@@ -325,54 +372,137 @@ require_once __DIR__ . "/../includes/header.php";
 
     </div>
 
-    <!-- Category Summary Cards -->
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <?php foreach (EXAM_CATEGORIES as $k => $info): ?>
-            <?php 
-                $active_cat = ($filter_cat === $k);
-            ?>
-            <a href="exams.php?category=<?= urlencode($k) ?>" 
+    <!-- Smart Clearance & Kartu Ujian Banner (Integrasi Multi-Modul) -->
+    <?php 
+    $exam_card_url = "exam_card.php";
+    if ($user_role === 'siswa'): 
+        $stu_clearance = getStudentClearanceStatus($pdo, (int)$user_id);
+    ?>
+        <div class="rounded-3xl border <?= $stu_clearance['is_cleared'] ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10' ?> p-4 sm:p-5 backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
+            <div class="flex items-start sm:items-center gap-3.5">
+                <div class="h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 text-xl <?= $stu_clearance['is_cleared'] ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400' ?>">
+                    <i class="fa-solid <?= $stu_clearance['is_cleared'] ? 'fa-id-card-clip' : 'fa-lock' ?>"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h4 class="text-sm font-bold text-white">Status Kartu Peserta Ujian & Clearance Administrasi</h4>
+                        <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold <?= $stu_clearance['is_cleared'] ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30' ?>">
+                            <i class="fa-solid <?= $stu_clearance['is_cleared'] ? 'fa-circle-check' : 'fa-triangle-exclamation' ?>"></i>
+                            <?= $stu_clearance['is_cleared'] ? 'Tervalidasi (Clearance Lolos)' : 'Terdapat Tanggungan Administrasi' ?>
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-300 mt-1">
+                        <?php if ($stu_clearance['is_cleared']): ?>
+                            Administrasi Keuangan, Perpustakaan, dan Disiplin BK terpenuhi. Kartu peserta ujian resmi siap dicetak.
+                        <?php else: ?>
+                            Periksa tanggungan: 
+                            <strong class="<?= $stu_clearance['finance']['status'] ? 'text-emerald-400' : 'text-rose-400' ?>">SPP (<?= $stu_clearance['finance']['status'] ? 'Lunas' : $stu_clearance['finance']['unpaid_bills'] . ' Tagihan' ?>)</strong> &bull;
+                            <strong class="<?= $stu_clearance['library']['status'] ? 'text-emerald-400' : 'text-rose-400' ?>">Perpustakaan (<?= $stu_clearance['library']['status'] ? 'Bebas' : $stu_clearance['library']['active_loans'] . ' Buku' ?>)</strong> &bull;
+                            <strong class="<?= $stu_clearance['counseling']['status'] ? 'text-emerald-400' : 'text-amber-400' ?>">BK (<?= $stu_clearance['counseling']['points'] ?> Poin)</strong>.
+                        <?php endif; ?>
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <a href="<?= $exam_card_url ?>" class="inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold transition shadow-lg <?= $stu_clearance['is_cleared'] ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/25' : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/25' ?>">
+                    <i class="fa-solid fa-print"></i> Cetak Kartu Peserta Ujian
+                </a>
+            </div>
+        </div>
+    <?php elseif (in_array($user_role, ['guru', 'staf', 'administrator'], true)): ?>
+        <div class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 text-slate-300">
+                <i class="fa-solid fa-circle-info text-blue-400 text-sm"></i>
+                <span>Fitur <strong>Kartu Peserta Ujian</strong> terintegrasi otomatis dengan sistem <em>Smart Clearance</em> (SPP Keuangan, Sirkulasi Buku Perpustakaan, dan Disiplin BK).</span>
+            </div>
+            <a href="exam_card.php" class="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3.5 py-2 font-bold text-slate-200 transition shrink-0">
+                <i class="fa-solid fa-address-card text-blue-400"></i> Cetak Kartu Siswa &rarr;
+            </a>
+        </div>
+    <?php endif; ?>
+
+    <!-- Category Summary Cards (Kurikulum Merdeka & K13 Terkini) -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+        <?php 
+        $primary_cats = ['sts', 'sas', 'sat', 'slm', 'us', 'tryout', 'kuis'];
+        foreach ($primary_cats as $k): 
+            if (!isset(EXAM_CATEGORIES[$k])) continue;
+            $info = EXAM_CATEGORIES[$k];
+            $active_cat = ($filter_cat === $k);
+        ?>
+            <a href="exams.php?category=<?= urlencode($k) ?><?= !empty($filter_level) ? '&level=' . urlencode($filter_level) : '' ?><?= $filter_class > 0 ? '&class_id=' . $filter_class : '' ?>" 
                class="rounded-2xl border p-3 transition flex flex-col items-center text-center justify-between <?= $active_cat ? 'border-blue-500 bg-blue-500/20 text-white ring-2 ring-blue-500/50' : 'border-white/10 bg-slate-900/40 text-slate-300 hover:border-white/20 hover:bg-white/5' ?>">
-                <span class="text-2xl mb-1"><?= $info['icon'] ?></span>
-                <span class="text-xs font-bold leading-tight"><?= htmlspecialchars($info['label']) ?></span>
-                <span class="mt-2 text-[10px] uppercase font-semibold px-2 py-0.5 rounded-md <?= $info['badge'] ?>">
+                <span class="text-xl mb-1"><?= $info['icon'] ?></span>
+                <span class="text-[11px] font-bold leading-tight"><?= htmlspecialchars($info['label']) ?></span>
+                <span class="mt-2 text-[9px] uppercase font-semibold px-2 py-0.5 rounded-md <?= $info['badge'] ?>">
                     <?= strtoupper($info['type']) ?>
                 </span>
             </a>
         <?php endforeach; ?>
     </div>
 
-    <!-- Filter Tab & Search Bar -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
-        <!-- Tab Filter -->
-        <div class="flex items-center gap-2 overflow-x-auto">
-            <a href="exams.php" 
-               class="rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap transition <?= ($tab === 'all' && $filter_cat === '') ? 'bg-white/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
-                Semua Asesmen
-            </a>
-            <a href="exams.php?tab=ujian" 
-               class="rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap transition <?= $tab === 'ujian' ? 'bg-purple-600/30 text-purple-300 border border-purple-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
-                <i class="fa-solid fa-file-lines mr-1.5"></i>Ujian Resmi (UTS, UKK, UH)
-            </a>
-            <a href="exams.php?tab=latihan" 
-               class="rounded-xl px-3.5 py-2 text-xs sm:text-sm font-semibold whitespace-nowrap transition <?= $tab === 'latihan' ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
-                <i class="fa-solid fa-bullseye mr-1.5"></i>Latihan (Harian, Mingguan, Bulanan)
-            </a>
+    <!-- Filter Tab, Jenjang, Target Kelas, & Search Bar -->
+    <div class="flex flex-col gap-3 border-b border-white/10 pb-4">
+        <!-- Tab Tipe Asesmen & Jenjang Pills -->
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-1.5 overflow-x-auto">
+                <a href="exams.php" 
+                   class="rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition <?= ($tab === 'all' && $filter_cat === '' && $filter_level === '') ? 'bg-white/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
+                    Semua Asesmen
+                </a>
+                <a href="exams.php?tab=ujian" 
+                   class="rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition <?= $tab === 'ujian' ? 'bg-purple-600/30 text-purple-300 border border-purple-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
+                    <i class="fa-solid fa-file-lines mr-1"></i>Ujian Sumatif (STS, SAS, SAT, SLM)
+                </a>
+                <a href="exams.php?tab=latihan" 
+                   class="rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition <?= $tab === 'latihan' ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' ?>">
+                    <i class="fa-solid fa-bullseye mr-1"></i>Formatif & Try Out
+                </a>
+            </div>
+
+            <!-- Jenjang Filter Pills -->
+            <div class="flex items-center gap-1 overflow-x-auto">
+                <span class="text-[11px] text-slate-400 font-semibold mr-1 hidden sm:inline">Jenjang:</span>
+                <?php foreach (EXAM_EDUCATION_LEVELS as $lvl_k => $lvl_v): ?>
+                    <a href="exams.php?level=<?= urlencode($lvl_k) ?><?= !empty($tab) && $tab !== 'all' ? '&tab=' . urlencode($tab) : '' ?><?= !empty($filter_cat) ? '&category=' . urlencode($filter_cat) : '' ?>" 
+                       class="rounded-lg px-2.5 py-1 text-[11px] font-bold transition <?= ($filter_level === $lvl_k || ($filter_level === '' && $lvl_k === 'semua')) ? 'bg-blue-600 text-white shadow-sm' : 'bg-white/5 text-slate-400 hover:text-white' ?>">
+                        <?= strtoupper($lvl_k) ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
         </div>
 
-        <!-- Search input -->
-        <form method="GET" class="flex items-center gap-2 w-full md:w-auto">
+        <!-- Filter Kelas & Search Input -->
+        <form method="GET" class="flex flex-col sm:flex-row items-center gap-2 w-full">
             <?php if ($tab !== 'all'): ?><input type="hidden" name="tab" value="<?= htmlspecialchars($tab) ?>"><?php endif; ?>
             <?php if ($filter_cat !== ''): ?><input type="hidden" name="category" value="<?= htmlspecialchars($filter_cat) ?>"><?php endif; ?>
-            <div class="relative flex-1 md:w-64">
-                <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Cari judul / mapel..." 
-                       class="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none">
+            <?php if ($filter_level !== ''): ?><input type="hidden" name="level" value="<?= htmlspecialchars($filter_level) ?>"><?php endif; ?>
+
+            <?php if ($can_manage && !empty($classes_list)): ?>
+                <div class="w-full sm:w-56">
+                    <select name="class_id" onchange="this.form.submit()" 
+                            class="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-xs text-white focus:border-blue-500 focus:outline-none">
+                        <option value="">Semua Target Kelas</option>
+                        <?php foreach ($classes_list as $cls): ?>
+                            <option value="<?= $cls['id'] ?>" <?= $filter_class == $cls['id'] ? 'selected' : '' ?>>
+                                Kelas <?= htmlspecialchars($cls['name']) ?> (Tingkat <?= htmlspecialchars($cls['grade_level']) ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            <?php endif; ?>
+
+            <div class="relative flex-1 w-full">
+                <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Cari judul ujian atau mata pelajaran..." 
+                       class="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none">
             </div>
-            <button type="submit" class="rounded-xl bg-white/10 px-3.5 py-2 text-sm font-medium text-white hover:bg-white/15 transition">
-                Cari
+            <button type="submit" class="w-full sm:w-auto rounded-xl bg-white/10 hover:bg-white/15 px-4 py-2 text-xs sm:text-sm font-semibold text-white transition">
+                <i class="fa-solid fa-magnifying-glass mr-1"></i> Cari
             </button>
-            <?php if ($search !== '' || $filter_cat !== '' || $tab !== 'all'): ?>
-                <a href="exams.php" class="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-400 hover:bg-white/5">Reset</a>
+            <?php if ($search !== '' || $filter_cat !== '' || $tab !== 'all' || $filter_level !== '' || $filter_class > 0): ?>
+                <a href="exams.php" class="w-full sm:w-auto text-center rounded-xl border border-white/10 px-3.5 py-2 text-xs font-semibold text-slate-400 hover:bg-white/5 transition">
+                    Reset Filter
+                </a>
             <?php endif; ?>
         </form>
     </div>
@@ -417,7 +547,12 @@ require_once __DIR__ . "/../includes/header.php";
                                 <span><?= htmlspecialchars($cat_info['label']) ?></span>
                             </span>
 
-                            <div class="flex items-center gap-1.5">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <?php if (!empty($e['is_ppdb'])): ?>
+                                    <span class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300" title="Digunakan untuk Ujian Seleksi PPDB">
+                                        <i class="fa-solid fa-graduation-cap mr-1 text-amber-400"></i>CBT PPDB
+                                    </span>
+                                <?php endif; ?>
                                 <?php if (!empty($e['token'])): ?>
                                     <?php if ($can_manage): ?>
                                         <span class="rounded-lg border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-bold text-purple-300" title="Token Akses Siswa">
@@ -451,6 +586,18 @@ require_once __DIR__ . "/../includes/header.php";
                                         <i class="fa-solid fa-lock mr-1"></i>Kunci Dirahasiakan
                                     </span>
                                 <?php endif; ?>
+
+                                <?php if (!empty($e['lockdown_enabled'])): ?>
+                                    <span class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-300" title="Exam Lockdown Browser: Toleransi 3x Pindah Tab">
+                                        <i class="fa-solid fa-shield-halved mr-1"></i>Lockdown 3x
+                                    </span>
+                                <?php endif; ?>
+
+                                <?php if (!empty($e['allowed_ip_range'])): ?>
+                                    <span class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300" title="Dibatasi hanya untuk Jaringan Lab Komputer: <?= htmlspecialchars($e['allowed_ip_range']) ?>">
+                                        <i class="fa-solid fa-network-wired mr-1"></i>Lab Restricted
+                                    </span>
+                                <?php endif; ?>
                             </div>
                         </div>
 
@@ -472,6 +619,17 @@ require_once __DIR__ . "/../includes/header.php";
                         </div>
 
                         <!-- Title & Subject -->
+                        <div class="flex items-center gap-1.5 flex-wrap mb-1.5">
+                            <span class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold <?= getExamLevelBadge($e['education_level'] ?? 'semua') ?>">
+                                <span><i class="fa-solid fa-graduation-cap"></i></span>
+                                <span><?= htmlspecialchars(getExamLevelLabel($e['education_level'] ?? 'semua')) ?></span>
+                            </span>
+                            <span class="inline-flex items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-300">
+                                <i class="fa-solid fa-users-rectangle"></i>
+                                <span><?= !empty($e['target_class_name']) ? 'Kelas ' . htmlspecialchars($e['target_class_name']) : 'Semua Kelas' ?></span>
+                            </span>
+                        </div>
+
                         <span class="text-xs font-semibold uppercase tracking-wider text-blue-400">
                             <?= htmlspecialchars($e['subject']) ?>
                         </span>
@@ -630,19 +788,58 @@ require_once __DIR__ . "/../includes/header.php";
             <?= csrfField() ?>
             <input type="hidden" name="action" value="create_exam">
 
-            <!-- Kategori Asesmen (6 Pilihan) -->
+            <!-- Jenjang Pendidikan & Target Kelas -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                        Jenjang Sekolah <span class="text-red-400">*</span>
+                    </label>
+                    <select name="education_level" required 
+                            class="w-full rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        <option value="semua">Semua Jenjang (Lintas Tingkat)</option>
+                        <option value="sd">SD (Sekolah Dasar)</option>
+                        <option value="smp">SMP (Sekolah Menengah Pertama)</option>
+                        <option value="sma">SMA (Sekolah Menengah Atas)</option>
+                        <option value="smk">SMK (Sekolah Menengah Kejuruan)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                        Target Kelas (Rombel)
+                    </label>
+                    <select name="class_id" 
+                            class="w-full rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        <option value="">Semua Kelas (Terbuka Bebas)</option>
+                        <?php foreach ($classes_list as $cls): ?>
+                            <option value="<?= $cls['id'] ?>">Kelas <?= htmlspecialchars($cls['name']) ?> (Tingkat <?= htmlspecialchars($cls['grade_level']) ?>)</option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Kategori Asesmen (Kurikulum Merdeka & K13 Terpadu) -->
             <div>
                 <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
                     Kategori Asesmen <span class="text-red-400">*</span>
                 </label>
                 <select name="category" required 
                         class="w-full rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none">
-                    <optgroup label="UJIAN FORMAL">
-                        <option value="uts">Ujian Tengah Semester (UTS)</option>
-                        <option value="ukk">Ujian Kenaikan Kelas (UKK)</option>
-                        <option value="ujian_harian">Ujian Harian (Fleksibel)</option>
+                    <optgroup label="ASESMEN SUMATIF (KURIKULUM MERDEKA & K13)">
+                        <option value="sts" selected>Sumatif Tengah Semester (STS / UTS)</option>
+                        <option value="sas">Sumatif Akhir Semester (SAS / PAS)</option>
+                        <option value="sat">Sumatif Akhir Tahun (SAT / PAT / UKK)</option>
+                        <option value="slm">Sumatif Lingkup Materi / Ulangan Harian (SLM / UH)</option>
+                        <option value="us">Asesmen Sekolah / Ujian Sekolah (Kelulusan)</option>
                     </optgroup>
-                    <optgroup label="LATIHAN & DRILL">
+                    <optgroup label="ASESMEN FORMATIF & SIMULASI">
+                        <option value="tryout">Try Out / Simulasi Ujian (SNBT / ANBK)</option>
+                        <option value="kuis">Latihan Mandiri & Kuis Formatif</option>
+                    </optgroup>
+                    <optgroup label="KATEGORI KONVENSIONAL (K13)">
+                        <option value="uts">Ujian Tengah Semester (UTS Kuno)</option>
+                        <option value="ukk">Ujian Kenaikan Kelas (UKK Kuno)</option>
+                        <option value="ujian_harian">Ujian Harian Fleksibel</option>
                         <option value="latihan_harian">Latihan Harian</option>
                         <option value="latihan_mingguan">Latihan Mingguan</option>
                         <option value="latihan_bulanan">Latihan Bulanan</option>
@@ -751,6 +948,29 @@ require_once __DIR__ . "/../includes/header.php";
                 </label>
             </div>
 
+            <!-- Exam Browser Lockdown Mode Checkbox -->
+            <div class="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-3.5 flex items-start gap-3">
+                <input type="checkbox" name="lockdown_enabled" id="lockdown_enabled" value="1" checked
+                       class="h-4 w-4 mt-0.5 rounded border-rose-400/40 bg-slate-900 text-rose-500 focus:ring-rose-500">
+                <label for="lockdown_enabled" class="text-xs text-slate-300 cursor-pointer">
+                    <strong class="text-rose-300 block"><i class="fa-solid fa-shield-halved mr-1 text-rose-400"></i>Exam Browser / Lockdown Mode (Toleransi 3x Pindah Tab)</strong>
+                    Mendeteksi saat siswa berpindah tab, membuka jendela lain, keluar fullscreen, atau mencoba membuka inspect element. Toleransi maksimal 3 kali sebelum ujian otomatis terkunci & di-submit ke server.
+                </label>
+            </div>
+
+            <!-- Pembatasan Jaringan IP Lab Komputer -->
+            <div class="rounded-2xl border border-blue-500/30 bg-blue-500/5 p-3.5 space-y-2">
+                <div class="flex items-center gap-2 text-xs font-bold text-blue-300">
+                    <i class="fa-solid fa-network-wired text-sm"></i>
+                    <span>Pembatasan IP / Subnet Lab Komputer Sekolah (Opsional)</span>
+                </div>
+                <input type="text" name="allowed_ip_range" placeholder="Contoh: 192.168.1.0/24, 10.0.0.0/8, 127.0.0.1" 
+                       class="w-full rounded-xl border border-white/10 bg-slate-900 px-3.5 py-2 text-xs text-white font-mono placeholder:text-slate-500 focus:border-blue-500 focus:outline-none">
+                <p class="text-[11px] text-slate-400 leading-relaxed">
+                    Ujian hanya dapat diakses melalui jaringan lokal Lab Komputer sekolah yang sesuai daftar IP/CIDR di atas. <strong>Kosongkan jika ujian boleh diakses fleksibel dari mana saja (rumah/laptop pribadi).</strong>
+                </p>
+            </div>
+
             <!-- Sembunyikan Kunci Checkbox -->
             <div class="rounded-2xl border border-white/10 bg-slate-800/60 p-3.5 flex items-start gap-3">
                 <input type="checkbox" name="hide_answers_until_due" id="hide_answers_until_due" value="1" checked 
@@ -758,6 +978,16 @@ require_once __DIR__ . "/../includes/header.php";
                 <label for="hide_answers_until_due" class="text-xs text-slate-300 cursor-pointer">
                     <strong class="text-white block"><i class="fa-solid fa-lock mr-1 text-purple-400"></i>Rahasiakan Kunci Jawaban Hingga Batas Ujian Berakhir</strong>
                     Siswa tidak dapat melihat kunci jawaban dan pembahasan sebelum batas waktu ujian (<em class="text-amber-300">due date</em>) resmi ditutup untuk mencegah kebocoran ke siswa lain.
+                </label>
+            </div>
+
+            <!-- PPDB Entrance Test Checkbox -->
+            <div class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3.5 flex items-start gap-3">
+                <input type="checkbox" name="is_ppdb" id="is_ppdb" value="1" 
+                       class="h-4 w-4 mt-0.5 rounded border-amber-400/40 bg-slate-900 text-amber-500 focus:ring-amber-500">
+                <label for="is_ppdb" class="text-xs text-slate-300 cursor-pointer">
+                    <strong class="text-amber-300 block"><i class="fa-solid fa-graduation-cap mr-1 text-amber-400"></i>Gunakan sebagai Ujian CBT Seleksi PPDB</strong>
+                    Paket asesmen ini dapat dikerjakan secara mandiri oleh calon peserta didik baru (PPDB) melalui Portal PPDB Online dengan nomor pendaftaran mereka.
                 </label>
             </div>
 

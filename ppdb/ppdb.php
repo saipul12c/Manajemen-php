@@ -19,6 +19,20 @@ $ppdb_quota = (int)($school_info['ppdb_quota'] ?? 150);
 $ppdb_start_date = $school_info['ppdb_start_date'] ?? '';
 $ppdb_end_date = $school_info['ppdb_end_date'] ?? '';
 $ppdb_closed_message = $school_info['ppdb_closed_message'] ?? 'Pendaftaran Peserta Didik Baru (PPDB) saat ini sedang ditutup atau batas kuota telah terpenuhi.';
+$ppdb_next_wave_name = $school_info['ppdb_next_wave_name'] ?? 'Gelombang 2 (Jalur Reguler & Zonasi)';
+$ppdb_next_open_date = $school_info['ppdb_next_open_date'] ?? '2026-07-01';
+$ppdb_announcement_date = $school_info['ppdb_announcement_date'] ?? '18 Juli 2026';
+$ppdb_re_registration_date = $school_info['ppdb_re_registration_date'] ?? '20 - 25 Juli 2026';
+$ppdb_contact_phone = $school_info['ppdb_contact_phone'] ?? ($school_info['school_phone'] ?? '081234567890');
+
+// Clean WhatsApp hotline
+$wa_ppdb_hotline = preg_replace('/[^0-9]/', '', $ppdb_contact_phone);
+if (!empty($wa_ppdb_hotline) && substr($wa_ppdb_hotline, 0, 1) === '0') {
+    $wa_ppdb_hotline = '62' . substr($wa_ppdb_hotline, 1);
+}
+if (empty($wa_ppdb_hotline)) {
+    $wa_ppdb_hotline = '6281234567890';
+}
 
 // Hitung Jumlah Pendaftar Saat Ini
 $total_registrants = (int)$pdo->query("SELECT COUNT(*) FROM ppdb_registrations")->fetchColumn();
@@ -83,7 +97,7 @@ function handlePpdbUpload(array $file, string $field_key, string $upload_dir): ?
     }
     
     if (!is_dir($upload_dir)) {
-        mkdir($upload_dir, 0777, true);
+        mkdir($upload_dir, 0755, true);
     }
     
     $new_filename = $field_key . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $file_ext;
@@ -131,7 +145,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $score_indonesian  = ($_POST['score_indonesian'] ?? '') !== '' ? (float)$_POST['score_indonesian'] : null;
         $score_english     = ($_POST['score_english'] ?? '') !== '' ? (float)$_POST['score_english'] : null;
 
-        // Hitung Otomatis Skor Seleksi
+        // Data Sertifikat Prestasi (Maksimal 10)
+        $level_ranks = [
+            'internasional' => 6,
+            'nasional'      => 5,
+            'provinsi'      => 4,
+            'kabupaten'     => 3,
+            'kecamatan'     => 2,
+            'sekolah'       => 1
+        ];
+
+        $achievements_data = [];
+        $achievement_desc = null;
+        $achievement_level = null;
+        $highest_level_rank = 0;
+
+        if (isset($_POST['ach_desc']) && is_array($_POST['ach_desc'])) {
+            $total_certs = min(10, count($_POST['ach_desc']));
+            for ($ci = 0; $ci < $total_certs; $ci++) {
+                $cd = trim($_POST['ach_desc'][$ci] ?? '');
+                $cl = trim($_POST['ach_level'][$ci] ?? 'sekolah');
+                if (!array_key_exists($cl, $level_ranks)) {
+                    $cl = 'sekolah';
+                }
+                if ($cd !== '') {
+                    $rank = $level_ranks[$cl] ?? 1;
+                    if ($rank > $highest_level_rank) {
+                        $highest_level_rank = $rank;
+                        $achievement_level = $cl;
+                        $achievement_desc = $cd;
+                    }
+                    $achievements_data[] = [
+                        'index' => $ci,
+                        'title' => $cd,
+                        'level' => $cl,
+                        'file'  => null
+                    ];
+                }
+            }
+        } elseif (!empty($_POST['achievement_desc'])) {
+            $achievement_desc = trim($_POST['achievement_desc']);
+            $achievement_level = in_array($_POST['achievement_level'] ?? '', array_keys($level_ranks), true) ? $_POST['achievement_level'] : 'sekolah';
+            $achievements_data[] = [
+                'index' => 0,
+                'title' => $achievement_desc,
+                'level' => $achievement_level,
+                'file'  => null
+            ];
+        }
+
+        // Hitung Otomatis Skor Seleksi (berdasarkan tingkat prestasi tertinggi)
         $calculated_score = null;
         if ($score_math !== null && $score_science !== null && $score_indonesian !== null && $score_english !== null) {
             $calculated_score = calculatePpdbScore($score_math, $score_science, $score_indonesian, $score_english, $track_type, $achievement_level, $distance_km);
@@ -163,51 +226,101 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                     // Upload Berkas Dokumen dengan verifikasi MIME
                     $uploaded_docs = [
-                        'report_card_doc' => isset($_FILES['report_card_doc']) ? handlePpdbUpload($_FILES['report_card_doc'], 'report_card_doc', $upload_dir) : null,
-                        'birth_cert_doc'  => isset($_FILES['birth_cert_doc']) ? handlePpdbUpload($_FILES['birth_cert_doc'], 'birth_cert_doc', $upload_dir) : null,
-                        'family_card_doc' => isset($_FILES['family_card_doc']) ? handlePpdbUpload($_FILES['family_card_doc'], 'family_card_doc', $upload_dir) : null,
-                        'photo_doc'       => isset($_FILES['photo_doc']) ? handlePpdbUpload($_FILES['photo_doc'], 'photo_doc', $upload_dir) : null,
+                        'report_card_doc'      => isset($_FILES['report_card_doc']) ? handlePpdbUpload($_FILES['report_card_doc'], 'report_card_doc', $upload_dir) : null,
+                        'birth_cert_doc'       => isset($_FILES['birth_cert_doc']) ? handlePpdbUpload($_FILES['birth_cert_doc'], 'birth_cert_doc', $upload_dir) : null,
+                        'family_card_doc'      => isset($_FILES['family_card_doc']) ? handlePpdbUpload($_FILES['family_card_doc'], 'family_card_doc', $upload_dir) : null,
+                        'photo_doc'            => isset($_FILES['photo_doc']) ? handlePpdbUpload($_FILES['photo_doc'], 'photo_doc', $upload_dir) : null,
+                        'achievement_cert_doc' => isset($_FILES['achievement_cert_doc']) ? handlePpdbUpload($_FILES['achievement_cert_doc'], 'achievement_cert_doc', $upload_dir) : null,
                     ];
 
-                    // Generate Nomor Registrasi Unik Bebas Race-Condition
-                    $stmt_max = $pdo->query("SELECT COALESCE(MAX(id), 0) + 1 FROM ppdb_registrations");
-                    $next_num = (int)$stmt_max->fetchColumn();
-                    $reg_no = 'PPDB-' . date('Y') . '-' . str_pad((string)$next_num, 4, '0', STR_PAD_LEFT);
+                    // Upload multiple file sertifikat (maksimal 10)
+                    if (!empty($achievements_data)) {
+                        foreach ($achievements_data as &$ach_item) {
+                            $idx = $ach_item['index'];
+                            if (isset($_FILES['ach_file']['name'][$idx]) && $_FILES['ach_file']['error'][$idx] === UPLOAD_ERR_OK) {
+                                $single_f = [
+                                    'name'     => $_FILES['ach_file']['name'][$idx],
+                                    'type'     => $_FILES['ach_file']['type'][$idx],
+                                    'tmp_name' => $_FILES['ach_file']['tmp_name'][$idx],
+                                    'error'    => $_FILES['ach_file']['error'][$idx],
+                                    'size'     => $_FILES['ach_file']['size'][$idx]
+                                ];
+                                $ach_item['file'] = handlePpdbUpload($single_f, 'cert_' . ($idx + 1), $upload_dir);
+                            }
+                            unset($ach_item['index']);
+                        }
+                        unset($ach_item);
 
-                    // Generate Token QR Code Resmi untuk Validasi Kartu
-                    $qr_token = generatePpdbQrToken($reg_no);
+                        // Ambil berkas sertifikat utama jika achievement_cert_doc masih kosong
+                        if (empty($uploaded_docs['achievement_cert_doc'])) {
+                            foreach ($achievements_data as $ach_item) {
+                                if (!empty($ach_item['file'])) {
+                                    $uploaded_docs['achievement_cert_doc'] = $ach_item['file'];
+                                    break;
+                                }
+                            }
+                        }
+                    }
 
-                    // Insert ke Database
-                    $stmt_ins = $pdo->prepare("
-                        INSERT INTO ppdb_registrations 
-                        (registration_no, full_name, nisn, nik, gender, birth_place, birth_date, religion, phone, email, address, 
-                         previous_school, chosen_major, track_type, distance_km, achievement_desc, achievement_level, affirmation_no,
-                         score_math, score_science, score_indonesian, score_english, calculated_score,
-                         parent_name, parent_phone, parent_job, 
-                         report_card_doc, birth_cert_doc, family_card_doc, photo_doc, 
-                         document_status, status, selection_score, notes, qr_token)
-                        VALUES
-                        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
-                         ?, ?, ?, ?, ?, ?, ?,
-                         ?, ?, ?, ?, ?,
-                         ?, ?, ?, 
-                         ?, ?, ?, ?, 
-                         'lengkap', 'menunggu_verifikasi', ?, 'Pendaftaran baru masuk secara online via portal PPDB.', ?)
-                    ");
+                    $achievements_json = !empty($achievements_data) ? json_encode($achievements_data, JSON_UNESCAPED_UNICODE) : null;
 
-                    $stmt_ins->execute([
-                        $reg_no, $full_name, $nisn, $nik, $gender, $birth_place, $birth_date, $religion, $phone, $email, $address,
-                        $previous_school, $chosen_major, $track_type, $distance_km, $achievement_desc, $achievement_level, $affirmation_no,
-                        $score_math, $score_science, $score_indonesian, $score_english, $calculated_score,
-                        $parent_name, $parent_phone, $parent_job,
-                        $uploaded_docs['report_card_doc'], $uploaded_docs['birth_cert_doc'], $uploaded_docs['family_card_doc'], $uploaded_docs['photo_doc'],
-                        $calculated_score, $qr_token
-                    ]);
+                    // Generate Nomor Registrasi Unik Bebas Race-Condition (via Transaction + LAST_INSERT_ID)
+                    $pdo->beginTransaction();
+                    try {
+                        // Insert dulu dengan placeholder registration_no unik untuk menghindari duplicate key race condition
+                        $temp_reg_no = 'PPDB-' . date('Y') . '-TMP-' . bin2hex(random_bytes(6));
+
+                        // Insert ke Database
+                        $stmt_ins = $pdo->prepare("
+                            INSERT INTO ppdb_registrations 
+                            (registration_no, full_name, nisn, nik, gender, birth_place, birth_date, religion, phone, email, address, 
+                             previous_school, chosen_major, track_type, distance_km, achievement_desc, achievement_level, affirmation_no,
+                             score_math, score_science, score_indonesian, score_english, calculated_score,
+                             parent_name, parent_phone, parent_job, 
+                             report_card_doc, birth_cert_doc, family_card_doc, photo_doc, achievement_cert_doc, achievements_json,
+                             document_status, status, selection_score, notes, qr_token)
+                            VALUES
+                            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
+                             ?, ?, ?, ?, ?, ?, ?,
+                             ?, ?, ?, ?, ?,
+                             ?, ?, ?, 
+                             ?, ?, ?, ?, ?, ?,
+                             'lengkap', 'menunggu_verifikasi', ?, 'Pendaftaran baru masuk secara online via portal PPDB.', ?)
+                        ");
+
+                        $stmt_ins->execute([
+                            $temp_reg_no, $full_name, $nisn, $nik, $gender, $birth_place, $birth_date, $religion, $phone, $email, $address,
+                            $previous_school, $chosen_major, $track_type, $distance_km, $achievement_desc, $achievement_level, $affirmation_no,
+                            $score_math, $score_science, $score_indonesian, $score_english, $calculated_score,
+                            $parent_name, $parent_phone, $parent_job,
+                            $uploaded_docs['report_card_doc'], $uploaded_docs['birth_cert_doc'], $uploaded_docs['family_card_doc'], $uploaded_docs['photo_doc'], $uploaded_docs['achievement_cert_doc'], $achievements_json,
+                            $calculated_score, ''
+                        ]);
+
+                        // Gunakan LAST_INSERT_ID() yang dijamin unik per-connection
+                        $new_id = (int)$pdo->lastInsertId();
+                        $reg_no = 'PPDB-' . date('Y') . '-' . str_pad((string)$new_id, 4, '0', STR_PAD_LEFT);
+
+                        // Generate Token QR Code Resmi untuk Validasi Kartu
+                        $qr_token = generatePpdbQrToken($reg_no);
+
+                        // Update registration_no dan qr_token dengan nilai final
+                        $stmt_upd_reg = $pdo->prepare("UPDATE ppdb_registrations SET registration_no = ?, qr_token = ? WHERE id = ?");
+                        $stmt_upd_reg->execute([$reg_no, $qr_token, $new_id]);
+
+                        $pdo->commit();
+                    } catch (Exception $e_trx) {
+                        $pdo->rollBack();
+                        throw $e_trx;
+                    }
 
                     logActivity($pdo, 'PPDB_REGISTER', "Calon siswa baru mendaftar: $full_name ($reg_no) via Jalur " . getPpdbTrackLabel($track_type));
 
+                    $_SESSION['ppdb_verified_reg'] = $reg_no;
+
                     $success_reg = [
                         'reg_no'       => $reg_no,
+                        'qr_token'     => $qr_token,
                         'name'         => $full_name,
                         'nisn'         => $nisn,
                         'chosen_major' => $chosen_major,
@@ -217,7 +330,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     ];
                 }
             } catch (Exception $e) {
-                $error_msg = 'Gagal menyimpan data pendaftaran: ' . $e->getMessage();
+                error_log("PPDB register error: " . $e->getMessage());
+                $error_msg = 'Gagal menyimpan data pendaftaran. Pastikan data yang dimasukkan valid atau hubungi panitia PPDB.';
             }
         }
     }
@@ -234,7 +348,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $reupload_birth_date = trim($_POST['birth_date'] ?? '');
         $upload_field = trim($_POST['upload_field'] ?? '');
 
-        $valid_fields = ['report_card_doc', 'birth_cert_doc', 'family_card_doc', 'photo_doc'];
+        $valid_fields = ['report_card_doc', 'birth_cert_doc', 'family_card_doc', 'photo_doc', 'achievement_cert_doc'];
         if (!in_array($upload_field, $valid_fields, true)) {
             $error_msg = 'Jenis berkas yang diunggah tidak valid.';
         } else {
@@ -253,10 +367,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $error_msg = 'Gagal mengunggah berkas. Pastikan format file PDF/JPG/PNG dan ukuran maksimal 5MB.';
                     } else {
                         $field_names_id = [
-                            'report_card_doc' => 'Rapor',
-                            'birth_cert_doc'  => 'Akta Kelahiran',
-                            'family_card_doc' => 'Kartu Keluarga',
-                            'photo_doc'       => 'Pas Foto 3x4'
+                            'report_card_doc'      => 'Rapor',
+                            'birth_cert_doc'       => 'Akta Kelahiran',
+                            'family_card_doc'      => 'Kartu Keluarga',
+                            'photo_doc'            => 'Pas Foto 3x4',
+                            'achievement_cert_doc' => 'Sertifikat Prestasi'
                         ];
                         $f_label = $field_names_id[$upload_field] ?? 'Dokumen';
 
@@ -287,7 +402,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }
                 }
             } catch (Exception $e) {
-                $error_msg = 'Terjadi kesalahan saat mengunggah berkas: ' . $e->getMessage();
+                error_log("PPDB upload error: " . $e->getMessage());
+                $error_msg = 'Terjadi kesalahan pada server saat mengunggah berkas. Silakan coba beberapa saat lagi.';
             }
         }
     }
@@ -317,6 +433,8 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
 
             if (!$search_result) {
                 $error_msg = "Data pendaftaran dengan Nomor Registrasi / NISN '{$search_query}' dan tanggal lahir yang dimasukkan tidak ditemukan. Mohon periksa kembali input Anda.";
+            } else {
+                $_SESSION['ppdb_verified_reg'] = $search_result['registration_no'];
             }
         } catch (Exception $e) {
             $error_msg = 'Terjadi kesalahan saat mencari data.';
@@ -425,7 +543,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                         </p>
                     </div>
                     <div class="flex flex-col gap-2 shrink-0 w-full sm:w-auto">
-                        <a href="ppdb_card.php?reg=<?= urlencode($success_reg['reg_no']) ?>" target="_blank"
+                        <a href="ppdb_card.php?reg=<?= urlencode($success_reg['reg_no']) ?>&token=<?= urlencode($success_reg['qr_token'] ?? '') ?>" target="_blank"
                            class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-6 py-3 font-semibold text-white shadow-lg shadow-emerald-500/20 transition">
                             <i class="fa-solid fa-print"></i> Cetak Kartu Pendaftaran
                         </a>
@@ -472,32 +590,194 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
 
         <?php if ($active_tab === 'daftar'): ?>
             <?php if (!$is_registration_allowed): ?>
-                <!-- TAMPILAN JIKA PENDAFTARAN DITUTUP / KUOTA PENUH -->
-                <div class="rounded-3xl border border-amber-500/30 bg-gradient-to-b from-amber-500/10 to-slate-900/60 p-8 sm:p-12 text-center backdrop-blur shadow-2xl max-w-3xl mx-auto space-y-6">
-                    <div class="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-amber-500/20 text-4xl text-amber-400 border border-amber-500/30 shadow-lg shadow-amber-500/10">
-                        <i class="fa-solid fa-lock"></i>
+                <!-- TAMPILAN RESMI PROFESIONAL: PENDAFTARAN DITUTUP / JADWAL GELOMBANG BERIKUTNYA -->
+                <div class="max-w-4xl mx-auto space-y-6">
+
+                    <!-- 1. Hero Notice Card -->
+                    <div class="relative overflow-hidden rounded-3xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-slate-900/90 to-slate-950 p-7 sm:p-10 shadow-2xl backdrop-blur">
+                        <div class="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-amber-500/10 blur-3xl pointer-events-none"></div>
+
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-5 pb-6 border-b border-white/10">
+                            <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 text-3xl border border-amber-500/30 shadow-lg shadow-amber-500/10">
+                                <i class="fa-solid fa-lock"></i>
+                            </div>
+                            <div>
+                                <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                                    <span class="inline-flex items-center gap-1.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 px-3 py-0.5 text-xs font-bold">
+                                        <span class="h-1.5 w-1.5 rounded-full bg-rose-400"></span>
+                                        Pendaftaran Ditutup
+                                    </span>
+                                    <span class="text-xs text-slate-400 font-medium">
+                                        <?= htmlspecialchars($ppdb_wave_name) ?>
+                                    </span>
+                                </div>
+                                <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                                    Penerimaan Berkas Periode Ini Telah Ditutup
+                                </h2>
+                                <p class="mt-2 text-xs sm:text-sm text-slate-300 leading-relaxed">
+                                    <?= htmlspecialchars($closed_reason) ?>
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Bar Status Transparan -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6 text-xs">
+                            <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+                                <span class="text-slate-400 block mb-0.5">Total Pendaftar Masuk:</span>
+                                <span class="text-base font-bold text-white"><?= number_format($total_registrants, 0, ',', '.') ?> Berkas Calon Siswa</span>
+                            </div>
+                            <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+                                <span class="text-slate-400 block mb-0.5">Kapasitas Daya Tampung:</span>
+                                <span class="text-base font-bold text-amber-300"><?= number_format($ppdb_quota, 0, ',', '.') ?> Kursi (Penuh)</span>
+                            </div>
+                            <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+                                <span class="text-slate-400 block mb-0.5">Status Pendaftar Lama:</span>
+                                <span class="text-base font-bold text-emerald-400">Tahap Ujian & Seleksi</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <div>
-                        <span class="inline-block rounded-full bg-amber-500/20 px-3 py-1 text-xs font-bold text-amber-300 mb-2">
-                            PEMBERITAHUAN PENDAFTARAN
-                        </span>
-                        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Pendaftaran Siswa Baru Saat Ini Tidak Menerima Berkas</h2>
-                        <p class="mt-3 text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">
-                            <?= htmlspecialchars($closed_reason) ?>
-                        </p>
+                    <!-- 2. Kapan Dibuka Lagi? Kartu Jadwal Gelombang Berikutnya -->
+                    <div class="rounded-3xl border border-blue-500/30 bg-gradient-to-br from-blue-950/40 via-slate-900/80 to-slate-900 p-6 sm:p-8 shadow-xl">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                            <div class="flex items-center gap-3">
+                                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400 text-lg">
+                                    <i class="fa-solid fa-calendar-check"></i>
+                                </span>
+                                <div>
+                                    <h3 class="text-base font-bold text-white">Kapan Pendaftaran Dibuka Kembali?</h3>
+                                    <p class="text-xs text-slate-400">Jadwal resmi pembukaan pendaftaran periode selanjutnya</p>
+                                </div>
+                            </div>
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs font-semibold">
+                                <i class="fa-solid fa-bell"></i> Persiapkan Berkas Anda
+                            </span>
+                        </div>
+
+                        <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="p-4 rounded-2xl bg-white/5 border border-white/5">
+                                <span class="text-xs text-slate-400 block mb-1">Periode Pembukaan Selanjutnya:</span>
+                                <span class="text-base font-bold text-white block"><?= htmlspecialchars($ppdb_next_wave_name) ?></span>
+                                <span class="text-xs text-slate-400 mt-1 block">Jalur Reguler Umum, Prestasi & Zonasi</span>
+                            </div>
+                            <div class="p-4 rounded-2xl bg-white/5 border border-blue-500/20 bg-blue-500/[0.03]">
+                                <span class="text-xs text-slate-400 block mb-1">Tanggal Resmi Dibuka Kembali:</span>
+                                <span class="text-xl font-extrabold text-blue-400 block">
+                                    <?= !empty($ppdb_next_open_date) ? date('d F Y', strtotime($ppdb_next_open_date)) : 'Segera Diumumkan' ?>
+                                </span>
+                                <span class="text-[11px] text-slate-400 mt-1 block">Pukul 08.00 WIB melalui portal ini.</span>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 p-3.5 rounded-xl bg-slate-950/60 border border-white/5 flex items-start gap-2.5 text-xs text-slate-300">
+                            <i class="fa-solid fa-circle-info text-blue-400 mt-0.5"></i>
+                            <span>
+                                <strong>Tips Calon Pendaftar:</strong> Siapkan dokumen digital sejak sekarang (Scan Kartu Keluarga, Akta Kelahiran, NISN aktif, dan Surat Keterangan Nilai Rapor Semester 1–5) agar saat pendaftaran dibuka dapat langsung mengunggah tanpa antre.
+                            </span>
+                        </div>
                     </div>
 
-                    <div class="inline-flex flex-wrap items-center justify-center gap-4 pt-2">
-                        <a href="ppdb.php?tab=cek" 
-                           class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition">
-                            <i class="fa-solid fa-magnifying-glass"></i> Lacak Status Pendaftaran Anda
-                        </a>
-                        <a href="../index.php" 
-                           class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-6 py-3 text-sm font-semibold text-slate-300 transition">
-                            <i class="fa-solid fa-house"></i> Kembali ke Beranda
-                        </a>
+                    <!-- 3. Roadmap / Alur Tahapan Seleksi Berjalan -->
+                    <div class="rounded-3xl border border-white/10 bg-slate-900/60 p-6 sm:p-8 shadow-xl">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2 mb-1">
+                            <span class="text-emerald-400"><i class="fa-solid fa-timeline"></i></span>
+                            Timeline & Jadwal Tahapan Seleksi PPDB 2026
+                        </h3>
+                        <p class="text-xs text-slate-400 mb-6">Agenda alur proses penerimaan dari pendaftaran hingga registrasi ulang</p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                            <!-- Step 1 -->
+                            <div class="p-3.5 rounded-2xl bg-white/5 border border-emerald-500/30 relative">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-bold text-emerald-400">Tahap 1</span>
+                                    <span class="h-5 w-5 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-[10px]">
+                                        <i class="fa-solid fa-check"></i>
+                                    </span>
+                                </div>
+                                <div class="font-bold text-white">Unggah Berkas</div>
+                                <p class="text-[11px] text-slate-400 mt-1">Pendaftaran & verifikasi berkas online.</p>
+                                <span class="text-[10px] text-emerald-300/80 mt-2 block font-semibold">Telah Selesai</span>
+                            </div>
+
+                            <!-- Step 2 -->
+                            <div class="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/30 relative">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-bold text-blue-400">Tahap 2</span>
+                                    <span class="h-2 w-2 rounded-full bg-blue-400 animate-ping"></span>
+                                </div>
+                                <div class="font-bold text-white">Ujian CBT Online</div>
+                                <p class="text-[11px] text-slate-400 mt-1">Tes potensi akademik & peminatan jurusan.</p>
+                                <span class="text-[10px] text-blue-300 mt-2 block font-bold">Sedang Berlangsung</span>
+                            </div>
+
+                            <!-- Step 3 -->
+                            <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-bold text-slate-400">Tahap 3</span>
+                                    <i class="fa-regular fa-clock text-slate-500"></i>
+                                </div>
+                                <div class="font-bold text-white">Pengumuman Hasil</div>
+                                <p class="text-[11px] text-slate-400 mt-1">Hasil seleksi kelulusan akhir.</p>
+                                <span class="text-[10px] text-amber-300 mt-2 block font-semibold"><?= htmlspecialchars($ppdb_announcement_date) ?></span>
+                            </div>
+
+                            <!-- Step 4 -->
+                            <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-bold text-slate-400">Tahap 4</span>
+                                    <i class="fa-regular fa-calendar text-slate-500"></i>
+                                </div>
+                                <div class="font-bold text-white">Daftar Ulang</div>
+                                <p class="text-[11px] text-slate-400 mt-1">Verifikasi fisik & seragam.</p>
+                                <span class="text-[10px] text-slate-400 mt-2 block"><?= htmlspecialchars($ppdb_re_registration_date) ?></span>
+                            </div>
+                        </div>
                     </div>
+
+                    <!-- 4. Hotline WhatsApp & Aksi Utama -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <!-- Kartu Hotline WhatsApp Panitia -->
+                        <div class="p-6 rounded-3xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/30 to-slate-900 flex flex-col justify-between gap-4">
+                            <div>
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5 mb-1.5">
+                                    <i class="fa-brands fa-whatsapp text-sm"></i> Layanan Konsultasi & Bantuan
+                                </span>
+                                <h4 class="text-base font-bold text-white">Punya Pertanyaan Seputar Gelombang Berikutnya?</h4>
+                                <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                                    Hubungi langsung Sekretariat Panitia PPDB sekolah untuk informasi kuota susulan atau verifikasi berkas khusus.
+                                </p>
+                            </div>
+                            <a href="https://wa.me/<?= $wa_ppdb_hotline ?>?text=<?= urlencode("Halo Panitia PPDB {$school_name}, saya ingin menanyakan informasi terkait pembukaan pendaftaran gelombang berikutnya dan persyaratan siswa baru.") ?>"
+                               target="_blank"
+                               class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/25 transition">
+                                <i class="fa-brands fa-whatsapp text-sm"></i> Chat Panitia PPDB WhatsApp
+                            </a>
+                        </div>
+
+                        <!-- Kartu Aksi Lacak Status & Beranda -->
+                        <div class="p-6 rounded-3xl border border-white/10 bg-slate-900/60 flex flex-col justify-between gap-4">
+                            <div>
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5 mb-1.5">
+                                    <i class="fa-solid fa-user-check"></i> Sudah Terdaftar Sebelumnya?
+                                </span>
+                                <h4 class="text-base font-bold text-white">Lacak Status Berkas & Ikuti Ujian CBT</h4>
+                                <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                                    Bagi calon siswa yang sudah mengirim formulir, silakan cek hasil validasi, skor seleksi, atau selesaikan tes online.
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <a href="ppdb.php?tab=cek" 
+                                   class="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-600/25 transition">
+                                    <i class="fa-solid fa-magnifying-glass"></i> Cek Status
+                                </a>
+                                <a href="../index.php" 
+                                   class="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-xs font-semibold text-slate-300 transition">
+                                    <i class="fa-solid fa-house"></i> Beranda
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             <?php else: ?>
                 <!-- FORM PENDAFTARAN -->
@@ -641,24 +921,70 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                             <span class="text-[11px] text-slate-400 mt-1 block">Jarak di bawah 1 KM akan memperoleh prioritas poin zonasi maksimal.</span>
                         </div>
 
-                        <div id="prestasiBox" class="hidden mt-5 p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-amber-400 mb-1.5"><i class="fa-solid fa-trophy mr-1"></i> Tingkat Kejuaraan / Prestasi Tertinggi *</label>
-                                <select name="achievement_level" id="achLevelInput"
-                                        class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
-                                    <option value="">-- Pilih Tingkatan Prestasi --</option>
-                                    <option value="sekolah">Tingkat Sekolah (+1.5 Poin)</option>
-                                    <option value="kecamatan">Tingkat Kecamatan (+3.0 Poin)</option>
-                                    <option value="kabupaten">Tingkat Kota / Kabupaten (+5.0 Poin)</option>
-                                    <option value="provinsi">Tingkat Provinsi (+7.0 Poin)</option>
-                                    <option value="nasional">Tingkat Nasional (+10.0 Poin)</option>
-                                    <option value="internasional">Tingkat Internasional (+15.0 Poin)</option>
-                                </select>
+                        <!-- Dynamic Multi-Certificate Prestasi Builder (Maks. 10) -->
+                        <div id="prestasiBox" class="hidden mt-5 p-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 space-y-4">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/20 pb-3">
+                                <div>
+                                    <h4 class="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-2">
+                                        <i class="fa-solid fa-trophy text-amber-400"></i>
+                                        <span>Daftar Sertifikat & Piagam Prestasi</span>
+                                    </h4>
+                                    <p class="text-[11px] text-slate-400 mt-0.5">
+                                        Tambahkan prestasi lomba (maksimal 10). Skor akhir dihitung dari kejuaraan tertinggi.
+                                    </p>
+                                </div>
+                                <div class="shrink-0">
+                                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-xs font-mono font-bold text-amber-300">
+                                        <span id="certCounter">1</span> / 10 Sertifikat
+                                    </span>
+                                </div>
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-amber-400 mb-1.5">Nama Lomba / Prestasi</label>
-                                <input type="text" name="achievement_desc" placeholder="Contoh: Juara 1 OSN Matematika Tingkat Kota"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+
+                            <div id="certItemsContainer" class="space-y-3">
+                                <!-- Item 1 (Default) -->
+                                <div class="cert-item rounded-xl border border-white/10 bg-slate-950/80 p-4 space-y-3" data-index="0">
+                                    <div class="flex items-center justify-between text-xs font-semibold text-slate-300">
+                                        <span class="cert-badge flex items-center gap-1.5 text-amber-400">
+                                            <i class="fa-solid fa-medal"></i> Sertifikat #1
+                                        </span>
+                                        <button type="button" onclick="removeCertItem(this)" class="btn-remove-cert hidden text-rose-400 hover:text-rose-300 text-xs font-semibold transition">
+                                            <i class="fa-solid fa-trash-can mr-1"></i> Hapus
+                                        </button>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label class="block text-[11px] font-semibold text-slate-400 mb-1">Tingkat Kejuaraan *</label>
+                                            <select name="ach_level[]" class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none">
+                                                <option value="sekolah">Tingkat Sekolah (+1.5 Poin)</option>
+                                                <option value="kecamatan">Tingkat Kecamatan (+3.0 Poin)</option>
+                                                <option value="kabupaten">Tingkat Kota / Kabupaten (+5.0 Poin)</option>
+                                                <option value="provinsi">Tingkat Provinsi (+7.0 Poin)</option>
+                                                <option value="nasional">Tingkat Nasional (+10.0 Poin)</option>
+                                                <option value="internasional">Tingkat Internasional (+15.0 Poin)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-semibold text-slate-400 mb-1">Nama Lomba / Prestasi *</label>
+                                            <input type="text" name="ach_desc[]" placeholder="Contoh: Juara 1 OSN Matematika..." 
+                                                   class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-semibold text-slate-400 mb-1">File Bukti Sertifikat (PDF/JPG, Maks 5MB)</label>
+                                            <input type="file" name="ach_file[]" accept=".pdf,.jpg,.jpeg,.png"
+                                                   class="w-full text-[11px] text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="pt-2 flex items-center justify-between">
+                                <button type="button" id="btnAddCert" onclick="addCertItem()" 
+                                        class="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-4 py-2 text-xs font-bold text-amber-300 transition cursor-pointer">
+                                    <i class="fa-solid fa-plus"></i>
+                                    <span>Tambah Sertifikat Lagi (Maks. 10)</span>
+                                </button>
+                                <span class="text-[11px] text-slate-400 italic">Maksimal 10 sertifikat</span>
                             </div>
                         </div>
 
@@ -714,7 +1040,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                             <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4">
                                 <label class="block text-xs font-bold text-slate-300 mb-1"><i class="fa-solid fa-file-lines mr-1.5 text-blue-400"></i> Scan Rapor</label>
                                 <span class="text-[11px] text-slate-400 block mb-3">Semester 1 - 5 SMP</span>
@@ -723,7 +1049,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                             </div>
 
                             <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4">
-                                <label class="block text-xs font-bold text-slate-300 mb-1"><i class="fa-solid fa-id-card mr-1.5 text-amber-400"></i> Kartu Keluarga (KK)</label>
+                                <label class="block text-xs font-bold text-slate-300 mb-1"><i class="fa-solid fa-id-card mr-1.5 text-emerald-400"></i> Kartu Keluarga (KK)</label>
                                 <span class="text-[11px] text-slate-400 block mb-3">Foto / Scan Asli</span>
                                 <input type="file" name="family_card_doc" accept=".pdf,.jpg,.jpeg,.png"
                                        class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
@@ -741,6 +1067,13 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                                 <span class="text-[11px] text-slate-400 block mb-3">Latar Belakang Merah/Biru</span>
                                 <input type="file" name="photo_doc" accept=".jpg,.jpeg,.png"
                                        class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
+                            </div>
+
+                            <div id="uploadCertBox" class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 transition-all">
+                                <label class="block text-xs font-bold text-amber-300 mb-1"><i class="fa-solid fa-trophy mr-1.5 text-amber-400"></i> Sertifikat Prestasi</label>
+                                <span class="text-[11px] text-amber-200/70 block mb-3">Wajib jika Jalur Prestasi (Maks 5MB)</span>
+                                <input type="file" name="achievement_cert_doc" id="achievementCertDocInput" accept=".pdf,.jpg,.jpeg,.png"
+                                       class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-500/20 file:text-amber-200 hover:file:bg-amber-500/30">
                             </div>
                         </div>
                     </div>
@@ -818,7 +1151,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                                     ● <?= htmlspecialchars(getPpdbStatusLabel($search_result['status'])) ?>
                                 </span>
 
-                                <a href="ppdb_card.php?reg=<?= urlencode($search_result['registration_no']) ?>" target="_blank"
+                                <a href="ppdb_card.php?reg=<?= urlencode($search_result['registration_no']) ?>&token=<?= urlencode($search_result['qr_token'] ?? '') ?>" target="_blank"
                                    class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3.5 py-1 text-xs font-semibold text-white transition flex items-center gap-1.5">
                                     <i class="fa-solid fa-print"></i> Cetak Kartu
                                 </a>
@@ -869,6 +1202,103 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                             </div>
                         </div>
 
+                        <!-- Jadwal & Lokasi Ujian Masuk / Seleksi Offline -->
+                        <?php if (!empty($search_result['exam_room']) || !empty($search_result['exam_date']) || $search_result['status'] === 'diverifikasi'): ?>
+                            <div class="rounded-3xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-teal-950/30 p-5 mb-6 shadow-xl">
+                                <div class="flex items-center justify-between border-b border-emerald-500/20 pb-2.5 mb-3.5">
+                                    <div class="flex items-center gap-2">
+                                        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-sm">
+                                            <i class="fa-solid fa-calendar-check"></i>
+                                        </span>
+                                        <h4 class="text-sm font-bold text-white">Jadwal & Ruang Pelaksanaan Ujian Seleksi Masuk</h4>
+                                    </div>
+                                    <span class="px-2.5 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                        <?= htmlspecialchars($search_result['exam_session'] ?: 'Sesi 1 (Reguler)') ?>
+                                    </span>
+                                </div>
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center sm:text-left">
+                                    <div class="rounded-2xl bg-slate-950/60 p-3 border border-white/5">
+                                        <span class="text-[10px] text-slate-400 block uppercase font-bold">Tanggal Ujian</span>
+                                        <strong class="text-white text-xs mt-0.5 block font-mono">
+                                            <?= !empty($search_result['exam_date']) ? date('d F Y', strtotime($search_result['exam_date'])) : 'Sesuai Jadwal Gelombang' ?>
+                                        </strong>
+                                    </div>
+                                    <div class="rounded-2xl bg-slate-950/60 p-3 border border-white/5">
+                                        <span class="text-[10px] text-slate-400 block uppercase font-bold">Waktu / Jam</span>
+                                        <strong class="text-white text-xs mt-0.5 block font-mono">
+                                            <?= htmlspecialchars($search_result['exam_time'] ?: '08.00 - 10.00 WIB') ?>
+                                        </strong>
+                                    </div>
+                                    <div class="rounded-2xl bg-slate-950/60 p-3 border border-white/5">
+                                        <span class="text-[10px] text-slate-400 block uppercase font-bold">Ruangan / Lab</span>
+                                        <strong class="text-emerald-400 text-xs mt-0.5 block font-bold">
+                                            <?= htmlspecialchars($search_result['exam_room'] ?: 'Lab Komputer / Ruang Seleksi') ?>
+                                        </strong>
+                                    </div>
+                                    <div class="rounded-2xl bg-slate-950/60 p-3 border border-white/5">
+                                        <span class="text-[10px] text-slate-400 block uppercase font-bold">Tempat / Lokasi</span>
+                                        <strong class="text-slate-200 text-xs mt-0.5 block truncate" title="<?= htmlspecialchars($school_info['school_name'] ?? 'Gedung Sekolah') ?>">
+                                            <?= htmlspecialchars($school_info['school_name'] ?? 'Gedung Sekolah') ?>
+                                        </strong>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- Integrasi Ujian CBT Seleksi Mandiri PPDB -->
+                        <?php 
+                        $stmt_cbt_ppdb = $pdo->prepare("SELECT * FROM exams WHERE is_ppdb = 1 AND status = 'aktif' ORDER BY id DESC LIMIT 1");
+                        $stmt_cbt_ppdb->execute();
+                        $ppdb_cbt_exam = $stmt_cbt_ppdb->fetch();
+                        ?>
+                        <?php if ($ppdb_cbt_exam && $search_result['status'] !== 'diterima' && $search_result['status'] !== 'tidak_lulus'): ?>
+                            <div class="rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/50 via-slate-900/90 to-purple-950/40 p-5 mb-6 shadow-xl relative overflow-hidden">
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div class="flex items-start gap-3.5">
+                                        <div class="h-12 w-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 text-xl border border-indigo-500/30">
+                                            <i class="fa-solid fa-laptop-code"></i>
+                                        </div>
+                                        <div>
+                                            <div class="flex items-center gap-2 flex-wrap mb-1">
+                                                <span class="px-2.5 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                                    Tahap Seleksi CBT Online
+                                                </span>
+                                                <?php if ($search_result['cbt_score'] !== null): ?>
+                                                    <span class="px-2.5 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                                        <i class="fa-solid fa-check mr-1"></i>Selesai Dikerjakan
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="px-2.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                                                        <i class="fa-solid fa-bell mr-1"></i>Wajib Dikerjakan
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <h4 class="text-base font-bold text-white"><?= htmlspecialchars($ppdb_cbt_exam['title']) ?></h4>
+                                            <p class="text-xs text-slate-300 mt-0.5"><?= htmlspecialchars($ppdb_cbt_exam['description'] ?: 'Ujian online seleksi penerimaan peserta didik baru.') ?></p>
+                                            <div class="flex items-center gap-4 text-[11px] text-slate-400 mt-2 font-mono">
+                                                <span><i class="fa-regular fa-clock mr-1 text-indigo-400"></i><?= $ppdb_cbt_exam['duration_minutes'] ?> Menit</span>
+                                                <span>&bull;</span>
+                                                <span><i class="fa-solid fa-bullseye mr-1 text-emerald-400"></i>Passing Grade: <?= $ppdb_cbt_exam['passing_grade'] ?></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="shrink-0 flex items-center gap-3">
+                                        <?php if ($search_result['cbt_score'] === null): ?>
+                                            <a href="ppdb_cbt.php?reg=<?= urlencode($search_result['registration_no']) ?>&token=<?= urlencode($search_result['qr_token'] ?? '') ?>" 
+                                               class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold transition shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+                                                <i class="fa-solid fa-play"></i> Mulai Ujian CBT
+                                            </a>
+                                        <?php else: ?>
+                                            <div class="text-right bg-slate-950/60 p-3 rounded-2xl border border-white/5">
+                                                <span class="text-[10px] text-slate-400 block uppercase tracking-wider font-bold">Skor CBT Anda</span>
+                                                <span class="text-2xl font-black text-emerald-400 font-mono"><?= number_format((float)$search_result['cbt_score'], 1) ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
                         <!-- Rincian Nilai & Skor -->
                         <div class="rounded-2xl border border-white/5 bg-slate-950/80 p-5 space-y-4 mb-6">
                             <div class="flex items-center justify-between">
@@ -904,6 +1334,38 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                                     <?= htmlspecialchars($search_result['notes'] ?? 'Belum ada catatan tambahan.') ?>
                                 </p>
                             </div>
+
+                            <?php 
+                            $saved_achievements = [];
+                            if (!empty($search_result['achievements_json'])) {
+                                $saved_achievements = json_decode($search_result['achievements_json'], true) ?: [];
+                            }
+                            ?>
+                            <?php if (!empty($saved_achievements)): ?>
+                                <div class="border-t border-white/5 pt-3 space-y-2">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-amber-400 block flex items-center gap-1.5">
+                                        <i class="fa-solid fa-trophy"></i>
+                                        <span>Daftar Sertifikat Prestasi (<?= count($saved_achievements) ?> Sertifikat Terlampir):</span>
+                                    </span>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <?php foreach ($saved_achievements as $s_idx => $s_ach): ?>
+                                            <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-white/5 text-xs">
+                                                <div class="min-w-0 pr-2">
+                                                    <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300 mb-0.5">
+                                                        Tingkat <?= htmlspecialchars($s_ach['level'] ?? 'Prestasi') ?>
+                                                    </span>
+                                                    <span class="block font-semibold text-white truncate"><?= htmlspecialchars($s_ach['title'] ?? '-') ?></span>
+                                                </div>
+                                                <?php if (!empty($s_ach['file'])): ?>
+                                                    <a href="../<?= htmlspecialchars($s_ach['file']) ?>" target="_blank" class="shrink-0 text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-1">
+                                                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Berkas
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
 
                             <!-- Banner Akun Portal Jika Diterima -->
                             <?php if ($search_result['status'] === 'diterima'): ?>
@@ -944,11 +1406,20 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                                     </div>
 
                                     <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                                        <span class="text-[11px] text-slate-400">Gunakan kredensial di atas untuk masuk ke portal siswa.</span>
-                                        <a href="../auth/login.php" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/25 transition">
-                                            <span>Masuk ke Portal Siswa</span>
-                                            <i class="fa-solid fa-arrow-right"></i>
-                                        </a>
+                                        <div class="text-[11px] text-slate-400 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-circle-check text-emerald-400"></i>
+                                            <span>Kredensial aktif. Silakan simpan dan gunakan untuk masuk.</span>
+                                        </div>
+                                        <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                                            <a href="ppdb_card.php?reg=<?= urlencode($search_result['registration_no']) ?>&token=<?= urlencode($search_result['qr_token'] ?? '') ?>" target="_blank"
+                                               class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 px-4 py-2 text-xs font-bold text-emerald-300 transition">
+                                                <i class="fa-solid fa-print"></i> Cetak Surat Penerimaan & Kartu
+                                            </a>
+                                            <a href="../auth/login.php" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/25 transition">
+                                                <span>Masuk ke Portal Siswa</span>
+                                                <i class="fa-solid fa-arrow-right"></i>
+                                            </a>
+                                        </div>
                                     </div>
                                 </div>
                             <?php endif; ?>
@@ -979,6 +1450,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                                                 <option value="family_card_doc">Kartu Keluarga (KK)</option>
                                                 <option value="birth_cert_doc">Akta Kelahiran</option>
                                                 <option value="photo_doc">Pas Foto 3x4</option>
+                                                <option value="achievement_cert_doc">Sertifikat / Piagam Prestasi</option>
                                             </select>
                                         </div>
 
@@ -1016,6 +1488,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
         const zonasiBox = document.getElementById('zonasiBox');
         const prestasiBox = document.getElementById('prestasiBox');
         const afirmasiBox = document.getElementById('afirmasiBox');
+        const uploadCertBox = document.getElementById('uploadCertBox');
 
         if (zonasiBox) zonasiBox.classList.add('hidden');
         if (prestasiBox) prestasiBox.classList.add('hidden');
@@ -1023,10 +1496,117 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
 
         if (track === 'zonasi' && zonasiBox) {
             zonasiBox.classList.remove('hidden');
-        } else if (track === 'prestasi' && prestasiBox) {
-            prestasiBox.classList.remove('hidden');
+        } else if (track === 'prestasi') {
+            if (prestasiBox) prestasiBox.classList.remove('hidden');
+            if (uploadCertBox) {
+                uploadCertBox.classList.remove('border-white/5', 'bg-slate-950/60');
+                uploadCertBox.classList.add('border-amber-500/50', 'bg-amber-500/10', 'ring-1', 'ring-amber-500/30');
+            }
         } else if (track === 'afirmasi' && afirmasiBox) {
             afirmasiBox.classList.remove('hidden');
+        }
+
+        if (track !== 'prestasi' && uploadCertBox) {
+            uploadCertBox.classList.remove('border-amber-500/50', 'bg-amber-500/10', 'ring-1', 'ring-amber-500/30');
+            uploadCertBox.classList.add('border-white/5', 'bg-slate-950/60');
+        }
+    }
+
+    // Dynamic Multi-Certificate Handlers (Maksimal 10)
+    let certCount = 1;
+    const MAX_CERTS = 10;
+
+    function updateCertUI() {
+        const container = document.getElementById('certItemsContainer');
+        if (!container) return;
+        const items = container.querySelectorAll('.cert-item');
+        certCount = items.length;
+        
+        const counter = document.getElementById('certCounter');
+        if (counter) counter.innerText = certCount;
+        
+        const btnAdd = document.getElementById('btnAddCert');
+        if (btnAdd) {
+            if (certCount >= MAX_CERTS) {
+                btnAdd.disabled = true;
+                btnAdd.classList.add('opacity-50', 'cursor-not-allowed');
+                btnAdd.innerHTML = '<i class="fa-solid fa-ban"></i> Batas Maksimal 10 Sertifikat Tercapai';
+            } else {
+                btnAdd.disabled = false;
+                btnAdd.classList.remove('opacity-50', 'cursor-not-allowed');
+                btnAdd.innerHTML = '<i class="fa-solid fa-plus"></i> Tambah Sertifikat Lagi (Maks. 10)';
+            }
+        }
+
+        items.forEach((item, idx) => {
+            const badge = item.querySelector('.cert-badge');
+            if (badge) badge.innerHTML = `<i class="fa-solid fa-medal"></i> Sertifikat #${idx + 1}`;
+            const btnRemove = item.querySelector('.btn-remove-cert');
+            if (btnRemove) {
+                if (certCount > 1) {
+                    btnRemove.classList.remove('hidden');
+                } else {
+                    btnRemove.classList.add('hidden');
+                }
+            }
+        });
+    }
+
+    function addCertItem() {
+        const container = document.getElementById('certItemsContainer');
+        if (!container) return;
+        const items = container.querySelectorAll('.cert-item');
+        if (items.length >= MAX_CERTS) {
+            alert('Maksimal penginputan sertifikat adalah 10.');
+            return;
+        }
+
+        const newIndex = items.length;
+        const template = document.createElement('div');
+        template.className = 'cert-item rounded-xl border border-white/10 bg-slate-950/80 p-4 space-y-3';
+        template.setAttribute('data-index', newIndex);
+        template.innerHTML = `
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-300">
+                <span class="cert-badge flex items-center gap-1.5 text-amber-400">
+                    <i class="fa-solid fa-medal"></i> Sertifikat #${newIndex + 1}
+                </span>
+                <button type="button" onclick="removeCertItem(this)" class="btn-remove-cert text-rose-400 hover:text-rose-300 text-xs font-semibold transition">
+                    <i class="fa-solid fa-trash-can mr-1"></i> Hapus
+                </button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Tingkat Kejuaraan *</label>
+                    <select name="ach_level[]" class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none">
+                        <option value="sekolah">Tingkat Sekolah (+1.5 Poin)</option>
+                        <option value="kecamatan">Tingkat Kecamatan (+3.0 Poin)</option>
+                        <option value="kabupaten">Tingkat Kota / Kabupaten (+5.0 Poin)</option>
+                        <option value="provinsi">Tingkat Provinsi (+7.0 Poin)</option>
+                        <option value="nasional">Tingkat Nasional (+10.0 Poin)</option>
+                        <option value="internasional">Tingkat Internasional (+15.0 Poin)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">Nama Lomba / Prestasi *</label>
+                    <input type="text" name="ach_desc[]" placeholder="Contoh: Juara 2 Lomba..." 
+                           class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">File Bukti Sertifikat (PDF/JPG, Maks 5MB)</label>
+                    <input type="file" name="ach_file[]" accept=".pdf,.jpg,.jpeg,.png"
+                           class="w-full text-[11px] text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
+                </div>
+            </div>
+        `;
+        container.appendChild(template);
+        updateCertUI();
+    }
+
+    function removeCertItem(btn) {
+        const item = btn.closest('.cert-item');
+        if (item) {
+            item.remove();
+            updateCertUI();
         }
     }
     </script>

@@ -15,14 +15,37 @@ $message_type = "";
 // 1. RESOLUSI SISWA TERKAIT
 // -------------------------------------------------------------
 $target_student_id = null;
+$parent_children = [];
 if ($user_role === 'siswa') {
     $target_student_id = $user_id;
 } elseif ($user_role === 'orang_tua') {
-    $stmt_child = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? LIMIT 1");
-    $stmt_child->execute([$user_id]);
-    $target_student_id = (int)($stmt_child->fetchColumn() ?: 0);
+    $stmt_all_c = $pdo->prepare("
+        SELECT u.id, u.name, u.nisn, c.name as class_name 
+        FROM parent_students ps
+        JOIN users u ON ps.student_id = u.id
+        LEFT JOIN classes c ON u.class_id = c.id
+        WHERE ps.parent_id = ?
+        ORDER BY u.name ASC
+    ");
+    $stmt_all_c->execute([$user_id]);
+    $parent_children = $stmt_all_c->fetchAll();
+    $p_kids_ids = array_map('intval', array_column($parent_children, 'id'));
+
+    $req_kid = isset($_GET['student_id']) && is_numeric($_GET['student_id']) ? (int)$_GET['student_id'] : (isset($_GET['child_id']) ? (int)$_GET['child_id'] : 0);
+    if ($req_kid > 0 && in_array($req_kid, $p_kids_ids, true)) {
+        $target_student_id = $req_kid;
+    } else {
+        $target_student_id = !empty($p_kids_ids) ? (int)$p_kids_ids[0] : 0;
+    }
 } elseif (isset($_GET['student_id']) && is_numeric($_GET['student_id'])) {
     $target_student_id = (int)$_GET['student_id'];
+}
+
+$target_student_info = null;
+if ($target_student_id) {
+    $stmt_sti = $pdo->prepare("SELECT id, name, status, status_reason FROM users WHERE id = ? AND role = 'siswa'");
+    $stmt_sti->execute([$target_student_id]);
+    $target_student_info = $stmt_sti->fetch();
 }
 
 // -------------------------------------------------------------
@@ -51,9 +74,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt_in->execute([$student_id, $type, $category, $title, $points, $action_taken ?: null, $notes ?: null, $user_id, $record_date]);
+            $new_counseling_id = (int)$pdo->lastInsertId();
 
             logActivity($pdo, 'CREATE_COUNSELING', "Catat $type: $title untuk siswa ID $student_id ($points poin)");
-            $message = "Catatan bimbingan konseling berhasil disimpan.";
+
+            $wa_note = "";
+            // Integrasi WhatsApp Alert & Peringatan Ambang Batas Poin BK ke Orang Tua
+            if ($type === 'pelanggaran') {
+                $stmt_tot = $pdo->prepare("SELECT COALESCE(SUM(points), 0) FROM counseling_records WHERE student_id = ? AND type = 'pelanggaran'");
+                $stmt_tot->execute([$student_id]);
+                $cum_points = (int)$stmt_tot->fetchColumn();
+
+                $wa_sent = notifyParentCounselingViolation($pdo, $student_id, $title, $points, $cum_points, $action_taken);
+                if ($wa_sent) {
+                    $wa_note = " Notifikasi WhatsApp peringatan poin telah terkirim ke Orang Tua.";
+                }
+            }
+
+            // Integrasi: Jika dicentang langsung buat draf berita sekolah
+            if (!empty($_POST['auto_create_news']) && $type === 'prestasi') {
+                $stmt_st_name = $pdo->prepare("SELECT name FROM users WHERE id = ?");
+                $stmt_st_name->execute([$student_id]);
+                $st_name = $stmt_st_name->fetchColumn() ?: 'Siswa';
+                $news_title = "Prestasi Siswa: " . $title . " (" . $st_name . ")";
+                $news_excerpt = "Selamat dan apresiasi setinggi-tingginya kepada " . $st_name . " atas capaian membanggakan " . $title . " dalam bidang " . $category . ".";
+                header("Location: ../informasi/news.php?action=create&source=prestasi&counseling_id=" . $new_counseling_id . "&title=" . urlencode($news_title) . "&excerpt=" . urlencode($news_excerpt) . "&category=prestasi");
+                exit;
+            }
+
+            $message = "Catatan bimbingan konseling berhasil disimpan." . $wa_note;
             $message_type = "success";
             $target_student_id = $student_id;
         }
@@ -142,20 +191,48 @@ foreach ($records as $r) {
 }
 
 // Tentukan Tingkat Sanksi
-function getSanctionStatus(int $points): array {
-    if ($points >= 75) {
-        return ['label' => 'Sidang Pleno / Skorsing', 'badge' => 'border-rose-500/40 bg-rose-500/20 text-rose-300', 'icon' => '<i class="fa-solid fa-triangle-exclamation"></i>'];
+function getSanctionStatus(int $points, string $user_status = 'aktif'): array {
+    if ($user_status === 'dikeluarkan' || $points >= 100) {
+        return [
+            'label' => 'Dikeluarkan dari Sekolah (DO)', 
+            'badge' => 'border-rose-600/60 bg-rose-600/30 text-rose-200 font-bold', 
+            'icon' => '<i class="fa-solid fa-ban"></i>'
+        ];
+    } elseif ($user_status === 'skorsing' || $points >= 75) {
+        return [
+            'label' => 'Sidang Pleno / Skorsing', 
+            'badge' => 'border-rose-500/40 bg-rose-500/20 text-rose-300', 
+            'icon' => '<i class="fa-solid fa-triangle-exclamation"></i>'
+        ];
     } elseif ($points >= 50) {
-        return ['label' => 'Pemanggilan Orang Tua', 'badge' => 'border-amber-500/40 bg-amber-500/20 text-amber-300', 'icon' => '<i class="fa-solid fa-triangle-exclamation"></i>'];
+        return [
+            'label' => 'Pemanggilan Orang Tua (SP 2)', 
+            'badge' => 'border-amber-500/40 bg-amber-500/20 text-amber-300', 
+            'icon' => '<i class="fa-solid fa-triangle-exclamation"></i>'
+        ];
     } elseif ($points >= 25) {
-        return ['label' => 'Peringatan Tertulis', 'badge' => 'border-yellow-500/40 bg-yellow-500/20 text-yellow-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
+        return [
+            'label' => 'Peringatan Tertulis (SP 1)', 
+            'badge' => 'border-yellow-500/40 bg-yellow-500/20 text-yellow-300', 
+            'icon' => '<i class="fa-solid fa-file-pen"></i>'
+        ];
     } elseif ($points > 0) {
-        return ['label' => 'Peringatan Lisan / Pembinaan', 'badge' => 'border-blue-500/40 bg-blue-500/20 text-blue-300', 'icon' => '<i class="fa-solid fa-circle-info"></i>'];
+        return [
+            'label' => 'Peringatan Lisan / Pembinaan', 
+            'badge' => 'border-blue-500/40 bg-blue-500/20 text-blue-300', 
+            'icon' => '<i class="fa-solid fa-circle-info"></i>'
+        ];
     }
-    return ['label' => 'Tertib & Disiplin Baik', 'badge' => 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300', 'icon' => '<i class="fa-solid fa-circle-check"></i>'];
+    return [
+        'label' => 'Tertib & Disiplin Baik', 
+        'badge' => 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300', 
+        'icon' => '<i class="fa-solid fa-circle-check"></i>'
+    ];
 }
 
-$sanction_info = getSanctionStatus($total_penalty_points);
+$current_user_status = $target_student_info['status'] ?? 'aktif';
+$is_critical_do = ($total_penalty_points >= 100 || $current_user_status === 'dikeluarkan');
+$sanction_info = getSanctionStatus($total_penalty_points, $current_user_status);
 
 $page_title = "Bimbingan Konseling & Prestasi Siswa";
 require_once __DIR__ . "/../includes/header.php";
@@ -170,15 +247,21 @@ require_once __DIR__ . "/../includes/header.php";
                 <span class="text-blue-400"><i class="fa-solid fa-scale-balanced"></i></span> Bimbingan Konseling (BK) & Prestasi
             </h1>
             <p class="text-sm text-slate-400 mt-1">
-                Pencatatan rekam jejak kedisiplinan, sistem poin pelanggaran tata tertib, dan apresiasi prestasi siswa.
+                Pencatatan rekam jejak kedisiplinan, sistem poin pelanggaran tata tertib, dan penanganan sanksi kesiswaan.
             </p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
             <?php if ($target_student_id): ?>
-                <a href="counseling_letter.php?student_id=<?= $target_student_id ?>" target="_blank" class="inline-flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-3.5 py-2 text-xs font-bold text-rose-300 transition">
-                    <i class="fa-solid fa-file-lines"></i> Cetak Surat Peringatan / SP
-                </a>
+                <?php if ($is_critical_do): ?>
+                    <a href="counseling_letter.php?student_id=<?= $target_student_id ?>&type=do" target="_blank" class="inline-flex items-center gap-2 rounded-xl border border-rose-500/50 bg-rose-600/30 hover:bg-rose-600/40 px-3.5 py-2 text-xs font-bold text-rose-200 transition shadow-lg shadow-rose-600/20">
+                        <i class="fa-solid fa-file-contract"></i> Cetak SK Pengembalian / DO
+                    </a>
+                <?php else: ?>
+                    <a href="counseling_letter.php?student_id=<?= $target_student_id ?>" target="_blank" class="inline-flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-3.5 py-2 text-xs font-bold text-rose-300 transition">
+                        <i class="fa-solid fa-file-lines"></i> Cetak Surat Peringatan / SP
+                    </a>
+                <?php endif; ?>
             <?php endif; ?>
 
             <?php if ($can_manage): ?>
@@ -188,6 +271,54 @@ require_once __DIR__ . "/../includes/header.php";
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($user_role === 'orang_tua' && count($parent_children) > 1): ?>
+        <div class="rounded-2xl border border-blue-500/30 bg-blue-950/40 p-4 backdrop-blur flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-blue-300"><i class="fa-solid fa-children mr-1"></i> Pilih Data Anak:</span>
+                <form method="GET" class="inline-flex items-center gap-2">
+                    <select name="student_id" onchange="this.form.submit()" class="rounded-xl border border-blue-500/40 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white focus:outline-none">
+                        <?php foreach ($parent_children as $pk): ?>
+                            <option value="<?= $pk['id'] ?>" <?= ($target_student_id == $pk['id']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($pk['name']) ?> (<?= htmlspecialchars($pk['class_name'] ?: 'Umum') ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
+            </div>
+            <span class="text-xs text-slate-400">Menampilkan rekam jejak BK & kedisiplinan untuk anak terpilih</span>
+        </div>
+    <?php endif; ?>
+
+    <!-- Alert Notifikasi Sanksi Berat / Drop Out (>= 100 Poin) -->
+    <?php if ($target_student_id && $is_critical_do): ?>
+        <div class="rounded-2xl border border-rose-500/40 bg-rose-950/40 p-4 sm:p-5 text-rose-200 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div class="flex items-start gap-3.5">
+                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-600/30 text-rose-400 text-xl border border-rose-500/40">
+                    <i class="fa-solid fa-ban"></i>
+                </div>
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-sm sm:text-base font-bold text-white">Ambang Batas Sanksi Maksimal / DO Terpenuhi</span>
+                        <?= getUserStatusBadge($target_student_info['status'] ?? 'aktif') ?>
+                    </div>
+                    <p class="text-xs text-rose-300/80 mt-1 max-w-2xl leading-relaxed">
+                        Akumulasi poin pelanggaran siswa ini telah mencapai <strong><?= $total_penalty_points ?> Poin</strong> (Batas Maksimal Dikeluarkan: 100 Poin). Tindak lanjut resmi: Terbitkan Surat Keputusan Pengembalian ke Orang Tua / Wali dan mutakhirkan status siswa menjadi Dikeluarkan di Master Pengguna.
+                    </p>
+                </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto">
+                <a href="counseling_letter.php?student_id=<?= $target_student_id ?>&type=do" target="_blank" class="w-full sm:w-auto text-center rounded-xl bg-rose-600 hover:bg-rose-500 px-4 py-2 text-xs font-bold text-white transition shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-file-contract"></i> Cetak SK Dikeluarkan
+                </a>
+                <?php if ($can_manage && in_array($user_role, ['administrator', 'staf'], true)): ?>
+                    <a href="../admin/users.php?action=edit&id=<?= $target_student_id ?>" target="_blank" class="w-full sm:w-auto text-center rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3.5 py-2 text-xs font-semibold text-slate-200 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-user-gear"></i> Set Status Master
+                    </a>
+                <?php endif; ?>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <!-- Alert Message -->
     <?php if (!empty($message)): ?>
@@ -341,7 +472,15 @@ require_once __DIR__ . "/../includes/header.php";
                                 </td>
 
                                 <?php if ($can_manage): ?>
-                                    <td class="px-5 py-4 text-right">
+                                    <td class="px-5 py-4 text-right whitespace-nowrap">
+                                        <?php if ($item['type'] === 'prestasi'): ?>
+                                            <a href="../informasi/news.php?action=create&source=prestasi&counseling_id=<?= $item['id'] ?>&title=<?= urlencode('Prestasi Siswa: ' . $item['title'] . ' (' . $item['student_name'] . ')') ?>&excerpt=<?= urlencode('Selamat dan apresiasi setinggi-tingginya kepada ' . $item['student_name'] . ' atas capaian ' . $item['title'] . ' (' . $item['category'] . ').') ?>&category=prestasi" 
+                                               class="rounded-lg px-2.5 py-1 text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition inline-flex items-center gap-1.5 text-xs font-semibold mr-1" 
+                                               title="Publikasikan Capaian Ini ke Berita Sekolah">
+                                                <i class="fa-solid fa-bullhorn text-[10px]"></i>
+                                                <span class="hidden sm:inline">Buat Berita</span>
+                                            </a>
+                                        <?php endif; ?>
                                         <?php if ($user_role === 'administrator' || $item['recorded_by'] == $user_id): ?>
                                             <form method="POST" onsubmit="return confirm('Hapus catatan ini?');" class="inline">
                                                 <?= csrfField() ?>
@@ -458,6 +597,18 @@ require_once __DIR__ . "/../includes/header.php";
             <div>
                 <label class="block text-xs font-semibold text-slate-300 mb-1">Catatan Keterangan Tambahan (Opsional)</label>
                 <textarea name="notes" rows="2" placeholder="Catatan kronologis atau detail penghargaan..." class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-sm text-white focus:outline-none"></textarea>
+            </div>
+
+            <!-- Integrasi Portal Berita Sekolah -->
+            <div class="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-3">
+                <input type="checkbox" name="auto_create_news" id="autoCreateNews" value="1" class="mt-0.5 rounded border-white/20 bg-slate-950 text-amber-500 focus:ring-0 cursor-pointer">
+                <label for="autoCreateNews" class="text-xs text-slate-300 cursor-pointer select-none">
+                    <span class="font-bold text-amber-300 flex items-center gap-1.5">
+                        <i class="fa-solid fa-bullhorn text-[11px]"></i>
+                        Langsung Buat Draf Berita Sekolah (Khusus Prestasi)
+                    </span>
+                    <p class="text-[11px] text-slate-400 mt-0.5">Jika dicentang dan jenis catatan adalah Prestasi, sistem akan langsung mengarahkan Anda ke formulir publikasi berita dengan judul, siswa, dan kategori yang sudah terisi otomatis.</p>
+                </label>
             </div>
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/10">

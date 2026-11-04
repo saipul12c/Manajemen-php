@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-// BUG-07 fix: Handle Logout via POST with CSRF validation
+// -07 fix: Handle Logout via POST with CSRF validation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'logout') {
     if (isset($_SESSION['csrf_token']) && isset($_POST['csrf_token']) && hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
         session_unset();
@@ -39,7 +39,9 @@ require_once __DIR__ . "/includes/header.php";
 $class_filter_sql = "";
 $class_params = [];
 if ($user_role === 'siswa') {
-    $std_class = $pdo->query("SELECT class_id FROM users WHERE id = $user_id")->fetchColumn();
+    $stmt_class = $pdo->prepare("SELECT class_id FROM users WHERE id = ?");
+    $stmt_class->execute([$user_id]);
+    $std_class = $stmt_class->fetchColumn();
     if ($std_class) {
         $class_filter_sql = " AND (a.class_id IS NULL OR a.class_id = ?)";
         $class_params[] = (int) $std_class;
@@ -181,13 +183,57 @@ if (in_array($user_role, ['siswa', 'orang_tua'], true)) {
     ");
     $active_assignments = $stmt_active_as->fetchAll();
 
-    $stmt_act_ex = $pdo->query("
-        SELECT e.*, u.name as teacher_name, 
-               (SELECT COUNT(*) FROM exam_questions WHERE exam_id = e.id) as q_count 
-        FROM exams e 
-        JOIN users u ON e.teacher_id = u.id 
-        ORDER BY e.id DESC LIMIT 4
-    ");
+    // Query Asesmen & Ujian Aktif (disesuaikan dengan kelas siswa / orang tua & kecualikan ujian PPDB)
+    if ($user_role === 'siswa') {
+        if (!empty($std_class)) {
+            $stmt_act_ex = $pdo->prepare("
+                SELECT e.*, u.name as teacher_name, 
+                       (SELECT COUNT(*) FROM exam_questions WHERE exam_id = e.id) as q_count 
+                FROM exams e 
+                JOIN users u ON e.teacher_id = u.id 
+                WHERE e.status = 'aktif' 
+                  AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
+                  AND (e.class_id IS NULL OR e.class_id = 0 OR e.class_id = ?)
+                ORDER BY e.id DESC LIMIT 4
+            ");
+            $stmt_act_ex->execute([(int)$std_class]);
+        } else {
+            $stmt_act_ex = $pdo->prepare("
+                SELECT e.*, u.name as teacher_name, 
+                       (SELECT COUNT(*) FROM exam_questions WHERE exam_id = e.id) as q_count 
+                FROM exams e 
+                JOIN users u ON e.teacher_id = u.id 
+                WHERE e.status = 'aktif' 
+                  AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
+                  AND (e.class_id IS NULL OR e.class_id = 0)
+                ORDER BY e.id DESC LIMIT 4
+            ");
+            $stmt_act_ex->execute();
+        }
+    } elseif ($user_role === 'orang_tua' && !empty($p_classes)) {
+        $in_pcl = implode(',', array_fill(0, count($p_classes), '?'));
+        $stmt_act_ex = $pdo->prepare("
+            SELECT e.*, u.name as teacher_name, 
+                   (SELECT COUNT(*) FROM exam_questions WHERE exam_id = e.id) as q_count 
+            FROM exams e 
+            JOIN users u ON e.teacher_id = u.id 
+            WHERE e.status = 'aktif' 
+              AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
+              AND (e.class_id IS NULL OR e.class_id = 0 OR e.class_id IN ($in_pcl))
+            ORDER BY e.id DESC LIMIT 4
+        ");
+        $stmt_act_ex->execute($p_classes);
+    } else {
+        $stmt_act_ex = $pdo->query("
+            SELECT e.*, u.name as teacher_name, 
+                   (SELECT COUNT(*) FROM exam_questions WHERE exam_id = e.id) as q_count 
+            FROM exams e 
+            JOIN users u ON e.teacher_id = u.id 
+            WHERE e.status = 'aktif' 
+              AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
+            ORDER BY e.id DESC LIMIT 4
+        ");
+    }
     $active_exams = $stmt_act_ex->fetchAll();
 
     if ($user_role === 'siswa') {
@@ -218,7 +264,9 @@ if ($user_role === 'siswa') {
         $my_ppdb_reg = $stmt_my_ppdb->fetch();
 
         if (!empty($std_class)) {
-            $student_class_name = $pdo->query("SELECT name FROM classes WHERE id = " . (int)$std_class)->fetchColumn();
+            $stmt_cls_name = $pdo->prepare("SELECT name FROM classes WHERE id = ?");
+            $stmt_cls_name->execute([(int)$std_class]);
+            $student_class_name = $stmt_cls_name->fetchColumn();
         }
     } catch (Exception $e) {}
 }
@@ -233,22 +281,65 @@ $child_due_assignments = [];
 if (in_array($user_role, ['siswa', 'orang_tua'], true)) {
     $att_student_id = $user_id;
     if ($user_role === 'orang_tua') {
+        $parent_children = [];
         try {
-            $stmt_child = $pdo->prepare("
-                SELECT u.id, u.name, u.nisn, u.gender, c.name as class_name 
+            $stmt_all_kids = $pdo->prepare("
+                SELECT u.id, u.name, u.nisn, u.gender, c.name as class_name, 
+                       hr.name as homeroom_name, hr.phone as homeroom_phone
                 FROM parent_students ps
                 JOIN users u ON ps.student_id = u.id
                 LEFT JOIN classes c ON u.class_id = c.id
-                WHERE ps.parent_id = ? LIMIT 1
+                LEFT JOIN users hr ON c.homeroom_teacher_id = hr.id
+                WHERE ps.parent_id = ?
+                ORDER BY u.name ASC
             ");
-            $stmt_child->execute([$user_id]);
-            $linked_child = $stmt_child->fetch();
+            $stmt_all_kids->execute([$user_id]);
+            $parent_children = $stmt_all_kids->fetchAll();
         } catch (Exception $e) {}
 
-        // BUG-12 fix: Jangan fallback ke siswa random — tampilkan pesan bahwa belum ada siswa terhubung
+        $selected_child_id = isset($_GET['child_id']) ? (int)$_GET['child_id'] : 0;
+        if ($selected_child_id > 0) {
+            foreach ($parent_children as $pk) {
+                if ((int)$pk['id'] === $selected_child_id) {
+                    $linked_child = $pk;
+                    break;
+                }
+            }
+        }
+        if (!$linked_child && !empty($parent_children)) {
+            $linked_child = $parent_children[0];
+        }
+
         if ($linked_child) {
             $att_student_id = (int)$linked_child['id'];
         }
+
+        // Statistik Presensi Anak Bulan Berjalan
+        $child_att_stats = ['hadir' => 0, 'sakit' => 0, 'izin' => 0, 'alpa' => 0, 'total' => 0, 'rate' => 100];
+        try {
+            $stmt_ch_att_m = $pdo->prepare("
+                SELECT 
+                    COUNT(CASE WHEN status = 'hadir' THEN 1 END) as hadir,
+                    COUNT(CASE WHEN status = 'sakit' THEN 1 END) as sakit,
+                    COUNT(CASE WHEN status = 'izin' THEN 1 END) as izin,
+                    COUNT(CASE WHEN status = 'alpa' THEN 1 END) as alpa,
+                    COUNT(*) as total
+                FROM student_attendance
+                WHERE student_id = ? AND DATE_FORMAT(date, '%Y-%m') = DATE_FORMAT(CURRENT_DATE(), '%Y-%m')
+            ");
+            $stmt_ch_att_m->execute([$att_student_id]);
+            $ch_m_row = $stmt_ch_att_m->fetch();
+            if ($ch_m_row && (int)$ch_m_row['total'] > 0) {
+                $child_att_stats = [
+                    'hadir' => (int)$ch_m_row['hadir'],
+                    'sakit' => (int)$ch_m_row['sakit'],
+                    'izin'  => (int)$ch_m_row['izin'],
+                    'alpa'  => (int)$ch_m_row['alpa'],
+                    'total' => (int)$ch_m_row['total'],
+                    'rate'  => round(((int)$ch_m_row['hadir'] / (int)$ch_m_row['total']) * 100, 1)
+                ];
+            }
+        } catch (Exception $e) {}
 
         // Cek peringatan anak untuk orang tua
         try {
@@ -282,6 +373,43 @@ if (in_array($user_role, ['siswa', 'orang_tua'], true)) {
             ");
             $stmt_due->execute([$att_student_id]);
             $child_due_assignments = $stmt_due->fetchAll();
+
+            // 4. Data Holistik 360° Anak (Fase 3: Student 360° Radar)
+            $child_today_att = null;
+            $child_total_unpaid = 0.0;
+            $child_unpaid_count = 0;
+            $child_bk_points = 0;
+            $child_active_loans_count = 0;
+
+            // Presensi hari ini
+            $stmt_att_today = $pdo->prepare("SELECT status, notes FROM student_attendance WHERE student_id = ? AND date = CURRENT_DATE() LIMIT 1");
+            $stmt_att_today->execute([$att_student_id]);
+            $child_today_att = $stmt_att_today->fetch();
+
+            // Tagihan belum lunas
+            $stmt_child_bills = $pdo->prepare("
+                SELECT b.amount,
+                       COALESCE((SELECT SUM(amount_paid) FROM bill_payments WHERE bill_id = b.id AND status = 'diterima'), 0) as paid_amount
+                FROM student_bills b
+                WHERE b.student_id = ? AND b.status != 'lunas'
+            ");
+            $stmt_child_bills->execute([$att_student_id]);
+            while ($bl = $stmt_child_bills->fetch()) {
+                $rem = max(0, (float)$bl['amount'] - (float)$bl['paid_amount']);
+                $child_total_unpaid += $rem;
+                $child_unpaid_count++;
+            }
+
+            // Poin Pelanggaran BK
+            $stmt_ch_bk = $pdo->prepare("SELECT COALESCE(SUM(points), 0) FROM counseling_records WHERE student_id = ? AND type = 'pelanggaran'");
+            $stmt_ch_bk->execute([$att_student_id]);
+            $child_bk_points = (int)$stmt_ch_bk->fetchColumn();
+
+            // Pinjaman Buku Perpustakaan Aktif
+            $stmt_ch_lib = $pdo->prepare("SELECT COUNT(*) FROM library_loans WHERE user_id = ? AND status = 'dipinjam'");
+            $stmt_ch_lib->execute([$att_student_id]);
+            $child_active_loans_count = (int)$stmt_ch_lib->fetchColumn();
+
         } catch (Exception $e) {}
     }
 
@@ -412,6 +540,79 @@ try {
     $dash_book_count = (int)$pdo->query("SELECT COUNT(*) FROM `library_books`")->fetchColumn();
     $dash_ppdb_pending = (int)$pdo->query("SELECT COUNT(*) FROM `ppdb_registrations` WHERE `status` = 'menunggu_verifikasi'")->fetchColumn();
 } catch (Exception $e) {}
+
+// Data Sistem Berita Terintegrasi untuk Dashboard
+$dash_pending_news_count = 0;
+$dash_my_news_stats = ['published' => 0, 'pending' => 0, 'rejected' => 0, 'draft' => 0];
+$dash_latest_news = [];
+try {
+    if (in_array($user_role, ['administrator', 'staf'], true)) {
+        $dash_pending_news_count = (int)$pdo->query("SELECT COUNT(*) FROM `news` WHERE `status` = 'pending'")->fetchColumn();
+    }
+    if ($user_role === 'guru') {
+        $stmt_mn = $pdo->prepare("
+            SELECT 
+                COUNT(CASE WHEN status = 'published' THEN 1 END) as pub,
+                COUNT(CASE WHEN status = 'pending' THEN 1 END) as pnd,
+                COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rej,
+                COUNT(CASE WHEN status = 'draft' THEN 1 END) as drf
+            FROM news WHERE author_id = ?
+        ");
+        $stmt_mn->execute([$user_id]);
+        $mn_row = $stmt_mn->fetch();
+        if ($mn_row) {
+            $dash_my_news_stats = [
+                'published' => (int)$mn_row['pub'],
+                'pending'   => (int)$mn_row['pnd'],
+                'rejected'  => (int)$mn_row['rej'],
+                'draft'     => (int)$mn_row['drf']
+            ];
+        }
+    }
+    $dash_latest_news = $pdo->query("
+        SELECT n.id, n.title, n.slug, n.category, n.thumbnail, n.created_at, n.views, u.name as author_name, u.role as author_role
+        FROM news n
+        JOIN users u ON n.author_id = u.id
+        WHERE n.status = 'published'
+        ORDER BY n.published_at DESC LIMIT 4
+    ")->fetchAll();
+} catch (Exception $e) {}
+
+// Data Guru Tambahan untuk Beranda
+$teacher_att_today = null;
+$teacher_journals_today = 0;
+$teacher_pending_submissions = 0;
+if ($user_role === 'guru') {
+    try {
+        $stmt_ta_now = $pdo->prepare("SELECT * FROM teacher_attendance WHERE teacher_id = ? AND date = CURRENT_DATE() LIMIT 1");
+        $stmt_ta_now->execute([$user_id]);
+        $teacher_att_today = $stmt_ta_now->fetch();
+
+        $stmt_tj_now = $pdo->prepare("SELECT COUNT(*) FROM teaching_journals WHERE teacher_id = ? AND date = CURRENT_DATE()");
+        $stmt_tj_now->execute([$user_id]);
+        $teacher_journals_today = (int)$stmt_tj_now->fetchColumn();
+
+        $stmt_t_sub = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM assignment_submissions sub
+            JOIN assignments a ON sub.assignment_id = a.id
+            WHERE a.teacher_id = ? AND sub.status = 'submitted'
+        ");
+        $stmt_t_sub->execute([$user_id]);
+        $teacher_pending_submissions = (int)$stmt_t_sub->fetchColumn();
+    } catch (Exception $e) {}
+}
+
+// Deteksi Integrasi API Cuaca Eksternal Aktif (Fase API Luar)
+$dash_weather_active = false;
+$dash_weather_url = '';
+try {
+    $stmt_w = $pdo->query("SELECT endpoint_url FROM external_apis WHERE api_code = 'weather_api' AND is_active = 1 LIMIT 1");
+    $dash_weather_url = $stmt_w ? $stmt_w->fetchColumn() : '';
+    if (!empty($dash_weather_url)) {
+        $dash_weather_active = true;
+    }
+} catch (Exception $e) {}
 ?>
 
 <?php if (isset($_GET['error']) && $_GET['error'] === 'unauthorized'): ?>
@@ -428,9 +629,17 @@ try {
 <div class="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-r from-blue-900/30 via-slate-900/70 to-slate-900/40 p-6 sm:p-8 backdrop-blur shadow-2xl mb-8">
     <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
-            <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider mb-3 <?= getRoleBadge($user_role) ?>">
-                <i class="<?= getRoleIcon($user_role) ?> text-[10px]"></i>
-                <span>Peran: <?= htmlspecialchars(getRoleLabel($user_role)) ?></span>
+            <div class="flex items-center gap-2 flex-wrap mb-3">
+                <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider <?= getRoleBadge($user_role) ?>">
+                    <i class="<?= getRoleIcon($user_role) ?> text-[10px]"></i>
+                    <span>Peran: <?= htmlspecialchars(getRoleLabel($user_role)) ?></span>
+                </div>
+                <?php if ($dash_weather_active): ?>
+                    <div id="school-weather-badge" class="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300 shadow-sm" title="Prakiraan Cuaca Real-time Sekolah via External API">
+                        <i class="fa-solid fa-cloud-sun text-cyan-400" id="weather-icon"></i>
+                        <span id="school-weather-text">Cuaca: Memuat...</span>
+                    </div>
+                <?php endif; ?>
             </div>
             <h1 class="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
                 Selamat Datang, <?= htmlspecialchars($user_name) ?> 👋
@@ -442,25 +651,36 @@ try {
 
         <div class="flex flex-wrap items-center gap-2.5">
             <?php if ($user_role === 'administrator'): ?>
+                <a href="admin/external_apis.php" class="rounded-xl border border-cyan-500/30 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> Kelola API Luar
+                </a>
                 <a href="admin/users.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
                     <i class="fa-solid fa-users"></i> Kelola Pengguna
                 </a>
                 <a href="admin/classes.php" class="rounded-xl border border-indigo-500/30 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
                     <i class="fa-solid fa-school"></i> Rombel & Kelas
                 </a>
+                <a href="informasi/news.php" class="rounded-xl border border-sky-500/30 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-newspaper"></i> Berita Sekolah
+                </a>
                 <a href="informasi/announcements.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
-                    <i class="fa-solid fa-bullhorn text-slate-300"></i> Buat Pengumuman
+                    <i class="fa-solid fa-bullhorn text-slate-300"></i> Pengumuman
                 </a>
             <?php elseif ($user_role === 'guru'): ?>
-                <a href="akademik/assignments.php" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
-                    <i class="fa-solid fa-plus"></i> Buat Tugas
+                <a href="presensi/teacher_attendance.php" class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-user-clock"></i> Presensi Mandiri
                 </a>
-                <a href="akademik/gradebook.php" class="rounded-xl border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
-                    <i class="fa-solid fa-book-open"></i> Buku Nilai
+                <a href="akademik/journal.php" class="rounded-xl border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-book-bookmark"></i> Jurnal KBM
                 </a>
-                <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
-                    <i class="fa-solid fa-clipboard-user"></i> Presensi Kelas
+                <a href="akademik/assignments.php" class="rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
+                    <i class="fa-solid fa-list-check"></i> Tugas Siswa
                 </a>
+                <?php if (!empty($is_homeroom_teacher)): ?>
+                    <a href="akademik/homeroom.php" class="rounded-xl border border-purple-500/30 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 px-4 py-2.5 text-xs font-semibold transition flex items-center gap-2">
+                        <i class="fa-solid fa-chalkboard-user"></i> Wali Kelas
+                    </a>
+                <?php endif; ?>
             <?php elseif ($user_role === 'siswa'): ?>
                 <a href="akademik/timetable.php" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition flex items-center gap-2">
                     <i class="fa-solid fa-calendar-days"></i> Jadwal Pelajaran
@@ -479,6 +699,9 @@ try {
                     <i class="fa-solid fa-file-lines"></i> Izin / Sakit
                 </a>
             <?php elseif ($user_role === 'staf'): ?>
+                <a href="informasi/news.php" class="rounded-xl bg-sky-600 hover:bg-sky-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-sky-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-newspaper"></i> Kelola Berita
+                </a>
                 <a href="surat/requests.php" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
                     <i class="fa-solid fa-inbox"></i> Surat Masuk
                 </a>
@@ -489,6 +712,363 @@ try {
         </div>
     </div>
 </div>
+
+<!-- ============================================================== -->
+<!-- BANNER PERSETUJUAN BERITA GURU (Khusus Admin / Staf / Guru) -->
+<!-- ============================================================== -->
+<?php if (in_array($user_role, ['administrator', 'staf'], true) && $dash_pending_news_count > 0): ?>
+    <div class="mb-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-900/20 border border-amber-500/40 shadow-lg shadow-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-start gap-3.5">
+            <div class="h-10 w-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 text-lg animate-pulse">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+            </div>
+            <div>
+                <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                    Moderasi Berita Guru Menunggu Persetujuan
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-400 text-slate-950"><?= $dash_pending_news_count ?> Berita</span>
+                </h4>
+                <p class="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                    Terdapat tulisan berita dari dewan guru yang menunggu peninjauan dan persetujuan dari Staf atau Administrator sebelum tayang ke publik.
+                </p>
+            </div>
+        </div>
+        <a href="informasi/news.php?status=pending" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition whitespace-nowrap flex items-center gap-1.5 self-start sm:self-auto">
+            <span>Periksa & Setujui</span>
+            <i class="fa-solid fa-arrow-right text-[11px]"></i>
+        </a>
+    </div>
+<?php elseif ($user_role === 'guru' && ($dash_my_news_stats['pending'] > 0 || $dash_my_news_stats['rejected'] > 0)): ?>
+    <div class="mb-6 p-4 rounded-2xl bg-slate-900 border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400 text-sm">
+                <i class="fa-solid fa-feather-pointed"></i>
+            </span>
+            <div class="text-xs">
+                <p class="font-bold text-white">Status Publikasi Tulisan Berita Anda:</p>
+                <p class="text-slate-300">
+                    <span class="text-emerald-400 font-semibold"><?= $dash_my_news_stats['published'] ?> Terbit</span> • 
+                    <span class="text-amber-400 font-semibold"><?= $dash_my_news_stats['pending'] ?> Menunggu Persetujuan</span> • 
+                    <?php if ($dash_my_news_stats['rejected'] > 0): ?>
+                        <span class="text-rose-400 font-semibold"><?= $dash_my_news_stats['rejected'] ?> Perlu Revisi</span>
+                    <?php else: ?>
+                        <span class="text-slate-400"><?= $dash_my_news_stats['draft'] ?> Draf</span>
+                    <?php endif; ?>
+                </p>
+            </div>
+        </div>
+        <a href="informasi/news.php?scope=my" class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition whitespace-nowrap self-start sm:self-auto">
+            Kelola Berita Saya →
+        </a>
+    </div>
+<?php endif; ?>
+
+<!-- ============================================================== -->
+<!-- WIDGET KHUSUS GURU: AKTIVITAS & MONITORING HARIAN -->
+<!-- ============================================================== -->
+<?php if ($user_role === 'guru'): ?>
+    <div class="mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Card 1: Status Presensi Hari Ini -->
+        <div class="p-4 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur flex items-center justify-between shadow-lg">
+            <div class="flex items-center gap-3">
+                <span class="flex h-11 w-11 items-center justify-center rounded-xl <?= $teacher_att_today ? ($teacher_att_today['status'] === 'hadir' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400') : 'bg-rose-500/20 text-rose-400' ?>">
+                    <i class="fa-solid <?= $teacher_att_today ? 'fa-user-check' : 'fa-user-clock' ?> text-lg"></i>
+                </span>
+                <div>
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Presensi Mandiri</p>
+                    <p class="text-sm font-bold text-white mt-0.5">
+                        <?php if ($teacher_att_today): ?>
+                            <span class="capitalize text-emerald-400"><?= htmlspecialchars($teacher_att_today['status']) ?></span>
+                            <span class="text-xs text-slate-400">(<?= substr($teacher_att_today['check_in_time'] ?? '', 0, 5) ?>)</span>
+                        <?php else: ?>
+                            <span class="text-rose-400">Belum Clock-In</span>
+                        <?php endif; ?>
+                    </p>
+                </div>
+            </div>
+            <a href="presensi/teacher_attendance.php" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition" title="Buka Presensi">
+                <i class="fa-solid fa-arrow-right text-xs"></i>
+            </a>
+        </div>
+
+        <!-- Card 2: Jurnal Mengajar Hari Ini -->
+        <div class="p-4 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur flex items-center justify-between shadow-lg">
+            <div class="flex items-center gap-3">
+                <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
+                    <i class="fa-solid fa-book-bookmark text-lg"></i>
+                </span>
+                <div>
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Jurnal KBM Hari Ini</p>
+                    <p class="text-sm font-bold text-white mt-0.5"><?= $teacher_journals_today ?> Catatan Terisi</p>
+                </div>
+            </div>
+            <a href="akademik/journal.php" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition" title="Tulis Jurnal">
+                <i class="fa-solid fa-plus text-xs"></i>
+            </a>
+        </div>
+
+        <!-- Card 3: Tugas Siswa Perlu Dinilai -->
+        <div class="p-4 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur flex items-center justify-between shadow-lg">
+            <div class="flex items-center gap-3">
+                <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400">
+                    <i class="fa-solid fa-list-check text-lg"></i>
+                </span>
+                <div>
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Tugas Menunggu Nilai</p>
+                    <p class="text-sm font-bold text-white mt-0.5"><?= $teacher_pending_submissions ?> Submission</p>
+                </div>
+            </div>
+            <a href="akademik/assignments.php" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition" title="Periksa Tugas">
+                <i class="fa-solid fa-arrow-right text-xs"></i>
+            </a>
+        </div>
+
+        <!-- Card 4: Wali Kelas / Perangkat Ajar -->
+        <div class="p-4 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur flex items-center justify-between shadow-lg">
+            <div class="flex items-center gap-3">
+                <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/20 text-violet-400">
+                    <i class="fa-solid <?= !empty($is_homeroom_teacher) ? 'fa-chalkboard-user' : 'fa-folder-tree' ?> text-lg"></i>
+                </span>
+                <div>
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider"><?= !empty($is_homeroom_teacher) ? 'Wali Kelas' : 'Perangkat Ajar' ?></p>
+                    <p class="text-sm font-bold text-white mt-0.5 truncate max-w-[120px]"><?= !empty($is_homeroom_teacher) ? htmlspecialchars($homeroom_class_info['name']) : 'RPP & Modul' ?></p>
+                </div>
+            </div>
+            <a href="<?= !empty($is_homeroom_teacher) ? 'akademik/homeroom.php' : 'akademik/curriculum.php' ?>" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition" title="Buka Modul">
+                <i class="fa-solid fa-arrow-right text-xs"></i>
+            </a>
+        </div>
+    </div>
+<?php endif; ?>
+
+<!-- ============================================================== -->
+<!-- WIDGET KHUSUS ORANG TUA: RADAR 360° MONITORING ANAK -->
+<!-- ============================================================== -->
+<?php if ($user_role === 'orang_tua'): ?>
+    <div class="mb-8 space-y-4">
+        
+        <!-- Header & Multi-Child Switcher -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-purple-950/40 via-slate-900 to-indigo-950/30 p-4 sm:p-5 rounded-3xl border border-purple-500/30 shadow-xl backdrop-blur">
+            <div class="flex items-center gap-3.5">
+                <div class="h-12 w-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white text-xl shadow-lg shadow-purple-600/30 shrink-0">
+                    <i class="fa-solid fa-child-reaching"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            Radar 360° Perkembangan Anak
+                        </span>
+                        <?php if ($child_alpa_today): ?>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse">
+                                ⚠️ Alpa Hari Ini
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                    <h3 class="text-base sm:text-lg font-bold text-white mt-1">
+                        <?= $linked_child ? htmlspecialchars($linked_child['name']) : 'Belum Ada Siswa Terhubung' ?>
+                    </h3>
+                    <p class="text-xs text-slate-300">
+                        <?php if ($linked_child): ?>
+                            NISN: <span class="font-mono text-purple-300"><?= htmlspecialchars($linked_child['nisn'] ?: '-') ?></span> • 
+                            Rombel: <span class="text-white font-medium"><?= htmlspecialchars($linked_child['class_name'] ?: 'Umum') ?></span>
+                            <?php if (!empty($linked_child['homeroom_name'])): ?>
+                                • Wali Kelas: <span class="text-slate-200"><?= htmlspecialchars($linked_child['homeroom_name']) ?></span>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            Silakan hubungi staf Tata Usaha untuk menautkan akun dengan data siswa.
+                        <?php endif; ?>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Multi-Child Pills / Action -->
+            <div class="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                <?php if (count($parent_children) > 1): ?>
+                    <div class="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-950/60 border border-white/10 text-xs">
+                        <span class="text-[11px] text-slate-400 pl-2 font-medium">Pilih Anak:</span>
+                        <?php foreach ($parent_children as $ch): ?>
+                            <a href="index.php?child_id=<?= $ch['id'] ?>" 
+                               class="px-3 py-1 rounded-xl text-xs font-semibold transition <?= ((int)$ch['id'] === $att_student_id) ? 'bg-purple-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-white/5' ?>">
+                                <?= htmlspecialchars(explode(' ', $ch['name'])[0]) ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($linked_child && !empty($linked_child['homeroom_phone'])): ?>
+                    <?php 
+                    $clean_wa = preg_replace('/[^0-9]/', '', $linked_child['homeroom_phone']);
+                    if (str_starts_with($clean_wa, '0')) { $clean_wa = '62' . substr($clean_wa, 1); }
+                    ?>
+                    <a href="https://wa.me/<?= $clean_wa ?>?text=Halo%20Bapak%2FIbu%20Wali%20Kelas%2C%20saya%20orang%20tua%20dari%20<?= urlencode($linked_child['name']) ?>" 
+                       target="_blank" 
+                       class="px-3.5 py-2 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/20 transition flex items-center gap-1.5"
+                       title="Hubungi Wali Kelas via WhatsApp">
+                        <i class="fa-brands fa-whatsapp text-sm"></i>
+                        <span>Wali Kelas</span>
+                    </a>
+                <?php endif; ?>
+
+                <?php if ($linked_child): ?>
+                    <a href="akademik/report_card.php?student_id=<?= $linked_child['id'] ?>" 
+                       class="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-600/20 transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-chart-line text-xs"></i>
+                        <span>Buka Rapor</span>
+                    </a>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <?php if ($linked_child): ?>
+            <!-- 4 Grid Radar Metrik -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                
+                <!-- 1. Presensi Hari Ini & Rekap Bulanan -->
+                <div class="p-4 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur flex flex-col justify-between shadow-lg">
+                    <div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Presensi Hari Ini</span>
+                            <span class="flex h-8 w-8 items-center justify-center rounded-xl <?= $child_today_att ? ($child_today_att['status'] === 'hadir' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400') : 'bg-slate-800 text-slate-400' ?>">
+                                <i class="fa-solid fa-clipboard-user text-sm"></i>
+                            </span>
+                        </div>
+                        <p class="text-sm font-bold text-white mt-2">
+                            <?php if ($child_today_att): ?>
+                                <span class="capitalize <?= $child_today_att['status'] === 'hadir' ? 'text-emerald-400' : ($child_today_att['status'] === 'alpa' ? 'text-rose-400' : 'text-amber-400') ?>">
+                                    <?= htmlspecialchars($child_today_att['status']) ?>
+                                </span>
+                            <?php else: ?>
+                                <span class="text-slate-400">Belum Tercatat</span>
+                            <?php endif; ?>
+                        </p>
+                        <div class="mt-3">
+                            <div class="flex justify-between text-[11px] mb-1">
+                                <span class="text-slate-400">Kehadiran Bulan Ini</span>
+                                <strong class="text-emerald-400 font-mono"><?= $child_att_stats['rate'] ?>%</strong>
+                            </div>
+                            <div class="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                <div class="h-full bg-emerald-500 rounded-full" style="width: <?= min(100, $child_att_stats['rate']) ?>%"></div>
+                            </div>
+                            <p class="text-[10px] text-slate-400 mt-1">
+                                H: <?= $child_att_stats['hadir'] ?> &bull; S: <?= $child_att_stats['sakit'] ?> &bull; I: <?= $child_att_stats['izin'] ?> &bull; A: <span class="<?= $child_att_stats['alpa'] > 0 ? 'text-rose-400 font-bold' : '' ?>"><?= $child_att_stats['alpa'] ?></span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="pt-3 border-t border-white/5 mt-3">
+                        <a href="surat/requests.php" class="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+                            <span>Ajukan Izin / Sakit Online</span>
+                            <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 2. Tugas & Deadline Mendatang -->
+                <div class="p-4 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur flex flex-col justify-between shadow-lg">
+                    <div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pekerjaan Rumah (PR)</span>
+                            <span class="flex h-8 w-8 items-center justify-center rounded-xl <?= !empty($child_due_assignments) ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400' ?>">
+                                <i class="fa-solid fa-list-check text-sm"></i>
+                            </span>
+                        </div>
+                        <p class="text-sm font-bold text-white mt-2">
+                            <?= count($child_due_assignments) > 0 ? count($child_due_assignments) . ' Tugas Mendekati Batas' : 'Semua Tugas Selesai' ?>
+                        </p>
+                        <div class="mt-2 space-y-1.5">
+                            <?php if (!empty($child_due_assignments)): ?>
+                                <?php foreach (array_slice($child_due_assignments, 0, 2) as $da): ?>
+                                    <div class="p-1.5 rounded-lg bg-white/5 text-[11px] flex justify-between items-center">
+                                        <span class="truncate text-slate-300 max-w-[130px]"><?= htmlspecialchars($da['title']) ?></span>
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-300">
+                                            <?= $da['days_left'] == 0 ? 'Hari ini' : ($da['days_left'] . ' hr lagi') ?>
+                                        </span>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <p class="text-xs text-slate-400 leading-relaxed">
+                                    Tidak ada tugas mendekati batas waktu dalam 2 hari ke depan.
+                                </p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="pt-3 border-t border-white/5 mt-3">
+                        <a href="akademik/assignments.php" class="text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                            <span>Pantau Penugasan</span>
+                            <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 3. Asesmen CBT & Nilai Ujian -->
+                <div class="p-4 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur flex flex-col justify-between shadow-lg">
+                    <div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Asesmen & CBT</span>
+                            <span class="flex h-8 w-8 items-center justify-center rounded-xl <?= !empty($child_remedial_exams) ? 'bg-rose-500/20 text-rose-400' : 'bg-purple-500/20 text-purple-400' ?>">
+                                <i class="fa-solid fa-file-pen text-sm"></i>
+                            </span>
+                        </div>
+                        <p class="text-sm font-bold text-white mt-2">
+                            <?= !empty($child_remedial_exams) ? count($child_remedial_exams) . ' Ujian Butuh Remedial' : 'Pencapaian Ujian Baik' ?>
+                        </p>
+                        <div class="mt-2 space-y-1.5">
+                            <?php if (!empty($child_remedial_exams)): ?>
+                                <?php foreach ($child_remedial_exams as $re): ?>
+                                    <div class="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[11px] flex justify-between items-center">
+                                        <span class="truncate text-slate-200 max-w-[120px]"><?= htmlspecialchars($re['subject']) ?></span>
+                                        <span class="font-mono text-rose-300 font-bold text-[10px]">
+                                            Skor: <?= number_format((float)$re['score'], 0) ?> (KKM <?= $re['passing_grade'] ?>)
+                                        </span>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <p class="text-xs text-slate-400 leading-relaxed">
+                                    Hasil ujian siswa telah memenuhi Kriteria Ketercapaian Tujuan Pembelajaran (KKTP).
+                                </p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="pt-3 border-t border-white/5 mt-3">
+                        <a href="Modul-ujian/exams.php" class="text-xs font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1">
+                            <span>Lihat Jadwal Ujian</span>
+                            <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 4. Keuangan & Tagihan SPP -->
+                <div class="p-4 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur flex flex-col justify-between shadow-lg">
+                    <div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tagihan Keuangan</span>
+                            <span class="flex h-8 w-8 items-center justify-center rounded-xl <?= $child_unpaid_count > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400' ?>">
+                                <i class="fa-solid fa-wallet text-sm"></i>
+                            </span>
+                        </div>
+                        <p class="text-sm font-bold mt-2 font-mono <?= $child_unpaid_count > 0 ? 'text-amber-400' : 'text-emerald-400' ?>">
+                            <?= $child_unpaid_count > 0 ? formatRupiah($child_total_unpaid) : 'Semua Lunas ✓' ?>
+                        </p>
+                        <p class="text-xs text-slate-400 mt-1">
+                            <?= $child_unpaid_count > 0 ? $child_unpaid_count . ' tagihan menunggu pembayaran' : 'Tidak ada tagihan tertunggak' ?>
+                        </p>
+                        <div class="mt-3 flex items-center gap-2 text-[11px] text-slate-300">
+                            <span><i class="fa-solid fa-book-bookmark text-teal-400 mr-1"></i> Perpus: <strong><?= $child_active_loans_count ?> Pinjam</strong></span>
+                            <span>&bull;</span>
+                            <span><i class="fa-solid fa-shield-halved text-blue-400 mr-1"></i> BK: <strong class="<?= $child_bk_points > 0 ? 'text-amber-400' : 'text-emerald-400' ?>"><?= $child_bk_points ?> Poin</strong></span>
+                        </div>
+                    </div>
+                    <div class="pt-3 border-t border-white/5 mt-3">
+                        <a href="keuangan/payments.php" class="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1">
+                            <span>Bayar Online / QRIS</span>
+                            <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        </a>
+                    </div>
+                </div>
+
+            </div>
+        <?php endif; ?>
+
+    </div>
+<?php endif; ?>
 
 <!-- Section Title: Modul Akses Cepat -->
 <div class="flex items-center justify-between mb-4">
@@ -607,6 +1187,76 @@ try {
         </span>
     </a>
 </div>
+
+<!-- ============================================================== -->
+<!-- WIDGET: KABAR & BERITA TERKINI SEKOLAH -->
+<!-- ============================================================== -->
+<?php if (!empty($dash_latest_news)): ?>
+<div class="mb-8">
+    <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+            <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-sky-500/10 text-sky-400 text-xs">
+                <i class="fa-solid fa-newspaper"></i>
+            </span>
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Kabar & Berita Sekolah Terkini</h3>
+        </div>
+        <div class="flex items-center gap-3">
+            <?php if (in_array($user_role, ['administrator', 'staf', 'guru'], true)): ?>
+                <a href="informasi/news.php" class="text-xs font-semibold text-blue-400 hover:text-blue-300 transition flex items-center gap-1">
+                    <span>Kelola Berita</span>
+                    <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                </a>
+            <?php endif; ?>
+            <a href="../berita.php" class="text-xs font-semibold text-slate-400 hover:text-white transition">
+                Portal Publik →
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <?php foreach ($dash_latest_news as $ln): ?>
+            <?php 
+                $ln_cat = NEWS_CATEGORIES[$ln['category']] ?? ['label' => ucfirst($ln['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
+                $ln_thumb = !empty($ln['thumbnail']) ? '../uploads/news/' . htmlspecialchars($ln['thumbnail']) : null;
+            ?>
+            <a href="../berita.php?id=<?= $ln['id'] ?>" class="group rounded-2xl border border-white/10 bg-slate-900/70 overflow-hidden hover:border-sky-500/40 hover:bg-slate-900/95 transition duration-300 flex flex-col justify-between shadow-lg">
+                <div>
+                    <div class="h-28 w-full bg-slate-950 relative overflow-hidden">
+                        <?php if ($ln_thumb): ?>
+                            <img src="<?= $ln_thumb ?>" alt="<?= htmlspecialchars($ln['title']) ?>" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        <?php else: ?>
+                            <div class="w-full h-full bg-gradient-to-tr from-slate-950 to-indigo-950/60 flex items-center justify-center text-slate-700">
+                                <i class="fa-solid fa-newspaper text-3xl"></i>
+                            </div>
+                        <?php endif; ?>
+                        <div class="absolute top-2 left-2">
+                            <span class="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider backdrop-blur-md border <?= $ln_cat['badge'] ?>">
+                                <?= htmlspecialchars($ln_cat['label']) ?>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="p-3.5 space-y-1.5">
+                        <h4 class="text-xs sm:text-sm font-bold text-white line-clamp-2 group-hover:text-sky-400 transition leading-snug">
+                            <?= htmlspecialchars($ln['title']) ?>
+                        </h4>
+                        <p class="text-[10px] text-slate-400">
+                            Oleh: <strong class="text-slate-300"><?= htmlspecialchars($ln['author_name']) ?></strong> (<?= htmlspecialchars(getRoleLabel($ln['author_role'])) ?>)
+                        </p>
+                    </div>
+                </div>
+
+                <div class="p-3.5 pt-0 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-400 mt-2">
+                    <span><?= date('d M Y', strtotime($ln['created_at'])) ?></span>
+                    <span class="text-sky-400 font-semibold group-hover:underline flex items-center gap-1">
+                        Baca <i class="fa-solid fa-chevron-right text-[8px]"></i>
+                    </span>
+                </div>
+            </a>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Modal Pop-up Pengumuman Darurat Otomatis Saat Login (Fase 2) -->
 <?php if (!empty($unread_emergency_announcement)): ?>
@@ -858,7 +1508,7 @@ try {
                                 <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($req['request_type']) ?></h4>
                                 <p class="text-xs text-slate-400">Pemohon: <strong class="text-slate-300"><?= htmlspecialchars($req['applicant_name']) ?></strong> (<?= htmlspecialchars(getRoleLabel($req['applicant_role'])) ?>)</p>
                             </div>
-                            <!-- BUG-08 fix: Form POST dengan CSRF untuk quick update status surat -->
+                            <!-- -08 fix: Form POST dengan CSRF untuk quick update status surat -->
                             <div class="flex items-center gap-2">
                                 <form method="POST" action="surat/requests.php" class="inline">
                                     <?= csrfField() ?>
@@ -1083,6 +1733,125 @@ try {
                 <a href="presensi/attendance.php" class="rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 px-4 py-2.5 text-xs font-bold transition flex items-center gap-2">
                     <i class="fa-solid fa-calendar-check"></i> Riwayat Presensi
                 </a>
+            </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- WIDGET INTEGRASI FASE 3: STUDENT 360° EXECUTIVE RADAR -->
+        <!-- ========================================================= -->
+        <div class="mb-6 rounded-3xl border border-white/10 bg-slate-900/60 p-5 sm:p-6 backdrop-blur-xl shadow-xl">
+            <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
+                <div class="flex items-center gap-2.5">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400 text-sm font-bold border border-indigo-500/30">
+                        <i class="fa-solid fa-compass"></i>
+                    </span>
+                    <div>
+                        <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                            Student 360° Executive Radar
+                            <span class="rounded-full bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-[10px] text-indigo-300 font-bold uppercase tracking-wider">Pemantauan Terpadu</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">Ringkasan indikator kunci aktivitas ananda hari ini dalam satu tampilan.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- 1. Presensi Hari Ini -->
+                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                            <span class="font-semibold flex items-center gap-1.5"><i class="fa-solid fa-clock text-blue-400"></i> Presensi Hari Ini</span>
+                            <span class="font-mono text-[10px]"><?= date('d M') ?></span>
+                        </div>
+                        <?php if ($child_today_att): 
+                            $c_st = $child_today_att['status'];
+                            $badge_color = ($c_st === 'hadir') ? 'text-emerald-400' : (($c_st === 'alpa') ? 'text-rose-400' : 'text-amber-400');
+                        ?>
+                            <p class="text-base font-extrabold <?= $badge_color ?> uppercase mt-1">
+                                <?= $c_st === 'hadir' ? 'Hadir di Sekolah' : strtoupper($c_st) ?>
+                            </p>
+                            <p class="text-[11px] text-slate-400 mt-0.5 italic"><?= htmlspecialchars($child_today_att['notes'] ?: 'Tercatat pada sistem presensi') ?></p>
+                        <?php else: ?>
+                            <p class="text-base font-extrabold text-slate-400 mt-1">Belum Terdata</p>
+                            <p class="text-[11px] text-slate-500 mt-0.5">Menunggu input wali kelas / scan QR</p>
+                        <?php endif; ?>
+                    </div>
+                    <div class="mt-3 pt-2 border-t border-white/5">
+                        <a href="presensi/attendance.php" class="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center justify-between">
+                            <span>Rekap: <?= $my_attendance_stats['rate'] ?>% Hadir</span>
+                            <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 2. Tagihan SPP & Keuangan -->
+                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                            <span class="font-semibold flex items-center gap-1.5"><i class="fa-solid fa-wallet text-emerald-400"></i> Keuangan (SPP)</span>
+                            <i class="fa-solid <?= $child_total_unpaid == 0 ? 'fa-circle-check text-emerald-400' : 'fa-circle-exclamation text-amber-400' ?>"></i>
+                        </div>
+                        <?php if ($child_total_unpaid == 0): ?>
+                            <p class="text-base font-extrabold text-emerald-400 mt-1">Lunas (Nihil)</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Tidak ada tunggakan iuran</p>
+                        <?php else: ?>
+                            <p class="text-base font-extrabold text-rose-400 mt-1 font-mono">Rp <?= number_format($child_total_unpaid, 0, ',', '.') ?></p>
+                            <p class="text-[11px] text-amber-300/80 mt-0.5"><?= $child_unpaid_count ?> tagihan belum lunas</p>
+                        <?php endif; ?>
+                    </div>
+                    <div class="mt-3 pt-2 border-t border-white/5">
+                        <a href="keuangan/payments.php" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold flex items-center justify-between">
+                            <span><?= $child_total_unpaid > 0 ? 'Bayar Online Sekarang' : 'Riwayat Pembayaran' ?></span>
+                            <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 3. Rekam Karakter & BK -->
+                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                            <span class="font-semibold flex items-center gap-1.5"><i class="fa-solid fa-handshake-angle text-purple-400"></i> Kedisiplinan BK</span>
+                            <span class="font-mono text-[10px]"><?= $child_bk_points ?> Poin</span>
+                        </div>
+                        <?php if ($child_bk_points == 0): ?>
+                            <p class="text-base font-extrabold text-purple-300 mt-1">Sangat Baik</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">0 Catatan Pelanggaran</p>
+                        <?php else: ?>
+                            <p class="text-base font-extrabold text-amber-400 mt-1"><?= $child_bk_points ?> Poin Sanksi</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Perlu perhatian pembinaan</p>
+                        <?php endif; ?>
+                    </div>
+                    <div class="mt-3 pt-2 border-t border-white/5">
+                        <a href="bk/counseling.php" class="text-[11px] text-purple-400 hover:text-purple-300 font-semibold flex items-center justify-between">
+                            <span>Lihat Catatan BK</span>
+                            <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 4. Peminjaman Perpustakaan -->
+                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                            <span class="font-semibold flex items-center gap-1.5"><i class="fa-solid fa-book text-cyan-400"></i> Perpustakaan</span>
+                            <span class="font-mono text-[10px]"><?= $child_active_loans_count ?> Buku</span>
+                        </div>
+                        <?php if ($child_active_loans_count == 0): ?>
+                            <p class="text-base font-extrabold text-cyan-300 mt-1">Bebas Pustaka</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Tidak ada buku dipinjam</p>
+                        <?php else: ?>
+                            <p class="text-base font-extrabold text-cyan-300 mt-1"><?= $child_active_loans_count ?> Buku Dipinjam</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Periksa tanggal jatuh tempo</p>
+                        <?php endif; ?>
+                    </div>
+                    <div class="mt-3 pt-2 border-t border-white/5">
+                        <a href="perpustakaan/loans.php" class="text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold flex items-center justify-between">
+                            <span>Katalog & Sirkulasi</span>
+                            <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
     <?php else: ?>
@@ -1688,6 +2457,51 @@ try {
         </div>
     </div>
 
+<?php endif; ?>
+
+<?php if ($dash_weather_active): ?>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const weatherUrl = <?= json_encode($dash_weather_url) ?>;
+    const txtEl = document.getElementById('school-weather-text');
+    const icoEl = document.getElementById('weather-icon');
+    if (!weatherUrl || !txtEl) return;
+
+    fetch(weatherUrl)
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.current_weather) {
+                const temp = Math.round(data.current_weather.temperature);
+                const wind = Math.round(data.current_weather.windspeed);
+                const code = data.current_weather.weathercode;
+                let desc = 'Cerah';
+                let iconClass = 'fa-solid fa-sun text-amber-400';
+
+                if (code >= 1 && code <= 3) {
+                    desc = 'Cerah Berawan';
+                    iconClass = 'fa-solid fa-cloud-sun text-cyan-300';
+                } else if (code >= 45 && code <= 48) {
+                    desc = 'Berkabut';
+                    iconClass = 'fa-solid fa-smog text-slate-400';
+                } else if (code >= 51 && code <= 67) {
+                    desc = 'Hujan Ringan';
+                    iconClass = 'fa-solid fa-cloud-rain text-blue-400';
+                } else if (code >= 80) {
+                    desc = 'Hujan Deras';
+                    iconClass = 'fa-solid fa-cloud-showers-heavy text-blue-500';
+                }
+
+                txtEl.innerText = `${desc} ${temp}°C (Angin ${wind} km/j)`;
+                if (icoEl) icoEl.className = iconClass;
+            } else {
+                txtEl.innerText = 'Cuaca Sekolah Terhubung';
+            }
+        })
+        .catch(() => {
+            txtEl.innerText = 'Info Cuaca Aktif';
+        });
+});
+</script>
 <?php endif; ?>
 
 <?php require_once __DIR__ . "/includes/footer.php"; ?>

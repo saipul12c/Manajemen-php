@@ -421,20 +421,27 @@ $school_att_rate = $tot_records > 0 ? round(($tot_hadir / $tot_records) * 100, 1
             </ul>
         </div>
 
-        <!-- Tanda Tangan -->
-        <div class="signature-section">
-            <div class="sig-block">
-                <p>Mengetahui,<br>Petugas Tata Usaha / Wali Kelas,</p>
-                <div class="sig-space"></div>
-                <p><strong><?= htmlspecialchars($_SESSION['user_name'] ?? 'Budi Santoso, S.Kom') ?></strong></p>
-                <p style="font-size: 8.5pt; color: #444;">NIP/NUPTK: 19850412 201001 1 005</p>
+        <!-- Tanda Tangan Resmi & TTE -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 30px; page-break-inside: avoid;">
+            <div>
+                <p style="font-size: 9.5pt; color: #475569; margin-bottom: 4px; text-align: center;">Mengetahui / Memeriksa,</p>
+                <?= renderOfficialSignatureHtml($pdo, 'tu_head', [
+                    'doc_type' => 'REKAP_PRESENSI',
+                    'doc_num' => "LAP-ABS/{$filter_year}" . ($filter_month ? "/{$filter_month}" : ""),
+                    'doc_title' => 'Laporan Rekapitulasi Presensi Kehadiran Siswa',
+                    'show_city_date' => false,
+                    'align' => 'center'
+                ]) ?>
             </div>
 
-            <div class="sig-block">
-                <p>Ditetapkan di Jakarta,<br><?= date('d F Y') ?><br>Kepala Sekolah,</p>
-                <div class="sig-space"></div>
-                <p><strong><?= htmlspecialchars($school_info['headmaster_name'] ?? 'Dr. H. Bambang Sudirman, M.Pd') ?></strong></p>
-                <p style="font-size: 8.5pt; color: #444;">NIP: <?= htmlspecialchars($school_info['headmaster_nip'] ?? '19750812 199903 1 002') ?></p>
+            <div>
+                <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
+                    'doc_type' => 'REKAP_PRESENSI',
+                    'doc_num' => "LAP-ABS/{$filter_year}" . ($filter_month ? "/{$filter_month}" : ""),
+                    'doc_title' => 'Laporan Rekapitulasi Presensi Kehadiran Siswa',
+                    'show_city_date' => true,
+                    'align' => 'center'
+                ]) ?>
             </div>
         </div>
     </div>

@@ -83,6 +83,11 @@ $school_email   = $school_info['school_email'] ?? 'info@sekolah.sch.id';
                             <i class="fa-solid fa-angle-right text-[10px] text-slate-500"></i> Kontak Bantuan
                         </a>
                     </li>
+                    <li>
+                        <a href="<?= $base_path ?>apps.php" class="text-teal-400 hover:text-teal-300 font-semibold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-mobile-screen-button text-[10px] text-teal-400"></i> Unduh Aplikasi Sekolah
+                        </a>
+                    </li>
                 </ul>
             </div>
 

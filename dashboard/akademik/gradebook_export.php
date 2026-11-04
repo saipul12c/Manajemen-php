@@ -59,7 +59,7 @@ fputcsv($output, ['LEGER BUKU REKAPITULASI NILAI HASIL BELAJAR SISWA']);
 fputcsv($output, ['Nama Lembaga', $school_info['school_name'] ?? 'SMA Bina Bangsa Nusantara']);
 fputcsv($output, ['Tahun Ajaran', $school_info['academic_year'] ?? '2026/2027 Ganjil']);
 fputcsv($output, ['Rombel / Kelas', $class_title_str]);
-fputcsv($output, ['Rumus Bobot', 'Presensi (10%) + Tugas (20%) + Ulangan Harian (20%) + UTS (25%) + UKK (25%)']);
+fputcsv($output, ['Rumus Bobot', 'Presensi (10%) + Tugas (20%) + UH/SLM (20%) + UTS/STS (25%) + UKK/SAS/SAT (25%)']);
 fputcsv($output, ['Tanggal Unduh', date('d/m/Y H:i:s') . ' WIB']);
 fputcsv($output, ['Wali Kelas / Pengunduh', $_SESSION['user_name'] ?? 'Guru']);
 fputcsv($output, []); // Baris Kosong
@@ -73,9 +73,9 @@ fputcsv($output, [
     'Kelas / Rombel',
     'Presensi (10%)',
     'Rata-rata Tugas (20%)',
-    'Ulangan Harian (20%)',
-    'Nilai UTS (25%)',
-    'Nilai UKK (25%)',
+    'UH / Formatif-SLM (20%)',
+    'UTS / Sumatif Tengah Sem (25%)',
+    'UKK / Sumatif Akhir (25%)',
     'Nilai Akhir (Skala 100)',
     'Predikat',
     'Status Kelulusan'
@@ -112,33 +112,39 @@ foreach ($students as $stu) {
     $as_row = $stmt_as->fetch();
     $as_score = $as_row['avg_score'] !== null ? round((float)$as_row['avg_score'], 1) : 0.0;
 
-    // 3. UH
+    // 3. UH / SLM
     $stmt_uh = $pdo->prepare("
         SELECT AVG(s.score) as avg_score 
         FROM exam_submissions s
         JOIN exams e ON s.exam_id = e.id
-        WHERE s.student_id = ? AND e.category = 'ujian_harian'
+        WHERE s.student_id = ? 
+          AND e.category IN ('slm', 'ujian_harian', 'harian', 'kuis')
+          AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
     ");
     $stmt_uh->execute([$s_id]);
     $uh_score = round((float)($stmt_uh->fetchColumn() ?? 0), 1);
 
-    // 4. UTS
+    // 4. UTS / STS
     $stmt_uts = $pdo->prepare("
         SELECT s.score 
         FROM exam_submissions s
         JOIN exams e ON s.exam_id = e.id
-        WHERE s.student_id = ? AND e.category = 'uts'
+        WHERE s.student_id = ? 
+          AND e.category IN ('sts', 'uts')
+          AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
         ORDER BY s.id DESC LIMIT 1
     ");
     $stmt_uts->execute([$s_id]);
     $uts_score = round((float)($stmt_uts->fetchColumn() ?? 0), 1);
 
-    // 5. UKK
+    // 5. UKK / SAS / SAT
     $stmt_ukk = $pdo->prepare("
         SELECT s.score 
         FROM exam_submissions s
         JOIN exams e ON s.exam_id = e.id
-        WHERE s.student_id = ? AND e.category = 'ukk'
+        WHERE s.student_id = ? 
+          AND e.category IN ('sas', 'sat', 'ukk', 'uas')
+          AND (e.is_ppdb IS NULL OR e.is_ppdb = 0)
         ORDER BY s.id DESC LIMIT 1
     ");
     $stmt_ukk->execute([$s_id]);

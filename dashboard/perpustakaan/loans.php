@@ -104,8 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                 // Hitung denda keterlambatan (Rp 1.000 / hari keterlambatan)
                 if ($today > $due_date) {
-                    $days_late = (int)(strtotime($today) - strtotime($due_date)) / (60 * 60 * 24);
-                    $fine_amount = max(0, $days_late) * 1000.00;
+                    $days_late = (int) max(0, floor((strtotime($today) - strtotime($due_date)) / 86400));
+                    $fine_amount = $days_late * 1000.00;
                 }
 
                 // Update status peminjaman menjadi kembali
@@ -120,10 +120,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $stmt_inc = $pdo->prepare("UPDATE library_books SET stock_available = stock_available + 1 WHERE id = ?");
                 $stmt_inc->execute([$loan['book_id']]);
 
+                // Integrasi Perpustakaan -> Keuangan: Terbitkan Tagihan Resmi Siswa jika ada denda
+                if ($fine_amount > 0) {
+                    $stmt_bk_info = $pdo->prepare("SELECT title FROM library_books WHERE id = ?");
+                    $stmt_bk_info->execute([$loan['book_id']]);
+                    $book_title = $stmt_bk_info->fetchColumn() ?: 'Buku Perpustakaan';
+
+                    $stmt_bill = $pdo->prepare("
+                        INSERT INTO student_bills (student_id, title, amount, due_date, month_period, status, notes)
+                        VALUES (?, ?, ?, DATE_ADD(CURRENT_DATE(), INTERVAL 7 DAY), ?, 'belum_lunas', ?)
+                    ");
+                    $period = date('F Y');
+                    $bill_title = "Denda Perpustakaan: " . mb_substr($book_title, 0, 80);
+                    $bill_notes = "Denda keterlambatan pengembalian buku (ID Pinjam #$loan_id, terlambat $days_late hari)";
+                    $stmt_bill->execute([$loan['user_id'], $bill_title, $fine_amount, $period, $bill_notes]);
+                }
+
                 $pdo->commit();
 
                 logActivity($pdo, 'RETURN_LOAN', "Pengembalian buku ID {$loan['book_id']} oleh pinjaman ID $loan_id");
-                $fine_str = $fine_amount > 0 ? " (Denda keterlambatan: " . formatRupiah($fine_amount) . ")" : " (Tepat waktu tanpa denda)";
+                $fine_str = $fine_amount > 0 ? " (Denda keterlambatan: " . formatRupiah($fine_amount) . " - otomatis ditagihkan ke portal keuangan siswa)" : " (Tepat waktu tanpa denda)";
                 $message = "Buku berhasil dikembalikan ke rak perpustakaan! $fine_str";
                 $message_type = "success";
             }
@@ -148,8 +164,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         try {
             $stmt = $pdo->prepare("UPDATE library_loans SET status = 'hilang' WHERE id = ?");
             $stmt->execute([$loan_id]);
-            logActivity($pdo, 'MARK_LOST', "Menandai buku hilang pada peminjaman ID $loan_id");
-            $message = "Status buku berhasil ditandai sebagai hilang.";
+
+            // Integrasi Ganti Rugi Buku Hilang ke Tagihan Keuangan Siswa
+            try {
+                $stmt_l_info = $pdo->prepare("
+                    SELECT l.*, b.title as book_title, b.price 
+                    FROM library_loans l 
+                    JOIN library_books b ON l.book_id = b.id 
+                    WHERE l.id = ?
+                ");
+                $stmt_l_info->execute([$loan_id]);
+                $lost_info = $stmt_l_info->fetch();
+            } catch (Exception $e_col) {
+                // Fallback aman jika kolom price belum termigrasi
+                $stmt_l_info = $pdo->prepare("
+                    SELECT l.*, b.title as book_title 
+                    FROM library_loans l 
+                    JOIN library_books b ON l.book_id = b.id 
+                    WHERE l.id = ?
+                ");
+                $stmt_l_info->execute([$loan_id]);
+                $lost_info = $stmt_l_info->fetch();
+            }
+
+            if ($lost_info) {
+                $replacement_fee = (!empty($lost_info['price']) && (float)$lost_info['price'] > 0) ? (float)$lost_info['price'] : 75000.00;
+                $stmt_bill = $pdo->prepare("
+                    INSERT INTO student_bills (student_id, title, amount, due_date, month_period, status, notes)
+                    VALUES (?, ?, ?, DATE_ADD(CURRENT_DATE(), INTERVAL 14 DAY), ?, 'belum_lunas', ?)
+                ");
+                $bill_title = "Ganti Rugi Buku Hilang: " . mb_substr($lost_info['book_title'] ?? 'Koleksi Perpustakaan', 0, 80);
+                $bill_notes = "Biaya penggantian buku perpustakaan yang hilang (Pinjaman #$loan_id)";
+                $stmt_bill->execute([$lost_info['user_id'], $bill_title, $replacement_fee, date('F Y'), $bill_notes]);
+            }
+
+            logActivity($pdo, 'MARK_LOST', "Menandai buku hilang pada peminjaman ID $loan_id dan menerbitkan tagihan ganti rugi");
+            $message = "Status buku berhasil ditandai sebagai hilang, dan tagihan ganti rugi resmi telah diterbitkan ke portal keuangan siswa.";
             $message_type = "info";
         } catch (Exception $e) {
             $message = "Gagal memperbarui status: " . $e->getMessage();

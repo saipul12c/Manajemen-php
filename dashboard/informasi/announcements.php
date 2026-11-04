@@ -6,7 +6,8 @@ requireLogin();
 
 $user_id = (int) $_SESSION['user_id'];
 $user_role = $_SESSION['user_role'] ?? 'siswa';
-$can_manage = in_array($user_role, ['administrator', 'staf'], true);
+$can_manage = in_array($user_role, ['administrator', 'staf', 'guru'], true);
+$is_admin_or_staff = in_array($user_role, ['administrator', 'staf'], true);
 
 // Endpoint AJAX untuk melihat daftar pembaca pengumuman (Khusus Admin/Staf)
 if (isset($_GET['get_readers'])) {
@@ -110,6 +111,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 ");
                 $stmt_ins->execute([$title, $content, $target_role, $class_id, $category, $is_pinned, $attachment_url, $status, $expires_at, $event_id, $user_id]);
                 logActivity($pdo, 'create_announcement', "Membuat pengumuman: $title");
+
+                // Integrasi WhatsApp Gateway (Fase 1): Broadcast instan untuk pengumuman darurat / penting
+                if ($status === 'published' && in_array($category, ['darurat', 'penting'], true)) {
+                    try {
+                        $wa_target_sql = "SELECT name, phone FROM users WHERE phone IS NOT NULL AND phone != ''";
+                        if ($target_role !== 'semua') {
+                            $wa_target_sql .= " AND role = " . $pdo->quote($target_role);
+                        }
+                        $wa_target_sql .= " LIMIT 20";
+                        $broadcast_list = $pdo->query($wa_target_sql)->fetchAll();
+                        $broadcast_txt = "📢 PENGUMUMAN RESMI SEKOLAH (" . strtoupper($category) . ")\n\n*$title*\n\n" . mb_strimwidth(strip_tags($content), 0, 180, '...') . "\n\nSilakan masuk ke Portal Akademik untuk membaca informasi lengkap.";
+                        foreach ($broadcast_list as $b_rec) {
+                            sendWhatsAppNotification($pdo, $b_rec['phone'], $b_rec['name'], $broadcast_txt, 'pengumuman');
+                        }
+                    } catch (Exception $e_wa_bc) {}
+                }
+
                 $message = $status === 'draft' ? "Pengumuman disimpan sebagai draft." : "Pengumuman berhasil diterbitkan" . ($event_id ? " dan disinkronkan ke Kalender Sekolah." : ".");
                 $message_type = "success";
             }
@@ -243,6 +261,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // 5. PIN / UNPIN PENGUMUMAN (Admin & Staf)
 // -------------------------------------------------------------
 if (isset($_GET['pin_id']) && $can_manage) {
+    if (!isset($_GET['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', (string)$_GET['csrf_token'])) {
+        header("Location: announcements.php?error=invalid_csrf");
+        exit;
+    }
     $pin_id = (int) $_GET['pin_id'];
     $pdo->prepare("UPDATE announcements SET is_pinned = NOT is_pinned WHERE id = ?")->execute([$pin_id]);
     logActivity($pdo, 'toggle_pin_announcement', "Toggle pin pengumuman ID: $pin_id");
@@ -305,7 +327,9 @@ if ($can_manage) {
 
     // Segmentasi kelas untuk siswa & orang tua
     if ($user_role === 'siswa') {
-        $student_class = $pdo->query("SELECT class_id FROM users WHERE id = $user_id")->fetchColumn();
+        $stmt_sc = $pdo->prepare("SELECT class_id FROM users WHERE id = ?");
+        $stmt_sc->execute([$user_id]);
+        $student_class = $stmt_sc->fetchColumn();
         if ($student_class) {
             $where_clauses[] = "(a.class_id IS NULL OR a.class_id = ?)";
             $params_q[] = (int) $student_class;
@@ -428,6 +452,30 @@ require_once __DIR__ . "/../includes/header.php";
 .announcement-rendered-content a { color: #60a5fa; text-decoration: underline; }
 .announcement-rendered-content blockquote { border-left: 3px solid #3b82f6; padding-left: 0.75rem; color: #94a3b8; font-style: italic; }
 </style>
+
+<!-- Top Module Tab Switcher: Pengumuman vs Berita Sekolah -->
+<?php 
+$pending_news_badge = getPendingNewsCount($pdo);
+?>
+<div class="mb-4 flex items-center justify-between">
+    <div class="flex items-center bg-slate-900 border border-white/10 p-1 rounded-xl shadow-inner">
+        <a href="announcements.php" class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white shadow-sm flex items-center gap-1.5">
+            <i class="fa-solid fa-bullhorn"></i>
+            <span>Pengumuman Sekolah</span>
+        </a>
+        <?php if (in_array($user_role, ['administrator', 'staf', 'guru'], true)): ?>
+            <a href="news.php" class="px-3.5 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition flex items-center gap-1.5">
+                <i class="fa-solid fa-newspaper text-slate-500"></i>
+                <span>Berita & Liputan</span>
+                <?php if ($can_manage && $pending_news_badge > 0): ?>
+                    <span class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-400 text-slate-950 font-bold">
+                        <?= $pending_news_badge ?>
+                    </span>
+                <?php endif; ?>
+            </a>
+        <?php endif; ?>
+    </div>
+</div>
 
 <div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
     <div>
@@ -682,7 +730,7 @@ require_once __DIR__ . "/../includes/header.php";
                                 <i class="fa-solid fa-pen"></i> Edit
                             </button>
 
-                            <a href="announcements.php?pin_id=<?= $a['id'] ?>" 
+                            <a href="announcements.php?pin_id=<?= $a['id'] ?>&csrf_token=<?= getCsrfToken() ?>" 
                                class="inline-flex items-center gap-1.5 rounded-xl border <?= $a['is_pinned'] ? 'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300' : 'border-white/10 bg-white/5 hover:bg-white/10 text-slate-300' ?> px-3 py-1.5 text-xs font-semibold transition">
                                 <i class="fa-solid fa-thumbtack"></i> <?= $a['is_pinned'] ? 'Lepas Pin' : 'Sematkan' ?>
                             </a>

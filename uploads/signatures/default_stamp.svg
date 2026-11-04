@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <path id="circlePathOuter" d="M 100, 100 m -80, 0 a 80,80 0 1,1 160,0 a 80,80 0 1,1 -160,0" />
+    <path id="circlePathInner" d="M 100, 100 m -58, 0 a 58,58 0 1,1 116,0 a 58,58 0 1,1 -116,0" />
+  </defs>
+  <!-- Lingkaran Luar Ganda Stempel -->
+  <circle cx="100" cy="100" r="95" fill="none" stroke="#2563eb" stroke-width="3" opacity="0.88" />
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.8" />
+  <circle cx="100" cy="100" r="68" fill="none" stroke="#2563eb" stroke-width="1.5" opacity="0.85" />
+  
+  <!-- Teks Melingkar Atas & Bawah -->
+  <text fill="#2563eb" font-family="'Times New Roman', serif" font-size="11.5" font-weight="bold" letter-spacing="2.2" opacity="0.9">
+    <textPath href="#circlePathOuter" startOffset="50%" text-anchor="middle">
+      KEMENDIKBUD • PROV. DKI JAKARTA
+    </textPath>
+  </text>
+  <text fill="#2563eb" font-family="'Times New Roman', serif" font-size="11" font-weight="bold" letter-spacing="2.5" opacity="0.9">
+    <textPath href="#circlePathOuter" startOffset="0%" text-anchor="middle">
+      ★ SMA BINA BANGSA NUSANTARA ★
+    </textPath>
+  </text>
+  
+  <!-- Bagian Tengah Stempel -->
+  <line x1="34" y1="85" x2="166" y2="85" stroke="#2563eb" stroke-width="1.5" opacity="0.85" />
+  <text x="100" y="103" text-anchor="middle" fill="#2563eb" font-family="'Times New Roman', serif" font-size="13" font-weight="bold" letter-spacing="1.5" opacity="0.95">
+    TERAKREDITASI A
+  </text>
+  <text x="100" y="117" text-anchor="middle" fill="#2563eb" font-family="'Courier New', monospace" font-size="8.5" font-weight="bold" letter-spacing="1" opacity="0.85">
+    NPSN: 20109988
+  </text>
+  <line x1="34" y1="125" x2="166" y2="125" stroke="#2563eb" stroke-width="1.5" opacity="0.85" />
+
+  <!-- Bintang dekorasi kiri dan kanan -->
+  <text x="32" y="105" text-anchor="middle" fill="#2563eb" font-size="11" opacity="0.9">★</text>
+  <text x="168" y="105" text-anchor="middle" fill="#2563eb" font-size="11" opacity="0.9">★</text>
+</svg>

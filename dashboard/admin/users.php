@@ -159,23 +159,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POS
                 $message = "Email sudah digunakan oleh akun lain.";
                 $message_type = "error";
             } else {
+                $status = $_POST['status'] ?? 'aktif';
+                $status_reason = trim($_POST['status_reason'] ?? '');
+                $valid_statuses = ['aktif', 'skorsing', 'dikeluarkan', 'mutasi', 'lulus'];
+                if (!in_array($status, $valid_statuses, true)) {
+                    $status = 'aktif';
+                }
+
                 if ($new_password !== '') {
                     if (strlen($new_password) < 6) {
                         $message = "Password baru minimal 6 karakter.";
                         $message_type = "error";
                     } else {
                         $hashed = password_hash($new_password, PASSWORD_DEFAULT);
-                        $stmt_up = $pdo->prepare("UPDATE users SET name = ?, email = ?, role = ?, phone = ?, address = ?, password = ? WHERE id = ?");
-                        $stmt_up->execute([$name, $email, $role, $phone, $address, $hashed, $edit_id]);
-                        logActivity($pdo, 'EDIT_USER', "Memperbarui akun dan password: $name ($role)");
-                        $message = "Data pengguna dan password berhasil diperbarui.";
+                        $stmt_up = $pdo->prepare("
+                            UPDATE users 
+                            SET name = ?, email = ?, role = ?, phone = ?, address = ?, password = ?, 
+                                status = ?, status_reason = ?, status_updated_at = NOW(), status_updated_by = ? 
+                            WHERE id = ?
+                        ");
+                        $stmt_up->execute([$name, $email, $role, $phone, $address, $hashed, $status, $status_reason ?: null, $_SESSION['user_id'], $edit_id]);
+                        logActivity($pdo, 'EDIT_USER', "Memperbarui akun dan password: $name ($role), status: $status");
+                        $message = "Data pengguna, password, dan status berhasil diperbarui.";
                         $message_type = "success";
                     }
                 } else {
-                    $stmt_up = $pdo->prepare("UPDATE users SET name = ?, email = ?, role = ?, phone = ?, address = ? WHERE id = ?");
-                    $stmt_up->execute([$name, $email, $role, $phone, $address, $edit_id]);
-                    logActivity($pdo, 'EDIT_USER', "Memperbarui akun: $name ($role)");
-                    $message = "Data pengguna berhasil diperbarui.";
+                    $stmt_up = $pdo->prepare("
+                        UPDATE users 
+                        SET name = ?, email = ?, role = ?, phone = ?, address = ?, 
+                            status = ?, status_reason = ?, status_updated_at = NOW(), status_updated_by = ? 
+                        WHERE id = ?
+                    ");
+                    $stmt_up->execute([$name, $email, $role, $phone, $address, $status, $status_reason ?: null, $_SESSION['user_id'], $edit_id]);
+                    logActivity($pdo, 'EDIT_USER', "Memperbarui akun: $name ($role), status: $status");
+                    $message = "Data pengguna dan status berhasil diperbarui.";
                     $message_type = "success";
                 }
 
@@ -291,12 +308,13 @@ $manageable_roles = ($_SESSION['user_role'] === 'staf')
     : ROLES;
 
 // -------------------------------------------------------------
-// 5. QUERY DAFTAR PENGGUNA (Search & Filter Role)
+// 5. QUERY DAFTAR PENGGUNA (Search, Filter Role & Status)
 // -------------------------------------------------------------
 $search = trim($_GET['search'] ?? '');
 $filter_role = trim($_GET['role'] ?? '');
+$filter_status = trim($_GET['status'] ?? '');
 
-$sql = "SELECT id, name, email, role, phone, address, created_at FROM users WHERE 1=1";
+$sql = "SELECT id, name, email, role, phone, address, created_at, status, status_reason, status_updated_at FROM users WHERE 1=1";
 $params = [];
 
 if ($search !== '') {
@@ -309,6 +327,11 @@ if ($search !== '') {
 if ($filter_role !== '' && array_key_exists($filter_role, ROLES)) {
     $sql .= " AND role = ?";
     $params[] = $filter_role;
+}
+
+if ($filter_status !== '' && in_array($filter_status, ['aktif', 'skorsing', 'dikeluarkan', 'mutasi', 'lulus'], true)) {
+    $sql .= " AND status = ?";
+    $params[] = $filter_status;
 }
 
 $sql .= " ORDER BY id DESC";
@@ -367,7 +390,7 @@ require_once __DIR__ . "/../includes/header.php";
             >
         </div>
 
-        <div class="sm:w-48">
+        <div class="sm:w-44">
             <select name="role" class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500">
                 <option value="">Semua Role (5)</option>
                 <?php foreach (ROLES as $k => $lbl): ?>
@@ -378,11 +401,22 @@ require_once __DIR__ . "/../includes/header.php";
             </select>
         </div>
 
+        <div class="sm:w-44">
+            <select name="status" class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500">
+                <option value="">Semua Status</option>
+                <option value="aktif" <?= $filter_status === 'aktif' ? 'selected' : '' ?>>🟢 Aktif</option>
+                <option value="skorsing" <?= $filter_status === 'skorsing' ? 'selected' : '' ?>>🟠 Skorsing</option>
+                <option value="dikeluarkan" <?= $filter_status === 'dikeluarkan' ? 'selected' : '' ?>>🔴 Dikeluarkan (DO)</option>
+                <option value="mutasi" <?= $filter_status === 'mutasi' ? 'selected' : '' ?>>🔵 Mutasi</option>
+                <option value="lulus" <?= $filter_status === 'lulus' ? 'selected' : '' ?>>🟣 Lulus</option>
+            </select>
+        </div>
+
         <div class="flex gap-2">
             <button type="submit" class="rounded-xl bg-slate-800 hover:bg-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-magnifying-glass text-xs"></i> Filter
             </button>
-            <?php if ($search !== '' || $filter_role !== ''): ?>
+            <?php if ($search !== '' || $filter_role !== '' || $filter_status !== ''): ?>
                 <a href="users.php" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-2 text-sm font-semibold text-slate-400 transition">
                     Reset
                 </a>
@@ -399,6 +433,7 @@ require_once __DIR__ . "/../includes/header.php";
                 <tr>
                     <th class="px-6 py-4 font-semibold">Pengguna</th>
                     <th class="px-6 py-4 font-semibold">Peran (Role)</th>
+                    <th class="px-6 py-4 font-semibold">Status</th>
                     <th class="px-6 py-4 font-semibold">Kontak</th>
                     <th class="px-6 py-4 font-semibold">Terdaftar</th>
                     <th class="px-6 py-4 font-semibold text-right">Aksi</th>
@@ -407,7 +442,7 @@ require_once __DIR__ . "/../includes/header.php";
             <tbody class="divide-y divide-white/5">
                 <?php if (empty($users_list)): ?>
                     <tr>
-                        <td colspan="5" class="py-12 text-center text-slate-400 text-sm">
+                        <td colspan="6" class="py-12 text-center text-slate-400 text-sm">
                             Tidak ada data pengguna yang sesuai dengan filter pencarian.
                         </td>
                     </tr>
@@ -435,6 +470,16 @@ require_once __DIR__ . "/../includes/header.php";
                                     <?= htmlspecialchars(getRoleLabel($u['role'])) ?>
                                 </span>
                             </td>
+                            <td class="px-6 py-4">
+                                <div>
+                                    <?= getUserStatusBadge($u['status'] ?? 'aktif') ?>
+                                    <?php if (!empty($u['status_reason'])): ?>
+                                        <div class="text-[11px] text-slate-400 mt-1 max-w-[190px] truncate" title="<?= htmlspecialchars($u['status_reason']) ?>">
+                                            <i class="fa-solid fa-circle-info text-[9px] mr-1 text-slate-500"></i><?= htmlspecialchars($u['status_reason']) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
                             <td class="px-6 py-4 text-xs text-slate-300">
                                 <div><?= htmlspecialchars($u['phone'] ?: '-') ?></div>
                                 <?php if (!empty($u['address'])): ?>
@@ -450,15 +495,25 @@ require_once __DIR__ . "/../includes/header.php";
                                     ($_SESSION['user_role'] === 'staf' && in_array($u['role'], ['siswa', 'orang_tua'], true));
                                 ?>
                                 <?php if ($can_manage_row): ?>
-                                    <div class="inline-flex items-center gap-2">
+                                    <div class="inline-flex items-center gap-1.5 flex-wrap justify-end">
                                         <?php if ($u['role'] === 'siswa'): ?>
+                                            <a href="student_360.php?id=<?= $u['id'] ?>" 
+                                               class="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 transition inline-flex items-center gap-1" title="Profil Terpadu Siswa 360° (Akademik, Presensi, BK, SPP, Perpus)">
+                                                <i class="fa-solid fa-id-card-clip text-xs text-indigo-400"></i> 360°
+                                            </a>
                                             <a href="student_profile_print.php?id=<?= $u['id'] ?>" target="_blank" 
-                                               class="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition inline-flex items-center gap-1.5" title="Cetak Lembar Buku Induk Siswa">
+                                               class="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition inline-flex items-center gap-1" title="Cetak Lembar Buku Induk Siswa">
                                                 <i class="fa-solid fa-address-book text-xs"></i> Buku Induk
                                             </a>
+                                            <?php if (($u['status'] ?? '') === 'dikeluarkan'): ?>
+                                                <a href="../bk/counseling_letter.php?student_id=<?= $u['id'] ?>&type=do" target="_blank" 
+                                                   class="rounded-lg border border-rose-500/30 bg-rose-500/15 px-2 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/25 transition inline-flex items-center gap-1" title="Cetak SK Pengembalian Peserta Didik (DO)">
+                                                    <i class="fa-solid fa-ban text-xs"></i> SK DO
+                                                </a>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                         <a href="users.php?action=edit&id=<?= $u['id'] ?>" 
-                                           class="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition inline-flex items-center gap-1.5">
+                                           class="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition inline-flex items-center gap-1">
                                             <i class="fa-solid fa-pen-to-square text-xs"></i> Edit
                                         </a>
                                         <?php if ($u['id'] !== (int)$_SESSION['user_id']): ?>
@@ -466,7 +521,7 @@ require_once __DIR__ . "/../includes/header.php";
                                                 <input type="hidden" name="form_type" value="delete_user">
                                                 <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                                                 <?= csrfField() ?>
-                                                <button type="submit" class="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition inline-flex items-center gap-1.5 cursor-pointer">
+                                                <button type="submit" class="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2 py-1.5 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition inline-flex items-center gap-1 cursor-pointer">
                                                     <i class="fa-solid fa-trash text-xs"></i> Hapus
                                                 </button>
                                             </form>
@@ -596,13 +651,35 @@ require_once __DIR__ . "/../includes/header.php";
                 </div>
             </div>
 
-            <div>
-                <label class="mb-1 block text-xs font-medium text-slate-300">Nomor Telepon</label>
-                <input type="text" name="phone" value="<?= htmlspecialchars($editing_user['phone'] ?? '') ?>" placeholder="081234567890" class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-slate-300">Status Akun / Kesiswaan *</label>
+                    <select name="status" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+                        <option value="aktif" <?= ($editing_user['status'] ?? 'aktif') === 'aktif' ? 'selected' : '' ?>>🟢 Aktif</option>
+                        <option value="skorsing" <?= ($editing_user['status'] ?? '') === 'skorsing' ? 'selected' : '' ?>>🟠 Skorsing (Sanksi Disiplin)</option>
+                        <option value="dikeluarkan" <?= ($editing_user['status'] ?? '') === 'dikeluarkan' ? 'selected' : '' ?>>🔴 Dikeluarkan / DO (Drop Out)</option>
+                        <option value="mutasi" <?= ($editing_user['status'] ?? '') === 'mutasi' ? 'selected' : '' ?>>🔵 Mutasi (Pindah Sekolah)</option>
+                        <option value="lulus" <?= ($editing_user['status'] ?? '') === 'lulus' ? 'selected' : '' ?>>🟣 Lulus (Alumni)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-slate-300">Nomor Telepon</label>
+                    <input type="text" name="phone" value="<?= htmlspecialchars($editing_user['phone'] ?? '') ?>" placeholder="081234567890" class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+                </div>
             </div>
 
             <div>
-                <label class="mb-1 block text-xs font-medium text-slate-300">Alamat / Keterangan</label>
+                <label class="mb-1 block text-xs font-medium text-slate-300">Alasan Status / No. SK / Catatan Sanksi</label>
+                <textarea name="status_reason" rows="2" placeholder="Contoh: SK Pengembalian No. 421.3/SK-DO.105/2026 tgl 27/09/2026 karena akumulasi pelanggaran berat..." class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-xs text-white outline-none focus:border-blue-500"><?= htmlspecialchars($editing_user['status_reason'] ?? '') ?></textarea>
+                <p class="text-[11px] text-slate-500 mt-1 flex items-start gap-1.5">
+                    <i class="fa-solid fa-circle-info text-amber-400 mt-0.5 shrink-0"></i>
+                    <span>Pengguna dengan status <strong>Dikeluarkan</strong> atau <strong>Skorsing</strong> tidak dapat login ke portal, namun seluruh riwayat nilai, rapor, dan arsip BK tetap tersimpan aman.</span>
+                </p>
+            </div>
+
+            <div>
+                <label class="mb-1 block text-xs font-medium text-slate-300">Alamat Tempat Tinggal</label>
                 <textarea name="address" rows="2" class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white outline-none focus:border-blue-500"><?= htmlspecialchars($editing_user['address'] ?? '') ?></textarea>
             </div>
 

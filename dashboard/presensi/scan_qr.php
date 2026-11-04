@@ -81,19 +81,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     if ($existing) {
         $merged_notes = $existing['notes'] ? ($existing['notes'] . " | " . $notes_text) : $notes_text;
+        // Jika mode masuk, update status sesuai ketepatan waktu. Jika mode pulang, pertahankan status presensi awal.
+        $target_status = ($attend_mode === 'masuk') ? ($is_late ? 'terlambat' : 'hadir') : $existing['status'];
         $stmt_up = $pdo->prepare("
             UPDATE student_attendance 
-            SET status = 'hadir', notes = ?, recorded_by = ?, updated_at = NOW() 
+            SET status = ?, notes = ?, recorded_by = ?, updated_at = NOW() 
             WHERE id = ?
         ");
-        $stmt_up->execute([$merged_notes, $user_id, $existing['id']]);
+        $stmt_up->execute([$target_status, $merged_notes, $user_id, $existing['id']]);
     } else {
+        $initial_status = ($attend_mode === 'masuk' && $is_late) ? 'terlambat' : 'hadir';
         $stmt_ins = $pdo->prepare("
             INSERT INTO student_attendance (student_id, date, status, notes, recorded_by)
-            VALUES (?, ?, 'hadir', ?, ?)
+            VALUES (?, ?, ?, ?, ?)
         ");
-        $stmt_ins->execute([$student['id'], $today, $notes_text, $user_id]);
+        $stmt_ins->execute([$student['id'], $today, $initial_status, $notes_text, $user_id]);
     }
+
+    // Integrasi Notifikasi Real-time ke Orang Tua via WA Gateway
+    try {
+        $stmt_p = $pdo->prepare("
+            SELECT u_p.name as parent_name, u_p.phone as parent_phone 
+            FROM parent_students ps
+            JOIN users u_p ON ps.parent_id = u_p.id
+            WHERE ps.student_id = ?
+            LIMIT 1
+        ");
+        $stmt_p->execute([$student['id']]);
+        $parent = $stmt_p->fetch();
+        if ($parent && !empty($parent['parent_phone'])) {
+            $mode_str = ($attend_mode === 'masuk') ? 'MASUK SEKOLAH' : 'PULANG SEKOLAH';
+            $status_str = $is_late ? "⚠️ TERLAMBAT (Pukul $time_formatted WIB)" : "✅ TEPAT WAKTU (Pukul $time_formatted WIB)";
+            $wa_scan_msg = "Halo Bpk/Ibu *{$parent['parent_name']}*,\n\n"
+                         . "Pemberitahuan presensi: Ananda *{$student['name']}* telah melakukan pemindaian QR presensi *{$mode_str}* hari ini dengan status *{$status_str}*.\n\n"
+                         . "Terima kasih, salam dari Tim Kesiswaan.";
+            sendWhatsAppNotification($pdo, $parent['parent_phone'], $parent['parent_name'], $wa_scan_msg, 'presensi');
+        }
+    } catch (Exception $e_scan_wa) {}
 
     logActivity($pdo, 'SCAN_ATTENDANCE', "Pindai presensi [$attend_mode] {$student['name']} ($cleaned_code)");
 
@@ -194,17 +218,28 @@ require_once __DIR__ . "/../includes/header.php";
                     <div id="qr-reader" class="w-full"></div>
                 </div>
 
-                <!-- Control Buttons: Start, Stop, Flip Camera -->
-                <div class="flex flex-wrap items-center justify-center gap-2.5 pt-1">
-                    <button type="button" id="btnStartScan" onclick="startScanner()" class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs sm:text-sm font-bold text-white shadow-md hover:bg-emerald-500 transition cursor-pointer">
-                        <i class="fa-solid fa-play"></i> Nyalakan Kamera
-                    </button>
-                    <button type="button" id="btnFlipCamera" onclick="flipCamera()" class="inline-flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3.5 py-2 text-xs sm:text-sm font-semibold text-blue-300 hover:bg-blue-500/20 transition cursor-pointer hidden">
-                        <i class="fa-solid fa-camera-rotate"></i> Ganti Kamera (Depan/Belakang)
-                    </button>
-                    <button type="button" id="btnStopScan" onclick="stopScanner()" class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-slate-800 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-300 hover:bg-slate-700 transition cursor-pointer hidden">
-                        <i class="fa-solid fa-stop"></i> Hentikan Kamera
-                    </button>
+                <!-- Camera Selection Dropdown & Controls -->
+                <div class="space-y-3 pt-1">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border border-white/5 bg-slate-950/70 p-2.5">
+                        <label for="cameraSelect" class="text-xs text-slate-300 font-semibold shrink-0 flex items-center gap-1.5">
+                            <i class="fa-solid fa-video text-blue-400"></i> Pilih Perangkat Kamera:
+                        </label>
+                        <select id="cameraSelect" onchange="onCameraChange()" class="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none">
+                            <option value="">Deteksi perangkat kamera...</option>
+                        </select>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-center gap-2.5">
+                        <button type="button" id="btnStartScan" onclick="startScanner()" class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs sm:text-sm font-bold text-white shadow-md hover:bg-emerald-500 transition cursor-pointer">
+                            <i class="fa-solid fa-play"></i> Nyalakan Kamera
+                        </button>
+                        <button type="button" id="btnFlipCamera" onclick="flipCamera()" class="inline-flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3.5 py-2 text-xs sm:text-sm font-semibold text-blue-300 hover:bg-blue-500/20 transition cursor-pointer hidden">
+                            <i class="fa-solid fa-camera-rotate"></i> Putar (Depan/Belakang)
+                        </button>
+                        <button type="button" id="btnStopScan" onclick="stopScanner()" class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-slate-800 px-4 py-2 text-xs sm:text-sm font-semibold text-slate-300 hover:bg-slate-700 transition cursor-pointer hidden">
+                            <i class="fa-solid fa-stop"></i> Hentikan Kamera
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Grand Toast Feedback (Terlihat Jelas dari Jarak 2 Meter) -->
@@ -305,6 +340,50 @@ let html5QrCode = null;
 let isProcessing = false;
 let currentCameraMode = "environment"; // default kamera belakang HP
 let currentAttendMode = "masuk"; // default masuk
+let selectedCameraId = null;
+
+// Deteksi daftar kamera saat halaman dimuat
+document.addEventListener("DOMContentLoaded", () => {
+    initCameraDevices();
+});
+
+function initCameraDevices() {
+    const select = document.getElementById('cameraSelect');
+    if (!select) return;
+
+    if (typeof Html5Qrcode !== "undefined" && Html5Qrcode.getCameras) {
+        Html5Qrcode.getCameras().then(devices => {
+            select.innerHTML = '';
+            if (devices && devices.length > 0) {
+                devices.forEach((device, index) => {
+                    const opt = document.createElement('option');
+                    opt.value = device.id;
+                    opt.text = device.label ? `${device.label}` : `Kamera ${index + 1}`;
+                    select.appendChild(opt);
+                });
+                if (!selectedCameraId) {
+                    selectedCameraId = devices[0].id;
+                } else {
+                    select.value = selectedCameraId;
+                }
+            } else {
+                select.innerHTML = '<option value="">Tidak ada kamera terdeteksi</option>';
+            }
+        }).catch(err => {
+            select.innerHTML = '<option value="">(Klik Nyalakan Kamera untuk deteksi nama perangkat)</option>';
+        });
+    }
+}
+
+function onCameraChange() {
+    const select = document.getElementById('cameraSelect');
+    selectedCameraId = select.value;
+    if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().then(() => {
+            startScanner();
+        });
+    }
+}
 
 function setAttendMode(mode) {
     currentAttendMode = mode;
@@ -350,10 +429,17 @@ function startScanner() {
         html5QrCode = new Html5Qrcode("qr-reader");
     }
 
-    const config = { fps: 12, qrbox: { width: 250, height: 250 } };
+    const config = { fps: 15, qrbox: { width: 250, height: 250 } };
+    const select = document.getElementById('cameraSelect');
+    if (select && select.value) {
+        selectedCameraId = select.value;
+    }
+
+    // Gunakan deviceId spesifik jika sudah dipilih, atau facingMode sebagai cadangan
+    const cameraTarget = selectedCameraId ? selectedCameraId : { facingMode: currentCameraMode };
 
     html5QrCode.start(
-        { facingMode: currentCameraMode },
+        cameraTarget,
         config,
         onScanSuccess
     ).then(() => {
@@ -361,17 +447,28 @@ function startScanner() {
         document.getElementById('btnStopScan').classList.remove('hidden');
         document.getElementById('btnFlipCamera').classList.remove('hidden');
         document.getElementById('scanStatusIndicator').innerHTML = '<span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span> Kamera Aktif';
+
+        // Segarkan nama perangkat di dropdown setelah izin kamera diberikan browser
+        initCameraDevices();
     }).catch(err => {
         alert("Tidak dapat menyalakan kamera: " + err + ". Silakan gunakan input manual atau scanner USB laser.");
     });
 }
 
 function flipCamera() {
-    currentCameraMode = (currentCameraMode === "environment") ? "user" : "environment";
-    if (html5QrCode && html5QrCode.isScanning) {
-        html5QrCode.stop().then(() => {
-            startScanner();
-        });
+    const select = document.getElementById('cameraSelect');
+    if (select && select.options.length > 1) {
+        let nextIndex = (select.selectedIndex + 1) % select.options.length;
+        select.selectedIndex = nextIndex;
+        onCameraChange();
+    } else {
+        currentCameraMode = (currentCameraMode === "environment") ? "user" : "environment";
+        selectedCameraId = null;
+        if (html5QrCode && html5QrCode.isScanning) {
+            html5QrCode.stop().then(() => {
+                startScanner();
+            });
+        }
     }
 }
 

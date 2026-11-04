@@ -31,6 +31,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $notes            = trim($_POST['notes'] ?? '');
         $document_status  = in_array($_POST['document_status'] ?? '', array_keys(PPDB_DOC_STATUSES), true) ? $_POST['document_status'] : 'lengkap';
         $rejection_reason = trim($_POST['rejection_reason'] ?? '');
+        $exam_date        = !empty($_POST['exam_date']) ? trim($_POST['exam_date']) : null;
+        $exam_time        = !empty($_POST['exam_time']) ? trim($_POST['exam_time']) : null;
+        $exam_room        = !empty($_POST['exam_room']) ? trim($_POST['exam_room']) : null;
+        $exam_session     = !empty($_POST['exam_session']) ? trim($_POST['exam_session']) : null;
 
         $valid_statuses = ['menunggu_verifikasi', 'diverifikasi', 'lulus_seleksi', 'tidak_lulus', 'diterima'];
         if (!in_array($status, $valid_statuses, true)) {
@@ -40,16 +44,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             try {
                 $stmt = $pdo->prepare("
                     UPDATE ppdb_registrations 
-                    SET status = ?, selection_score = ?, notes = ?, document_status = ?, rejection_reason = ?
+                    SET status = ?, selection_score = ?, notes = ?, document_status = ?, rejection_reason = ?,
+                        exam_date = ?, exam_time = ?, exam_room = ?, exam_session = ?
                     WHERE id = ?
                 ");
-                $stmt->execute([$status, $score, $notes, $document_status, $rejection_reason ?: null, $reg_id]);
+                $stmt->execute([$status, $score, $notes, $document_status, $rejection_reason ?: null, $exam_date, $exam_time, $exam_room, $exam_session, $reg_id]);
 
-                logActivity($pdo, 'UPDATE_PPDB', "Memperbarui status pendaftar ID $reg_id menjadi: $status (Berkas: $document_status)");
-                $message = "Status seleksi, berkas dokumen, dan penilaian pendaftar berhasil diperbarui!";
+                logActivity($pdo, 'UPDATE_PPDB', "Memperbarui status pendaftar ID $reg_id menjadi: $status (Berkas: $document_status, Ruang: $exam_room)");
+                $message = "Status seleksi, berkas dokumen, jadwal ujian, dan penilaian pendaftar berhasil diperbarui!";
                 $message_type = "success";
             } catch (Exception $e) {
                 $message = "Gagal memperbarui status: " . $e->getMessage();
+                $message_type = "error";
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 1B. DISTRIBUSI RUANGAN & SESI UJIAN MASSAL (BATCH ALLOCATOR)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'batch_allocate_rooms') {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
+        $exam_date_input = trim($_POST['batch_exam_date'] ?? '');
+        $rooms_raw = trim($_POST['batch_rooms'] ?? '');
+        $sessions_raw = trim($_POST['batch_sessions'] ?? '');
+        $capacity = max(1, (int)($_POST['batch_capacity'] ?? 30));
+        $only_unallocated = isset($_POST['only_unallocated']);
+
+        $room_list = array_values(array_filter(array_map('trim', explode(',', $rooms_raw))));
+        $session_list = array_values(array_filter(array_map('trim', explode("\n", $sessions_raw))));
+
+        if (empty($exam_date_input) || empty($room_list) || empty($session_list)) {
+            $message = "Harap lengkapi tanggal ujian, minimal 1 ruangan, dan minimal 1 sesi waktu.";
+            $message_type = "error";
+        } else {
+            try {
+                $where_alloc = "WHERE status IN ('menunggu_verifikasi', 'diverifikasi', 'lulus_seleksi')";
+                if ($only_unallocated) {
+                    $where_alloc .= " AND (exam_room IS NULL OR exam_room = '')";
+                }
+                $stmt_fetch_cands = $pdo->query("SELECT id FROM ppdb_registrations $where_alloc ORDER BY id ASC");
+                $candidates = $stmt_fetch_cands->fetchAll(PDO::FETCH_COLUMN);
+
+                if (empty($candidates)) {
+                    $message = "Tidak ada calon siswa yang memenuhi kriteria untuk didistribusikan.";
+                    $message_type = "info";
+                } else {
+                    $total_assigned = 0;
+                    $cand_idx = 0;
+                    $total_cands = count($candidates);
+
+                    $pdo->beginTransaction();
+                    $stmt_up_alloc = $pdo->prepare("
+                        UPDATE ppdb_registrations 
+                        SET exam_date = ?, exam_room = ?, exam_session = ?, exam_time = ?
+                        WHERE id = ?
+                    ");
+
+                    foreach ($session_list as $sess_line) {
+                        $sess_parts = array_map('trim', explode('|', $sess_line));
+                        $sess_name = $sess_parts[0] ?? 'Sesi 1';
+                        $sess_time = $sess_parts[1] ?? '08.00 - 10.00 WIB';
+
+                        foreach ($room_list as $rm_name) {
+                            for ($c = 0; $c < $capacity && $cand_idx < $total_cands; $c++) {
+                                $target_id = $candidates[$cand_idx++];
+                                $stmt_up_alloc->execute([$exam_date_input, $rm_name, $sess_name, $sess_time, $target_id]);
+                                $total_assigned++;
+                            }
+                            if ($cand_idx >= $total_cands) break;
+                        }
+                        if ($cand_idx >= $total_cands) break;
+                    }
+                    $pdo->commit();
+
+                    logActivity($pdo, 'BATCH_ROOM_ALLOCATE', "Distribusi massal $total_assigned calon siswa ke ruangan/sesi ujian tanggal $exam_date_input");
+                    $message = "Sukses! Berhasil mendistribusikan $total_assigned calon siswa ke ruangan dan sesi ujian secara otomatis.";
+                    $message_type = "success";
+                }
+            } catch (Exception $e_alloc) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                $message = "Gagal memproses alokasi ruangan: " . $e_alloc->getMessage();
                 $message_type = "error";
             }
         }
@@ -147,6 +226,33 @@ function processAcceptStudent($pdo, $applicant, $class_id) {
         WHERE id = ?
     ");
     $stmt_acc->execute([$target_user_id, $applicant['id']]);
+
+    // 5. Kirim Notifikasi WhatsApp Onboarding Otomatis ke Orang Tua & Siswa
+    $proto = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $base_dir = rtrim(dirname($_SERVER['PHP_SELF'] ?? ''), '/\\');
+    $root_path = preg_replace('/\/dashboard.*$/', '', $base_dir);
+    $login_url = "{$proto}://{$host}{$root_path}/auth/login.php";
+
+    $wa_msg = "🎉 *SELAMAT! PENDAFTARAN PPDB RESMI DITERIMA*\n\n"
+        . "Yth. Bapak/Ibu *" . $parent_name . "*,\n"
+        . "Kami dengan bangga menyampaikan bahwa calon peserta didik:\n"
+        . "• Nama: *" . $applicant['full_name'] . "*\n"
+        . "• No. Registrasi: *" . $applicant['registration_no'] . "*\n"
+        . "• Peminatan: *" . $applicant['chosen_major'] . "*\n\n"
+        . "Telah *RESMI DITERIMA* sebagai peserta didik baru di sekolah kami.\n\n"
+        . "📌 *Akses Akun Portal Akademik & E-Learning:*\n"
+        . "• Tautan Login: " . $login_url . "\n"
+        . "• Akun Siswa: *" . $applicant['email'] . "* (Password: *password*)\n"
+        . "• Akun Wali: *" . $parent_email . "* (Password: *password*)\n\n"
+        . "💡 Kartu Tanda Pelajar Digital & Informasi Administrasi Awal telah aktif. Silakan login untuk melengkapi profil. Terima kasih!";
+
+    if (!empty($parent_phone) && $parent_phone !== '-') {
+        sendWhatsAppNotification($pdo, $parent_phone, $parent_name, $wa_msg, 'ppdb_onboarding');
+    }
+    if (!empty($applicant['phone']) && $applicant['phone'] !== '-' && $applicant['phone'] !== $parent_phone) {
+        sendWhatsAppNotification($pdo, $applicant['phone'], $applicant['full_name'], $wa_msg, 'ppdb_onboarding');
+    }
 
     return [
         'student_id'    => $target_user_id,
@@ -500,6 +606,20 @@ include __DIR__ . "/../includes/header.php";
                 <i class="fa-solid fa-file-excel text-emerald-400"></i> Export Excel/CSV
             </a>
 
+            <!-- Tombol Distribusi Sesi & Ruangan Massal -->
+            <button onclick="openBatchRoomModal()"
+                    class="rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 px-3.5 py-2 text-xs sm:text-sm font-semibold text-indigo-300 transition flex items-center gap-2 cursor-pointer"
+                    title="Alokasikan calon siswa ke ruangan dan sesi ujian offline secara massal otomatis">
+                <i class="fa-solid fa-users-gear text-indigo-400"></i> Distribusi Ruang & Sesi
+            </button>
+
+            <!-- Tombol Cetak Daftar Hadir Ujian (DHPU) -->
+            <a href="ppdb_attendance_print.php" target="_blank"
+               class="rounded-xl border border-teal-500/30 bg-teal-500/10 hover:bg-teal-500/20 px-3.5 py-2 text-xs sm:text-sm font-semibold text-teal-300 transition flex items-center gap-2"
+               title="Cetak lembar daftar hadir dan berita acara ujian per ruangan & sesi">
+                <i class="fa-solid fa-print text-teal-400"></i> Cetak DHPU Ruang
+            </a>
+
             <!-- Tombol Pengaturan Kuota & Buka/Tutup -->
             <a href="settings.php"
                class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3.5 py-2 text-xs sm:text-sm font-semibold text-slate-200 transition flex items-center gap-2"
@@ -831,6 +951,9 @@ include __DIR__ . "/../includes/header.php";
                                     <?php if ($r['calculated_score'] !== null): ?>
                                         <span class="block text-[9px] font-sans font-normal text-slate-400">Rapor: <?= number_format((float)$r['calculated_score'], 1) ?></span>
                                     <?php endif; ?>
+                                    <?php if (isset($r['cbt_score']) && $r['cbt_score'] !== null): ?>
+                                        <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[9px] font-bold">CBT: <?= number_format((float)$r['cbt_score'], 1) ?></span>
+                                    <?php endif; ?>
                                 </td>
 
                                 <td class="px-4 py-3.5 whitespace-nowrap">
@@ -959,7 +1082,7 @@ include __DIR__ . "/../includes/header.php";
             <!-- Download / Preview Berkas Dokumen -->
             <div>
                 <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Dokumen Berkas Terunggah:</label>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
                     <div id="docRapor" class="p-3 rounded-xl border border-white/5 bg-slate-950 text-center">
                         <i class="fa-solid fa-file-lines text-xl block mb-1 text-blue-400"></i>
                         <span class="text-[11px] font-semibold text-slate-300 block mt-1">Rapor Siswa</span>
@@ -980,6 +1103,23 @@ include __DIR__ . "/../includes/header.php";
                         <span class="text-[11px] font-semibold text-slate-300 block mt-1">Pas Foto 3x4</span>
                         <a id="linkFoto" href="#" target="_blank" class="text-xs text-blue-400 hover:underline mt-1 inline-block">Lihat Berkas ↗</a>
                     </div>
+                    <div id="docSertifikat" class="p-3 rounded-xl border border-white/5 bg-slate-950 text-center">
+                        <i class="fa-solid fa-trophy text-xl block mb-1 text-amber-400"></i>
+                        <span class="text-[11px] font-semibold text-slate-300 block mt-1">Sertifikat Prestasi</span>
+                        <a id="linkSertifikat" href="#" target="_blank" class="text-xs text-blue-400 hover:underline mt-1 inline-block">Lihat Berkas ↗</a>
+                    </div>
+                </div>
+
+                <!-- Multiple Certificates List (jika ada) -->
+                <div id="multiCertContainer" class="hidden mt-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <i class="fa-solid fa-trophy text-amber-400"></i>
+                            <span>Daftar Sertifikat Terunggah (<span id="modalCertCount">0</span> Berkas):</span>
+                        </span>
+                        <span class="text-[10px] text-amber-400/80 font-mono">Maks. 10 Sertifikat</span>
+                    </div>
+                    <div id="modalCertList" class="space-y-2"></div>
                 </div>
             </div>
 
@@ -1031,6 +1171,39 @@ include __DIR__ . "/../includes/header.php";
                     <label class="block text-xs font-semibold text-slate-300 mb-1.5">Catatan Tambahan Panitia Seleksi</label>
                     <textarea name="notes" id="modalNotes" rows="2" placeholder="Catatan hasil verifikasi atau arahan daftar ulang..."
                               class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none transition"></textarea>
+                </div>
+            </div>
+
+            <!-- Penjadwalan Ujian Masuk & Ruangan Seleksi Offline -->
+            <div class="rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-calendar-check text-indigo-400"></i>
+                        <span>Penjadwalan Ujian Masuk & Ruang Seleksi Offline</span>
+                    </span>
+                    <span class="text-[10px] text-slate-400">Tercetak pada Kartu Ujian Fisik Siswa</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Tanggal Ujian</label>
+                        <input type="date" name="exam_date" id="modalExamDate"
+                               class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-indigo-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Waktu / Jam Ujian</label>
+                        <input type="text" name="exam_time" id="modalExamTime" placeholder="Contoh: 08.00 - 10.00 WIB"
+                               class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-indigo-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Ruangan / Lab Ujian</label>
+                        <input type="text" name="exam_room" id="modalExamRoom" placeholder="Contoh: Lab Komputer 1 / Ruang 102"
+                               class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-indigo-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Sesi Ujian</label>
+                        <input type="text" name="exam_session" id="modalExamSession" placeholder="Contoh: Sesi 1 (Pagi)"
+                               class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-indigo-400 focus:outline-none">
+                    </div>
                 </div>
             </div>
 
@@ -1095,8 +1268,85 @@ include __DIR__ . "/../includes/header.php";
     </div>
 </div>
 
+<!-- MODAL DISTRIBUSI RUANGAN & SESI UJIAN MASSAL -->
+<div id="batchRoomModal" class="fixed inset-0 z-50 hidden bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="relative w-full max-w-lg rounded-3xl border border-indigo-500/30 bg-slate-900 p-6 sm:p-8 shadow-2xl text-slate-100 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-5 pb-4 border-b border-white/10">
+            <div class="flex items-center gap-3">
+                <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500/10 text-xl text-indigo-400">
+                    <i class="fa-solid fa-users-gear"></i>
+                </span>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Distribusi Ruang & Sesi Ujian Massal</h3>
+                    <p class="text-xs text-slate-400">Alokasikan peserta ujian ke lab & sesi secara otomatis berurutan.</p>
+                </div>
+            </div>
+            <button type="button" onclick="closeBatchRoomModal()" class="text-slate-400 hover:text-white transition">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+
+        <form method="POST" action="ppdb.php" class="space-y-4" onsubmit="return confirm('Apakah Anda yakin ingin mendistribusikan calon siswa ke ruangan dan sesi tersebut?');">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="batch_allocate_rooms">
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Tanggal Pelaksanaan Ujian *</label>
+                <input type="date" name="batch_exam_date" required value="<?= date('Y-m-d', strtotime('+3 days')) ?>"
+                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Daftar Ruangan / Lab Komputer *</label>
+                <textarea name="batch_rooms" rows="2" required placeholder="Lab Komputer 1, Lab Komputer 2, Ruang Multimedia"
+                          class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none transition">Lab Komputer 1, Lab Komputer 2</textarea>
+                <p class="text-[11px] text-slate-400 mt-1">Pisahkan tiap nama ruangan dengan tanda koma (,).</p>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Daftar Sesi & Waktu Ujian *</label>
+                <textarea name="batch_sessions" rows="3" required placeholder="Sesi 1 | 07.30 - 09.30 WIB&#10;Sesi 2 | 10.00 - 12.00 WIB"
+                          class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none transition font-mono text-xs">Sesi 1 | 08.00 - 10.00 WIB
+Sesi 2 | 10.30 - 12.30 WIB</textarea>
+                <p class="text-[11px] text-slate-400 mt-1">Format: <code>Nama Sesi | Waktu / Jam</code> (satu sesi per baris).</p>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Kapasitas Maksimal Siswa per Ruangan per Sesi *</label>
+                <input type="number" name="batch_capacity" value="30" min="1" max="100" required
+                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none transition">
+                <p class="text-[11px] text-slate-400 mt-1">Sistem akan mengisi ruangan hingga kapasitas ini tercapai sebelum lanjut ke ruangan/sesi berikutnya.</p>
+            </div>
+
+            <div class="pt-2">
+                <label class="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none">
+                    <input type="checkbox" name="only_unallocated" value="1" checked class="rounded border-white/20 bg-slate-950 text-indigo-600 focus:ring-0">
+                    <span>Hanya distribusikan peserta yang <strong>belum memiliki ruangan</strong> (Aman dari timpa jadwal lama).</span>
+                </label>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
+                <button type="button" onclick="closeBatchRoomModal()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition cursor-pointer">
+                    Batal
+                </button>
+                <button type="submit" class="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/25 transition cursor-pointer flex items-center gap-1.5">
+                    <i class="fa-solid fa-arrows-split-up-and-left"></i> Mulai Distribusi Massal
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 let currentCalculatedScore = null;
+
+function openBatchRoomModal() {
+    document.getElementById('batchRoomModal').classList.remove('hidden');
+}
+
+function closeBatchRoomModal() {
+    document.getElementById('batchRoomModal').classList.add('hidden');
+}
 
 function openReviewModal(data) {
     document.getElementById('modalRegId').value = data.id;
@@ -1135,11 +1385,55 @@ function openReviewModal(data) {
     document.getElementById('modalScore').value = data.selection_score !== null ? data.selection_score : '';
     document.getElementById('modalNotes').value = data.notes || '';
 
+    // Jadwal & Ruangan Ujian Masuk
+    document.getElementById('modalExamDate').value = data.exam_date || '';
+    document.getElementById('modalExamTime').value = data.exam_time || '';
+    document.getElementById('modalExamRoom').value = data.exam_room || '';
+    document.getElementById('modalExamSession').value = data.exam_session || '';
+
     // Handle documents
     setupDocLink('linkRapor', 'docRapor', data.report_card_doc);
     setupDocLink('linkKK', 'docKK', data.family_card_doc);
     setupDocLink('linkAkta', 'docAkta', data.birth_cert_doc);
     setupDocLink('linkFoto', 'docFoto', data.photo_doc);
+    setupDocLink('linkSertifikat', 'docSertifikat', data.achievement_cert_doc);
+
+    // Handle multiple certificates
+    const multiCertBox = document.getElementById('multiCertContainer');
+    const certList = document.getElementById('modalCertList');
+    const certCountSpan = document.getElementById('modalCertCount');
+
+    let achievements = [];
+    if (data.achievements_json) {
+        try {
+            achievements = typeof data.achievements_json === 'string' ? JSON.parse(data.achievements_json) : data.achievements_json;
+        } catch (e) {
+            achievements = [];
+        }
+    }
+
+    if (achievements && achievements.length > 0) {
+        certCountSpan.textContent = achievements.length;
+        certList.innerHTML = achievements.map((ach, idx) => {
+            const fileLink = ach.file ? `<a href="../../${ach.file}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white text-xs font-semibold transition"><i class="fa-solid fa-arrow-up-right-from-square"></i> Lihat Berkas ↗</a>` : `<span class="text-xs text-slate-500 italic">Tidak ada berkas</span>`;
+            return `
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/80 border border-white/5 text-xs">
+                    <div class="flex items-center gap-2.5 min-w-0 pr-2">
+                        <span class="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/30 text-amber-300 font-bold uppercase text-[10px] shrink-0">
+                            ${ach.level || 'Prestasi'}
+                        </span>
+                        <span class="font-semibold text-white truncate">${ach.title || 'Sertifikat #' + (idx + 1)}</span>
+                    </div>
+                    <div class="shrink-0">
+                        ${fileLink}
+                    </div>
+                </div>
+            `;
+        }).join('');
+        multiCertBox.classList.remove('hidden');
+    } else {
+        multiCertBox.classList.add('hidden');
+    }
 
     document.getElementById('reviewModal').classList.remove('hidden');
 }

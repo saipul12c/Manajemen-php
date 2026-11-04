@@ -328,6 +328,11 @@ require_once __DIR__ . "/../includes/header.php";
                                 <span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase mt-1 <?= $m['mail_type'] === 'masuk' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' ?>">
                                     <i class="fa-solid <?= $m['mail_type'] === 'masuk' ? 'fa-inbox' : 'fa-paper-plane' ?>"></i> Surat <?= ucfirst($m['mail_type']) ?>
                                 </span>
+                                <?php if (!empty($m['source_request_id'])): ?>
+                                    <span class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 mt-1">
+                                        <i class="fa-solid fa-bolt"></i> Layanan Surat TU
+                                    </span>
+                                <?php endif; ?>
                             </td>
                             <td class="px-6 py-4">
                                 <div class="font-semibold text-slate-100 text-xs font-mono"><?= htmlspecialchars($m['reference_no']) ?></div>
@@ -372,7 +377,12 @@ require_once __DIR__ . "/../includes/header.php";
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <div class="flex items-center justify-end gap-1.5 flex-wrap">
-                                    <?php if (!empty($m['attachment_file'])): ?>
+                                    <?php if (!empty($m['source_request_id'])): ?>
+                                        <a href="request_print.php?id=<?= $m['source_request_id'] ?>" target="_blank" 
+                                           class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 transition inline-flex items-center gap-1" title="Cetak Dokumen Resmi">
+                                            <i class="fa-solid fa-print"></i> Cetak
+                                        </a>
+                                    <?php elseif (!empty($m['attachment_file'])): ?>
                                         <a href="<?= htmlspecialchars($m['attachment_file']) ?>" target="_blank" 
                                            class="rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1.5 text-xs font-semibold text-blue-300 transition inline-flex items-center gap-1" title="Lihat Berkas Lampiran">
                                             <i class="fa-solid fa-file-pdf"></i> Berkas

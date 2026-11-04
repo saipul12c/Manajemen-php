@@ -15,7 +15,7 @@ if ($bill_id <= 0) {
 // Ambil data tagihan & pembayaran
 $stmt = $pdo->prepare("
     SELECT b.*, p.amount_paid, p.payment_method, p.payment_date, p.verified_at,
-           u.name as student_name, u.nisn, u.gender, c.name as class_name,
+           u.name as student_name, u.nisn, u.gender, u.phone as student_phone, c.name as class_name,
            vf.name as verifier_name
     FROM student_bills b
     JOIN users u ON b.student_id = u.id
@@ -47,6 +47,62 @@ if (!in_array($user_role, ['administrator', 'staf', 'guru'], true)) {
 
 $school = getSchoolSettings($pdo);
 
+// Token digital anti-pemalsuan untuk validasi publik QR Code
+$receipt_token = substr(hash('sha256', "RECEIPT_{$bill['id']}_{$bill['student_id']}_{$bill['amount']}_BINABANGSA"), 0, 32);
+$is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+$proto = $is_https ? "https" : "http";
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$current_dir = dirname($_SERVER['PHP_SELF'] ?? '/dashboard/keuangan');
+$verify_url = "{$proto}://{$host}{$current_dir}/receipt_verify.php?bill_id={$bill['id']}&token={$receipt_token}";
+
+// Fitur Kirim WhatsApp Slip Kuitansi ke Wali Siswa (Staf & Admin only)
+$wa_message = "";
+$wa_status = "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'send_wa_receipt') {
+    if (in_array($user_role, ['administrator', 'staf', 'guru'], true) && validateCsrfToken()) {
+        // Ambil kontak orang tua
+        $stmt_p = $pdo->prepare("
+            SELECT u_p.name, u_p.phone 
+            FROM parent_students ps
+            JOIN users u_p ON ps.parent_id = u_p.id
+            WHERE ps.student_id = ?
+            LIMIT 1
+        ");
+        $stmt_p->execute([$bill['student_id']]);
+        $parent = $stmt_p->fetch();
+
+        $dest_phone = $parent['phone'] ?? $bill['student_phone'] ?? '';
+        $dest_name  = $parent['name'] ?? ('Wali Murid ' . $bill['student_name']);
+
+        if (empty($dest_phone)) {
+            $wa_message = "Nomor WhatsApp wali murid maupun siswa belum terdaftar di sistem profil.";
+            $wa_status = "error";
+        } else {
+            $receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . "/" . str_pad((string)$bill['id'], 5, '0', STR_PAD_LEFT);
+            $msg_body = "🧾 *BUKTI PEMBAYARAN PENDIDIKAN RESMI*\n"
+                      . "*{$school['school_name']}*\n\n"
+                      . "Yth. Bpk/Ibu *{$dest_name}*,\n"
+                      . "Pembayaran tagihan pendidikan telah terverifikasi sah dengan rincian sbb:\n\n"
+                      . "• *No. Kuitansi*: {$receipt_no}\n"
+                      . "• *Nama Siswa*: {$bill['student_name']} (NISN: {$bill['nisn']})\n"
+                      . "• *Keperluan*: {$bill['title']}\n"
+                      . "• *Periode*: " . ($bill['month_period'] ?: 'Tahun Berjalan') . "\n"
+                      . "• *Nominal Lunas*: " . formatRupiah($bill['amount']) . "\n"
+                      . "• *Metode*: " . strtoupper(str_replace('_', ' ', $bill['payment_method'] ?? 'Tunai')) . "\n"
+                      . "• *Tanggal*: " . date('d F Y', strtotime($bill['payment_date'] ?? 'now')) . "\n\n"
+                      . "🔗 *Verifikasi Keaslian Kuitansi Digital*:\n"
+                      . "{$verify_url}\n\n"
+                      . "Simpan pesan ini sebagai bukti pembayaran yang sah. Terima kasih atas kerja samanya.\n\n"
+                      . "- *Bendahara Sekolah*";
+
+            $res_wa = sendWhatsAppNotification($pdo, $dest_phone, $dest_name, $msg_body, 'keuangan');
+            logActivity($pdo, 'SEND_WA_RECEIPT', "Kirim kuitansi #{$bill['id']} ke $dest_phone ($dest_name)");
+            $wa_message = "Kuitansi digital berhasil dikirim ke WhatsApp {$dest_name} ({$dest_phone})!";
+            $wa_status = "success";
+        }
+    }
+}
+
 // Helper fungsi terbilang sederhana
 function terbilang($angka) {
     $angka = abs((int)$angka);
@@ -72,7 +128,7 @@ function terbilang($angka) {
     return trim($terbilang);
 }
 
-$receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . "/" . str_pad($bill['id'], 5, '0', STR_PAD_LEFT);
+$receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . "/" . str_pad((string)$bill['id'], 5, '0', STR_PAD_LEFT);
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -82,6 +138,7 @@ $receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . 
     <title>Kuitansi Pembayaran #<?= $receipt_no ?></title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <style>
         @media print {
             .no-print { display: none !important; }
@@ -92,14 +149,36 @@ $receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . 
 </head>
 <body class="bg-slate-100 min-h-screen p-4 sm:p-8 flex flex-col items-center font-sans antialiased text-slate-800">
 
+    <!-- Notifikasi Alert WhatsApp -->
+    <?php if ($wa_message !== ''): ?>
+        <div class="w-full max-w-3xl mb-4 no-print flex items-center gap-3 rounded-2xl p-4 border <?= $wa_status === 'success' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-rose-50 border-rose-300 text-rose-800' ?>">
+            <i class="fa-solid <?= $wa_status === 'success' ? 'fa-circle-check text-emerald-600' : 'fa-circle-exclamation text-rose-600' ?> text-lg"></i>
+            <div class="flex-1 text-sm font-semibold"><?= htmlspecialchars($wa_message) ?></div>
+            <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-slate-700 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+    <?php endif; ?>
+
     <!-- Action Bar -->
-    <div class="w-full max-w-3xl mb-4 flex items-center justify-between no-print">
+    <div class="w-full max-w-3xl mb-4 flex items-center justify-between no-print gap-2 flex-wrap">
         <a href="payments.php" class="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm transition">
             <i class="fa-solid fa-arrow-left"></i> Kembali ke Keuangan
         </a>
-        <button onclick="window.print()" class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition cursor-pointer">
-            <i class="fa-solid fa-print"></i> Cetak Kuitansi
-        </button>
+
+        <div class="flex items-center gap-2">
+            <?php if (in_array($user_role, ['administrator', 'staf', 'guru'], true)): ?>
+                <form method="POST" onsubmit="return confirm('Kirimkan salinan kuitansi digital ini langsung ke WhatsApp nomor wali murid?');">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="send_wa_receipt">
+                    <button type="submit" class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-bold text-white shadow-md transition cursor-pointer">
+                        <i class="fa-brands fa-whatsapp text-base"></i> Kirim ke WA Wali
+                    </button>
+                </form>
+            <?php endif; ?>
+
+            <button onclick="window.print()" class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition cursor-pointer">
+                <i class="fa-solid fa-print"></i> Cetak Kuitansi
+            </button>
+        </div>
     </div>
 
     <!-- Official Receipt Sheet -->
@@ -147,7 +226,7 @@ $receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . 
             <div class="space-y-1.5">
                 <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold">Telah Diterima Dari:</div>
                 <div class="text-base font-bold text-slate-900"><?= htmlspecialchars($bill['student_name']) ?></div>
-                <div class="text-xs text-slate-600">Nomor Induk Siswa (NISN): <strong><?= htmlspecialchars($bill['nisn']) ?></strong></div>
+                <div class="text-xs text-slate-600">Nomor Induk Siswa (NISN): <strong><?= htmlspecialchars($bill['nisn'] ?: '-') ?></strong></div>
                 <div class="text-xs text-slate-600">Rombongan Belajar: <strong>Kelas <?= htmlspecialchars($bill['class_name'] ?: 'Umum') ?></strong></div>
             </div>
 
@@ -155,7 +234,7 @@ $receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . 
                 <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold">Untuk Keperluan:</div>
                 <div class="text-base font-bold text-slate-900"><?= htmlspecialchars($bill['title']) ?></div>
                 <div class="text-xs text-slate-600">Periode: <strong><?= htmlspecialchars($bill['month_period'] ?: 'Tahun Ajaran 2026/2027') ?></strong></div>
-                <div class="text-xs text-slate-600">Status Transaksi: <strong class="text-emerald-700">Terverifikasi Resmi</strong></div>
+                <div class="text-xs text-slate-600">Status Transaksi: <strong class="text-emerald-700">Terverifikasi Sah</strong></div>
             </div>
         </div>
 
@@ -172,33 +251,48 @@ $receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . 
             </div>
         </div>
 
-        <!-- Signatures & Stamp -->
-        <div class="grid grid-cols-2 gap-8 pt-8">
-            <div class="text-center">
-                <p class="text-xs text-slate-500">Penyetor / Wali Siswa,</p>
-                <div class="h-16"></div>
-                <p class="text-xs font-bold text-slate-900 underline">( <?= htmlspecialchars($bill['student_name']) ?> )</p>
+        <!-- Signatures & Verification -->
+        <div class="flex flex-col sm:flex-row justify-between items-end gap-6 pt-4">
+            <!-- Penyetor -->
+            <div class="text-center sm:text-left">
+                <p class="text-xs text-slate-500 mb-1">Tanda Tangan Penyetor / Wali:</p>
+                <div class="h-16 flex items-end">
+                    <p class="text-xs font-bold text-slate-900 underline">( <?= htmlspecialchars($bill['student_name']) ?> )</p>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">NISN: <?= htmlspecialchars($bill['nisn'] ?? '-') ?> • Kelas: <?= htmlspecialchars($bill['class_name'] ?? '-') ?></p>
             </div>
 
-            <div class="text-center">
-                <p class="text-xs text-slate-500">Jakarta, <?= date('d F Y', strtotime($bill['verified_at'] ?? 'now')) ?></p>
-                <p class="text-xs text-slate-500">Bendahara / Petugas Loket TU,</p>
-                <div class="h-16 flex items-center justify-center">
-                    <span class="rounded-full border-2 border-blue-600 px-3 py-1 text-[11px] font-bold text-blue-700 -rotate-12 uppercase tracking-widest opacity-80">
-                        TERVERIFIKASI
-                    </span>
-                </div>
-                <p class="text-xs font-bold text-slate-900 underline">( <?= htmlspecialchars($bill['verifier_name'] ?: 'Budi Santoso, S.Kom') ?> )</p>
-                <p class="text-[10px] text-slate-400">NIP: 19820415 200501 1 004</p>
+            <!-- Bendahara Sekolah Resmi -->
+            <div>
+                <?= renderOfficialSignatureHtml($pdo, 'treasurer', [
+                    'doc_type' => 'KUITANSI_SPP',
+                    'doc_num' => $receipt_no,
+                    'doc_title' => 'Kuitansi Pembayaran Tagihan Sekolah',
+                    'student_name' => $bill['student_name']
+                ]) ?>
             </div>
         </div>
 
         <!-- Receipt Footer Note -->
         <div class="border-t border-slate-200 pt-3 text-center text-[10px] text-slate-400">
-            * Kuitansi ini dicetak secara sah melalui Sistem Manajemen-PHP Sekolah dan merupakan bukti pembayaran resmi yang tidak dapat disanggah.
+            * Kuitansi ini dicetak secara sah melalui Sistem Manajemen-PHP Sekolah dan merupakan bukti pembayaran resmi yang tidak dapat disanggah. Token Verifikasi: <span class="font-mono text-slate-600"><?= $receipt_token ?></span>
         </div>
 
     </div>
+
+    <!-- Script Generate QR Code -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            new QRCode(document.getElementById("receiptQrCode"), {
+                text: "<?= addslashes($verify_url) ?>",
+                width: 90,
+                height: 90,
+                colorDark : "#0f172a",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.M
+            });
+        });
+    </script>
 
 </body>
 </html>

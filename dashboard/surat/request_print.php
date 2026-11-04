@@ -47,6 +47,12 @@ if (!in_array($user_role, ['staf', 'administrator'], true) && !$is_owner && !$is
     exit;
 }
 
+// Surat resmi hanya dapat dicetak apabila telah disetujui dan berstatus 'selesai'
+if ($req['status'] !== 'selesai' && !in_array($user_role, ['staf', 'administrator'], true)) {
+    header("Location: requests.php?error=not_approved");
+    exit;
+}
+
 // Format Penomoran Surat Resmi Berdasarkan Kode Klasifikasi Arsip
 $type_codes = [
     'Surat Keterangan Aktif Siswa'               => '421.3/KET-AKTIF',
@@ -58,6 +64,7 @@ $type_codes = [
     'Surat Izin Dispensasi Acara / Kegiatan'     => '421.3/DISP',
     'Surat Izin Sakit Siswa'                     => '421.3/IZIN-SAKIT',
     'Surat Perintah Tugas (SPT) Guru / Pegawai' => '800/SPT-GTK',
+    'Surat Keterangan Bebas Tanggungan Sekolah' => '421.3/BEBAS-SEKOLAH',
 ];
 $prefix = $type_codes[$req['request_type']] ?? '421.3/SRT';
 
@@ -499,6 +506,108 @@ function tglIndo($date_str, $bulan_indo) {
             </div>
 
         <!-- ========================================================= -->
+        <!-- FORMAT KHUSUS: SURAT KETERANGAN BEBAS TANGGUNGAN SEKOLAH (3-IN-1 CLEARANCE) -->
+        <!-- ========================================================= -->
+        <?php elseif (stripos($req['request_type'], 'Bebas Tanggungan') !== false || stripos($req['request_type'], 'Clearance') !== false): 
+            $clearance_check = getStudentClearanceStatus($pdo, (int)$req['user_id']);
+        ?>
+
+            <div class="text-center my-6">
+                <h2 class="text-lg font-bold uppercase tracking-wider underline decoration-2 text-slate-900 font-sans">
+                    SURAT KETERANGAN BEBAS TANGGUNGAN SEKOLAH
+                </h2>
+                <p class="text-xs font-mono text-slate-600 mt-1">Nomor: <?= $letter_number ?></p>
+            </div>
+
+            <div class="space-y-4 text-sm leading-relaxed text-slate-800 text-justify">
+                <p>
+                    Yang bertanda tangan di bawah ini, Kepala Sekolah <strong><?= htmlspecialchars($school_info['school_name']) ?></strong> menerangkan bahwa peserta didik:
+                </p>
+
+                <div class="my-4 ml-6 space-y-1.5 font-sans text-xs">
+                    <div class="grid grid-cols-4">
+                        <span class="text-slate-600">Nama Lengkap</span>
+                        <span class="col-span-3 font-bold text-slate-900">: <?= htmlspecialchars($req['applicant_name']) ?></span>
+                    </div>
+                    <div class="grid grid-cols-4">
+                        <span class="text-slate-600">NISN / Nomor Induk</span>
+                        <span class="col-span-3 font-mono text-slate-900">: <?= htmlspecialchars($req['nisn'] ?: '3171092837') ?></span>
+                    </div>
+                    <div class="grid grid-cols-4">
+                        <span class="text-slate-600">Kelas / Rombel Terakhir</span>
+                        <span class="col-span-3 text-slate-900">: <?= htmlspecialchars($req['class_name'] ?? 'Kelas XII') ?></span>
+                    </div>
+                    <div class="grid grid-cols-4">
+                        <span class="text-slate-600">Alamat Tempat Tinggal</span>
+                        <span class="col-span-3 text-slate-900">: <?= htmlspecialchars($req['applicant_address'] ?: 'Jakarta, Indonesia') ?></span>
+                    </div>
+                </div>
+
+                <p>
+                    Telah menyelesaikan seluruh kewajiban administrasi, akademik, dan tata tertib sekolah dengan verifikasi data lintas divisi sebagai berikut:
+                </p>
+
+                <!-- Tabel Verifikasi 3-in-1 Clearance -->
+                <div class="my-4 border border-slate-300 rounded-xl overflow-hidden font-sans text-xs">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-700 border-b border-slate-300">
+                                <th class="p-2.5 font-bold w-12 text-center">No</th>
+                                <th class="p-2.5 font-bold">Divisi / Aspek Pemeriksaan</th>
+                                <th class="p-2.5 font-bold">Rincian Status</th>
+                                <th class="p-2.5 font-bold text-center w-28">Status Verifikasi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200">
+                            <tr>
+                                <td class="p-2.5 text-center font-bold">1</td>
+                                <td class="p-2.5 font-semibold text-slate-900">Perpustakaan & Pustaka Digital</td>
+                                <td class="p-2.5 text-slate-600">Telah mengembalikan seluruh buku pinjaman dan tidak memiliki denda keterlambatan buku fisik maupun digital.</td>
+                                <td class="p-2.5 text-center">
+                                    <span class="inline-block px-2 py-0.5 rounded font-bold text-[11px] <?= $clearance_check['library']['status'] ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300' ?>">
+                                        <?= $clearance_check['library']['status'] ? 'BEBAS PUSTAKA' : 'TERTUNGGAK' ?>
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="p-2.5 text-center font-bold">2</td>
+                                <td class="p-2.5 font-semibold text-slate-900">Administrasi Keuangan & SPP</td>
+                                <td class="p-2.5 text-slate-600">Telah menyelesaikan pembayaran SPP bulanan, uang kegiatan, dan sumbangan fasilitas sekolah.</td>
+                                <td class="p-2.5 text-center">
+                                    <span class="inline-block px-2 py-0.5 rounded font-bold text-[11px] <?= $clearance_check['finance']['status'] ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300' ?>">
+                                        <?= $clearance_check['finance']['status'] ? 'LUNAS (NIHIL)' : 'TERTUNGGAK' ?>
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="p-2.5 text-center font-bold">3</td>
+                                <td class="p-2.5 font-semibold text-slate-900">Bimbingan Konseling & Tata Tertib</td>
+                                <td class="p-2.5 text-slate-600">Bebas dari sanksi pelanggaran tata tertib dan memiliki rekam jejak perilaku disiplin baik.</td>
+                                <td class="p-2.5 text-center">
+                                    <span class="inline-block px-2 py-0.5 rounded font-bold text-[11px] <?= $clearance_check['counseling']['status'] ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300' ?>">
+                                        <?= $clearance_check['counseling']['status'] ? 'MEMENUHI SYARAT' : 'PERLU TINDAK LANJUT' ?>
+                                    </span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="my-4 py-3 px-4 text-center border-2 border-slate-900 bg-slate-50 rounded-xl">
+                    <span class="text-xs uppercase font-sans font-bold tracking-wider text-slate-700 block">Menetapkan Bahwa Siswa:</span>
+                    <span class="text-xl font-black font-sans tracking-wide text-slate-950 uppercase mt-0.5 block">DIBEBASKAN DARI SEGALA TANGGUNGAN SEKOLAH</span>
+                </div>
+
+                <p>
+                    Surat keterangan ini diterbitkan secara sah untuk dipergunakan sebagai kelengkapan pengambilan Ijazah, Surat Keterangan Lulus (SKL), atau persyaratan administrasi mutasi pindah sekolah.
+                </p>
+
+                <p>
+                    Demikian surat keterangan ini dibuat dengan sebenarnya untuk dipergunakan sebagaimana mestinya.
+                </p>
+            </div>
+
+        <!-- ========================================================= -->
         <!-- FORMAT STANDAR: KETERANGAN AKTIF SISWA & DISPENSASI/LAINNYA -->
         <!-- ========================================================= -->
         <?php else: ?>
@@ -566,35 +675,31 @@ function tglIndo($date_str, $bulan_indo) {
         <!-- ========================================================= -->
         <!-- TANDA TANGAN KEPALA SEKOLAH, STEMPEL & QR VALIDASI RESMI -->
         <!-- ========================================================= -->
-        <div class="grid grid-cols-2 gap-8 pt-10 mt-8 border-t border-slate-300 font-sans text-xs">
-            <div class="flex flex-col items-center justify-center p-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-center">
-                <span class="text-3xl mb-1 text-slate-700"><i class="fa-solid fa-qrcode"></i></span>
-                <span class="font-mono text-[10px] text-slate-700 font-bold uppercase tracking-wider">VERIFIED-ELECTRONIC-DOCUMENT</span>
-                <span class="text-[9px] text-slate-500 mt-0.5 font-mono">DOKUMEN RESMI TATA USAHA</span>
-                <span class="text-[8px] text-slate-400 mt-0.5 font-mono">HASH: <?= strtoupper(substr(md5($req['id'] . $req['created_at'] . 'SEKOLAH_AUTH'), 0, 16)) ?></span>
+        <div class="grid grid-cols-2 gap-8 pt-8 mt-8 border-t border-slate-300 font-sans text-xs">
+            <div class="flex flex-col items-center justify-center p-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-center">
+                <?php
+                $base_dir = rtrim(dirname($_SERVER['PHP_SELF'] ?? ''), '/\\');
+                $root_path = preg_replace('/\/dashboard.*$/', '', $base_dir);
+                $applicant_name = $req['applicant_name'] ?? '';
+                $letter_hash = strtoupper(substr(md5($letter_number . ($school['headmaster_nip'] ?? '') . 'SEKOLAH_AUTH_TTE'), 0, 16));
+                $base_verify_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $root_path . '/verify_document.php?doc_type=' . urlencode($type) . '&doc_num=' . urlencode($letter_number) . '&student_name=' . urlencode($applicant_name) . '&hash=' . $letter_hash;
+                ?>
+                <a href="<?= htmlspecialchars($base_verify_url) ?>" target="_blank" title="Scan / Klik untuk Verifikasi Resmi">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=95x95&margin=0&data=<?= urlencode($base_verify_url) ?>" 
+                         alt="QR Verifikasi" class="w-20 h-20 border border-slate-300 p-0.5 rounded shadow-sm mb-1.5 bg-white">
+                </a>
+                <span class="font-mono text-[9px] text-blue-800 font-bold uppercase tracking-wider">VERIFIED-ELECTRONIC-DOCUMENT</span>
+                <span class="text-[8px] text-slate-500 font-mono">DOKUMEN RESMI TATA USAHA</span>
+                <span class="text-[7.5px] text-slate-400 font-mono">HASH: <?= $letter_hash ?></span>
             </div>
 
-            <div class="text-right relative">
-                <p class="text-slate-600">Dikeluarkan di: Jakarta</p>
-                <p class="text-slate-600">Pada tanggal: <?= tglIndo($req['updated_at'] ?: $req['created_at'], $bulan_indo) ?></p>
-                <p class="mt-2 font-bold text-slate-900">Kepala Sekolah,</p>
-                
-                <!-- Area Tanda Tangan & Cap Stempel -->
-                <div class="h-20 flex items-center justify-end relative my-1">
-                    <!-- Simulasi Cap Stempel Basah Digital -->
-                    <div class="absolute right-24 w-20 h-20 rounded-full border-2 border-dashed border-blue-600/40 text-blue-700/50 flex flex-col items-center justify-center pointer-events-none rotate-[-12deg] select-none text-[8px] font-bold uppercase tracking-tighter">
-                        <span class="text-[6px]">KEMENDIKBUD</span>
-                        <i class="fa-solid fa-stamp text-xs my-0.5"></i>
-                        <span>TERAKREDITASI</span>
-                    </div>
-
-                    <span class="text-xs italic text-blue-800 font-bold border border-blue-600/60 px-3 py-1.5 rounded-lg bg-blue-50/80 shadow-sm relative z-10">
-                        <i class="fa-solid fa-signature text-xs mr-1"></i> Ditandatangani Elektronik
-                    </span>
-                </div>
-
-                <p class="font-bold underline text-slate-900 text-sm"><?= htmlspecialchars($school_info['headmaster_name']) ?></p>
-                <p class="text-xs text-slate-600 font-mono mt-0.5">NIP. <?= htmlspecialchars($school_info['headmaster_nip']) ?></p>
+            <div class="text-right">
+                <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
+                    'doc_type' => $type,
+                    'doc_num' => $letter_number,
+                    'student_name' => $applicant_name,
+                    'date' => tglIndo($req['updated_at'] ?: $req['created_at'], $bulan_indo)
+                ]) ?>
             </div>
         </div>
 

@@ -28,8 +28,138 @@ $success_msg = '';
 $error_msg = '';
 $submitted_ticket = '';
 
+// Defensive migration for contact_messages table & columns
+try {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `contact_messages` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `ticket_code` VARCHAR(50) DEFAULT NULL,
+            `name` VARCHAR(150) NOT NULL,
+            `email` VARCHAR(150) NOT NULL,
+            `phone` VARCHAR(50) DEFAULT NULL,
+            `category` VARCHAR(60) NOT NULL DEFAULT 'Umum',
+            `subject` VARCHAR(255) NOT NULL,
+            `message` TEXT NOT NULL,
+            `status` VARCHAR(20) NOT NULL DEFAULT 'baru',
+            `ip_address` VARCHAR(45) DEFAULT NULL,
+            `admin_notes` TEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ");
+
+    $col_check = $pdo->query("SHOW COLUMNS FROM `contact_messages`")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('ticket_code', $col_check, true)) {
+        $pdo->exec("ALTER TABLE `contact_messages` ADD COLUMN `ticket_code` VARCHAR(50) DEFAULT NULL AFTER `id`");
+    }
+    if (!in_array('category', $col_check, true)) {
+        $pdo->exec("ALTER TABLE `contact_messages` ADD COLUMN `category` VARCHAR(60) NOT NULL DEFAULT 'Umum' AFTER `phone`");
+    }
+    if (!in_array('ip_address', $col_check, true)) {
+        $pdo->exec("ALTER TABLE `contact_messages` ADD COLUMN `ip_address` VARCHAR(45) DEFAULT NULL");
+    }
+    if (!in_array('admin_notes', $col_check, true)) {
+        $pdo->exec("ALTER TABLE `contact_messages` ADD COLUMN `admin_notes` TEXT DEFAULT NULL AFTER `ip_address`");
+    }
+    if (!in_array('updated_at', $col_check, true)) {
+        $pdo->exec("ALTER TABLE `contact_messages` ADD COLUMN `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    }
+} catch (Exception $e) {}
+
+// Helper function: Mask email for public tracking privacy
+function maskEmail(string $email): string {
+    if (strpos($email, '@') === false) return $email;
+    [$user, $domain] = explode('@', $email, 2);
+    $len = strlen($user);
+    if ($len <= 2) {
+        return substr($user, 0, 1) . '***@' . $domain;
+    }
+    return substr($user, 0, 2) . str_repeat('*', min(4, max(1, $len - 3))) . substr($user, -1) . '@' . $domain;
+}
+
+// Helper function: Mask phone for public tracking privacy
+function maskPhone(?string $phone): string {
+    if (!$phone) return '-';
+    $clean = preg_replace('/[^0-9]/', '', $phone);
+    $len = strlen($clean);
+    if ($len <= 6) return substr($clean, 0, 2) . '****';
+    return substr($clean, 0, 4) . '****' . substr($clean, -3);
+}
+
+// Helper function: Category label
+function getContactCatLabel(string $cat): string {
+    return match(strtolower($cat)) {
+        'ppdb'      => 'PPDB / Pendaftaran',
+        'akademik'  => 'Akademik & KBM',
+        'keuangan'  => 'Keuangan / SPP',
+        'teknis'    => 'Bantuan Teknis & Portal',
+        'saran'     => 'Kritik & Saran',
+        default     => ucfirst($cat)
+    };
+}
+
+// Helper function: Category badge styling
+function getContactCatBadge(string $cat): string {
+    return match(strtolower($cat)) {
+        'ppdb'      => 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+        'akademik'  => 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+        'keuangan'  => 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+        'teknis'    => 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300',
+        'saran'     => 'border-purple-500/30 bg-purple-500/10 text-purple-300',
+        default     => 'border-slate-500/30 bg-slate-500/10 text-slate-300'
+    };
+}
+
+// -------------------------------------------------------------
+// AJAX API ENDPOINT: Track Ticket (Dynamic JSON)
+// -------------------------------------------------------------
+if (isset($_GET['action']) && $_GET['action'] === 'track_api') {
+    header('Content-Type: application/json; charset=utf-8');
+    $api_code = trim((string)($_GET['ticket'] ?? ''));
+    if ($api_code === '') {
+        echo json_encode(['success' => false, 'message' => 'Silakan masukkan nomor tiket yang valid.']);
+        exit;
+    }
+    try {
+        $stmt_api = $pdo->prepare("SELECT * FROM `contact_messages` WHERE UPPER(TRIM(ticket_code)) = UPPER(TRIM(?)) LIMIT 1");
+        $stmt_api->execute([$api_code]);
+        $ticket = $stmt_api->fetch(PDO::FETCH_ASSOC);
+        if ($ticket) {
+            echo json_encode([
+                'success' => true,
+                'data' => [
+                    'ticket_code' => $ticket['ticket_code'],
+                    'name' => $ticket['name'],
+                    'email_masked' => maskEmail($ticket['email']),
+                    'phone_masked' => maskPhone($ticket['phone']),
+                    'category' => $ticket['category'],
+                    'category_label' => getContactCatLabel($ticket['category']),
+                    'category_badge' => getContactCatBadge($ticket['category']),
+                    'subject' => $ticket['subject'],
+                    'message' => $ticket['message'],
+                    'status' => $ticket['status'],
+                    'admin_notes' => $ticket['admin_notes'] ?? '',
+                    'created_at' => $ticket['created_at'],
+                    'created_at_fmt' => date('d M Y, H:i', strtotime($ticket['created_at'])) . ' WIB',
+                    'updated_at' => $ticket['updated_at'] ?? $ticket['created_at'],
+                    'updated_at_fmt' => date('d M Y, H:i', strtotime($ticket['updated_at'] ?? $ticket['created_at'])) . ' WIB'
+                ]
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Tiket dengan nomor "' . htmlspecialchars($api_code) . '" tidak ditemukan. Mohon periksa kembali kode tiket Anda (contoh: TIK-' . date('Ymd') . '-XXXXX).'
+            ]);
+        }
+    } catch (Exception $e) {
+        error_log("Contact track error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Terjadi kesalahan pada sistem saat memeriksa tiket. Silakan coba kembali.']);
+    }
+    exit;
+}
+
 // Handle Form Submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_contact') {
     $token = $_POST['csrf_token'] ?? '';
     $honeypot = $_POST['website_hp'] ?? ''; // Honeypot bot protection
 
@@ -54,24 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (mb_strlen($message) < 10) {
             $error_msg = 'Pesan terlalu singkat. Mohon jelaskan kebutuhan atau pertanyaan Anda minimal 10 karakter.';
         } else {
-            // Auto create contact_messages table if not exists
             try {
-                $pdo->exec("
-                    CREATE TABLE IF NOT EXISTS `contact_messages` (
-                        `id` INT AUTO_INCREMENT PRIMARY KEY,
-                        `ticket_code` VARCHAR(32) NOT NULL UNIQUE,
-                        `name` VARCHAR(150) NOT NULL,
-                        `email` VARCHAR(150) NOT NULL,
-                        `phone` VARCHAR(50) DEFAULT NULL,
-                        `category` VARCHAR(60) NOT NULL DEFAULT 'Umum',
-                        `subject` VARCHAR(255) NOT NULL,
-                        `message` TEXT NOT NULL,
-                        `status` ENUM('unread', 'read', 'replied') NOT NULL DEFAULT 'unread',
-                        `ip_address` VARCHAR(45) DEFAULT NULL,
-                        `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                ");
-
                 $ticket_code = 'TIK-' . date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
                 $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN';
 
@@ -79,17 +192,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     INSERT INTO `contact_messages` (`ticket_code`, `name`, `email`, `phone`, `category`, `subject`, `message`, `ip_address`)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->execute([$ticket_code, $name, $email, $phone, $category, $subject, $message]);
+                $stmt->execute([$ticket_code, $name, $email, $phone, $category, $subject, $message, $ip_address]);
 
                 // Reset CSRF token
                 $_SESSION['contact_csrf_token'] = bin2hex(random_bytes(32));
                 $submitted_ticket = $ticket_code;
-                $success_msg = 'Pesan Anda berhasil terkirim ke Pusat Layanan ' . htmlspecialchars($school_info['school_name'] ?? 'Sekolah') . '. Tim kami akan menghubungi Anda melalui email atau WhatsApp.';
+                $success_msg = 'Pesan Anda berhasil terkirim ke Pusat Layanan ' . htmlspecialchars($school_info['school_name'] ?? 'Sekolah') . '. Tiket resmi Anda telah dibuat. Anda dapat langsung melacak progres penanganan tiket menggunakan nomor di bawah.';
             } catch (Exception $e) {
-                $error_msg = 'Terjadi kendala saat menyimpan pesan: ' . htmlspecialchars($e->getMessage());
+                error_log("Contact submit error: " . $e->getMessage());
+                $error_msg = 'Terjadi kendala saat menyimpan pesan Anda. Silakan coba beberapa saat lagi.';
             }
         }
     }
+}
+
+// Handle Server-Side Ticket Tracking (via GET / POST)
+$track_code = trim((string)($_GET['ticket'] ?? $_GET['lacak'] ?? $_POST['ticket_code'] ?? ''));
+$tracked_ticket = null;
+$track_error = '';
+
+if ($track_code !== '') {
+    try {
+        $stmt_tr = $pdo->prepare("SELECT * FROM `contact_messages` WHERE UPPER(TRIM(ticket_code)) = UPPER(TRIM(?)) LIMIT 1");
+        $stmt_tr->execute([$track_code]);
+        $tracked_ticket = $stmt_tr->fetch(PDO::FETCH_ASSOC);
+        if (!$tracked_ticket) {
+            $track_error = 'Tiket dengan nomor "' . htmlspecialchars($track_code) . '" tidak ditemukan. Mohon periksa kembali kode tiket Anda.';
+        }
+    } catch (Exception $e) {
+        $track_error = 'Terjadi kendala saat memeriksa tiket: ' . htmlspecialchars($e->getMessage());
+    }
+}
+
+// Active Tab determination: 'form' or 'track'
+$active_tab = 'form';
+if (!empty($tracked_ticket) || !empty($track_error) || isset($_GET['ticket']) || isset($_GET['lacak']) || (isset($_GET['tab']) && $_GET['tab'] === 'track')) {
+    $active_tab = 'track';
 }
 
 // Clean phone number for WhatsApp link
@@ -105,8 +243,8 @@ if (str_starts_with($clean_wa, '0')) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Hubungi Kami - <?= htmlspecialchars($school_info['school_name'] ?? 'Manajemen-PHP') ?></title>
-    <meta name="description" content="Pusat informasi dan kontak resmi <?= htmlspecialchars($school_info['school_name'] ?? 'Manajemen-PHP') ?>. Layanan bantuan PPDB, tata usaha, hotline WhatsApp, dan pengaduan civitas sekolah.">
+    <title>Hubungi Kami & Lacak Tiket - <?= htmlspecialchars($school_info['school_name'] ?? 'Manajemen-PHP') ?></title>
+    <meta name="description" content="Pusat informasi, kontak resmi, dan pelacakan tiket pengaduan publik <?= htmlspecialchars($school_info['school_name'] ?? 'Manajemen-PHP') ?>. Layanan bantuan PPDB, tata usaha, hotline WhatsApp, dan pengaduan civitas sekolah.">
 
     <!-- Tailwind CSS v4 Browser CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
@@ -129,6 +267,44 @@ if (str_starts_with($clean_wa, '0')) {
         .glow-radial-amber {
             background: radial-gradient(circle at 50% 100%, rgba(245, 158, 11, 0.12) 0%, rgba(15, 23, 42, 0) 70%);
         }
+        @media print {
+            body {
+                background: #ffffff !important;
+                color: #0f172a !important;
+            }
+            header, footer, nav, #quickContactSection, #heroSection, #faqSection, .no-print, #tabSwitcherBar, #searchTicketBox, #rightDirectoryCol, .ambient-glow {
+                display: none !important;
+            }
+            #mainInteractionBox {
+                border: none !important;
+                background: transparent !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+            }
+            #ticketPrintArea {
+                display: block !important;
+                background: #ffffff !important;
+                border: 2px solid #0f172a !important;
+                color: #0f172a !important;
+                box-shadow: none !important;
+                border-radius: 12px !important;
+                padding: 24px !important;
+                margin: 0 auto !important;
+                width: 100% !important;
+            }
+            #ticketPrintArea * {
+                color: #0f172a !important;
+                border-color: #cbd5e1 !important;
+                background-color: transparent !important;
+                text-shadow: none !important;
+            }
+            .print-only-block {
+                display: block !important;
+            }
+        }
+        .print-only-block {
+            display: none;
+        }
     </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 antialiased selection:bg-blue-600 selection:text-white flex flex-col justify-between">
@@ -146,7 +322,7 @@ if (str_starts_with($clean_wa, '0')) {
         <div class="pointer-events-none absolute inset-x-0 bottom-0 h-96 glow-radial-amber"></div>
 
         <!-- HERO HEADER -->
-        <section class="relative pt-12 pb-10 sm:pt-16 sm:pb-12 text-center px-4 max-w-4xl mx-auto">
+        <section id="heroSection" class="relative pt-12 pb-10 sm:pt-16 sm:pb-12 text-center px-4 max-w-4xl mx-auto no-print">
             <div class="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3.5 py-1 text-xs font-semibold text-amber-300 mb-5">
                 <i class="fa-solid fa-headset animate-bounce text-[10px]"></i>
                 <span>Pusat Layanan & Bantuan Terpadu</span>
@@ -159,10 +335,22 @@ if (str_starts_with($clean_wa, '0')) {
             <p class="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
                 Punya pertanyaan seputar penerimaan siswa baru (PPDB), administrasi akademik, legalisir surat, atau kendala portal? Tim tata usaha dan pengelola siap melayani Anda.
             </p>
+
+            <!-- Quick Action Buttons in Hero -->
+            <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <button type="button" onclick="switchContactTab('form')" class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 px-5 py-2.5 text-xs sm:text-sm font-bold text-slate-950 transition shadow-lg shadow-amber-500/20 cursor-pointer">
+                    <i class="fa-solid fa-paper-plane text-xs"></i>
+                    <span>Kirim Pesan / Pengaduan Baru</span>
+                </button>
+                <button type="button" onclick="switchContactTab('track')" class="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-amber-400/50 px-5 py-2.5 text-xs sm:text-sm font-semibold text-slate-200 hover:text-white transition shadow-lg cursor-pointer">
+                    <i class="fa-solid fa-magnifying-glass text-amber-400 text-xs"></i>
+                    <span>Lacak Status Tiket Anda</span>
+                </button>
+            </div>
         </section>
 
         <!-- QUICK CONTACT CARDS (4 COLUMNS) -->
-        <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
+        <section id="quickContactSection" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12 no-print">
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 
                 <!-- Card 1: Alamat Kampus -->
@@ -249,185 +437,526 @@ if (str_starts_with($clean_wa, '0')) {
             </div>
         </section>
 
-        <!-- MAIN SECTION: FORM + SIDEBAR DIRECTORY -->
-        <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-16">
+        <!-- MAIN SECTION: FORM & TRACKER + SIDEBAR DIRECTORY -->
+        <section id="interactionSection" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-16">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                 
-                <!-- LEFT COLUMN: FORM HUBUNGI KAMI (7 COLS) -->
-                <div class="lg:col-span-7 rounded-3xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-                    <div class="absolute -right-20 -bottom-20 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                <!-- LEFT COLUMN: INTERACTIVE HUB (FORM + TRACKER) (7 COLS) -->
+                <div class="lg:col-span-7 rounded-3xl border border-white/10 bg-slate-900/80 backdrop-blur-md p-6 sm:p-8 shadow-2xl relative overflow-hidden" id="mainInteractionBox">
+                    <div class="absolute -right-20 -bottom-20 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none ambient-glow"></div>
 
-                    <!-- Alerts -->
-                    <?php if ($success_msg): ?>
-                        <div class="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-emerald-200">
-                            <div class="flex items-start gap-3">
-                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-sm">
-                                    <i class="fa-solid fa-circle-check"></i>
-                                </span>
-                                <div class="space-y-1">
-                                    <p class="text-sm font-bold text-white">Tiket Pengaduan / Pesan Diterima!</p>
-                                    <p class="text-xs leading-relaxed"><?= $success_msg ?></p>
-                                    <?php if ($submitted_ticket): ?>
-                                        <div class="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-950/70 border border-emerald-500/30 px-3.5 py-1.5 text-xs font-mono font-bold text-emerald-300">
-                                            <span>Nomor Tiket:</span>
-                                            <span class="underline decoration-dotted"><?= htmlspecialchars($submitted_ticket) ?></span>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if ($error_msg): ?>
-                        <div class="mb-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-200 flex items-start gap-3">
-                            <i class="fa-solid fa-circle-exclamation text-rose-400 text-lg mt-0.5"></i>
-                            <div class="text-xs leading-relaxed">
-                                <p class="font-bold text-white mb-0.5">Perhatian</p>
-                                <p><?= $error_msg ?></p>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <!-- Form Header -->
-                    <div class="mb-6 border-b border-white/10 pb-4">
-                        <h2 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-paper-plane text-amber-400 text-lg"></i>
-                            <span>Kirim Pesan atau Pertanyaan</span>
-                        </h2>
-                        <p class="text-xs text-slate-400 mt-1">
-                            Sampaikan pertanyaan, kendala teknis, pengaduan, atau kritik saran Anda. Kami akan menindaklanjuti secara resmi.
-                        </p>
+                    <!-- SEGMENTED TAB SWITCHER -->
+                    <div id="tabSwitcherBar" class="flex items-center gap-1.5 p-1.5 rounded-2xl bg-white/5 border border-white/10 mb-6 no-print">
+                        <button type="button" id="tabBtnForm" onclick="switchContactTab('form')"
+                                class="flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer <?= $active_tab === 'form' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5' ?>">
+                            <i class="fa-solid fa-paper-plane text-xs"></i>
+                            <span>Kirim Pesan Baru</span>
+                        </button>
+                        <button type="button" id="tabBtnTrack" onclick="switchContactTab('track')"
+                                class="flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer <?= $active_tab === 'track' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5' ?>">
+                            <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                            <span>Lacak Status Tiket</span>
+                            <span class="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] <?= $active_tab === 'track' ? 'bg-slate-950/20 text-slate-950 font-extrabold' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30' ?>">Cek Progres</span>
+                        </button>
                     </div>
 
-                    <!-- Contact Form -->
-                    <form action="kontak.php" method="POST" class="space-y-4">
-                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['contact_csrf_token']) ?>">
-                        
-                        <!-- Anti-spam Honeypot -->
-                        <div class="hidden" aria-hidden="true">
-                            <label for="website_hp">Jangan isi kolom ini jika Anda manusia</label>
-                            <input type="text" id="website_hp" name="website_hp" tabindex="-1" autocomplete="off">
-                        </div>
+                    <!-- ================= TAB 1: FORMULIR HUBUNGI KAMI ================= -->
+                    <div id="viewFormContainer" class="<?= $active_tab === 'form' ? '' : 'hidden' ?>">
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <!-- Name -->
-                            <div>
-                                <label for="name" class="block text-xs font-semibold text-slate-300 mb-1.5">
-                                    Nama Lengkap <span class="text-rose-400">*</span>
-                                </label>
-                                <div class="relative">
-                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
-                                        <i class="fa-solid fa-user"></i>
+                        <!-- Alerts -->
+                        <?php if ($success_msg): ?>
+                            <div class="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-emerald-200 shadow-xl">
+                                <div class="flex items-start gap-3">
+                                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-sm">
+                                        <i class="fa-solid fa-circle-check text-lg"></i>
                                     </span>
-                                    <input type="text" id="name" name="name" required
-                                           value="<?= htmlspecialchars($_POST['name'] ?? $user_name) ?>"
-                                           placeholder="Nama lengkap Anda"
-                                           class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
+                                    <div class="space-y-2 flex-1">
+                                        <p class="text-sm font-bold text-white">Tiket Pengaduan / Pesan Diterima!</p>
+                                        <p class="text-xs leading-relaxed text-emerald-200"><?= $success_msg ?></p>
+                                        <?php if ($submitted_ticket): ?>
+                                            <div class="mt-3 p-3 rounded-xl bg-slate-950/80 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div class="space-y-0.5">
+                                                    <span class="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">Nomor Tiket Anda:</span>
+                                                    <span class="font-mono text-base font-black text-amber-400 tracking-wider select-all"><?= htmlspecialchars($submitted_ticket) ?></span>
+                                                </div>
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <button type="button" onclick="copyTicketNumber('<?= htmlspecialchars($submitted_ticket) ?>')" class="rounded-lg border border-white/10 bg-white/5 hover:bg-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition cursor-pointer flex items-center gap-1.5">
+                                                        <i class="fa-regular fa-copy text-[11px]"></i>
+                                                        <span id="copyBtnText">Salin Nomor</span>
+                                                    </button>
+                                                    <button type="button" onclick="loadTrackTicket('<?= htmlspecialchars($submitted_ticket) ?>')" class="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-amber-500/20">
+                                                        <i class="fa-solid fa-magnifying-glass text-[11px]"></i>
+                                                        <span>Lacak Tiket Ini &rarr;</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             </div>
+                        <?php endif; ?>
 
-                            <!-- Email -->
-                            <div>
-                                <label for="email" class="block text-xs font-semibold text-slate-300 mb-1.5">
-                                    Alamat Email <span class="text-rose-400">*</span>
-                                </label>
-                                <div class="relative">
-                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
-                                        <i class="fa-solid fa-envelope"></i>
-                                    </span>
-                                    <input type="email" id="email" name="email" required
-                                           value="<?= htmlspecialchars($_POST['email'] ?? $user_email) ?>"
-                                           placeholder="alamat@email.com"
-                                           class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
+                        <?php if ($error_msg): ?>
+                            <div class="mb-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-200 flex items-start gap-3">
+                                <i class="fa-solid fa-circle-exclamation text-rose-400 text-lg mt-0.5"></i>
+                                <div class="text-xs leading-relaxed">
+                                    <p class="font-bold text-white mb-0.5">Perhatian</p>
+                                    <p><?= $error_msg ?></p>
                                 </div>
                             </div>
-                        </div>
+                        <?php endif; ?>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <!-- Phone / WhatsApp -->
-                            <div>
-                                <label for="phone" class="block text-xs font-semibold text-slate-300 mb-1.5">
-                                    No. Handphone / WhatsApp
-                                </label>
-                                <div class="relative">
-                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
-                                        <i class="fa-solid fa-phone"></i>
-                                    </span>
-                                    <input type="text" id="phone" name="phone"
-                                           value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>"
-                                           placeholder="Contoh: 081234567890"
-                                           class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
-                                </div>
-                            </div>
-
-                            <!-- Category -->
-                            <div>
-                                <label for="category" class="block text-xs font-semibold text-slate-300 mb-1.5">
-                                    Kategori Layanan <span class="text-rose-400">*</span>
-                                </label>
-                                <div class="relative">
-                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
-                                        <i class="fa-solid fa-list-check"></i>
-                                    </span>
-                                    <select id="category" name="category" required
-                                            class="w-full rounded-xl border border-white/10 bg-slate-900 py-2.5 pl-10 pr-8 text-xs sm:text-sm text-white focus:border-amber-400 focus:bg-slate-800 focus:outline-none transition appearance-none">
-                                        <option value="PPDB Online">Penerimaan Siswa Baru (PPDB)</option>
-                                        <option value="Administrasi & Tata Usaha" selected>Administrasi & Tata Usaha</option>
-                                        <option value="Kendala Akun & Portal">Kendala Login / Akun Portal</option>
-                                        <option value="Akademik & Rapor">Akademik, Nilai & Pembelajaran</option>
-                                        <option value="Bimbingan Konseling">Bimbingan Konseling (BK)</option>
-                                        <option value="Pengaduan & Saran">Kritik, Saran & Pengaduan</option>
-                                        <option value="Kerjasama Lembaga">Kerjasama & Kemitraan</option>
-                                    </select>
-                                    <span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 text-xs">
-                                        <i class="fa-solid fa-chevron-down"></i>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Subject -->
-                        <div>
-                            <label for="subject" class="block text-xs font-semibold text-slate-300 mb-1.5">
-                                Subjek / Pokok Masalah <span class="text-rose-400">*</span>
-                            </label>
-                            <div class="relative">
-                                <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
-                                    <i class="fa-solid fa-tag"></i>
-                                </span>
-                                <input type="text" id="subject" name="subject" required
-                                       value="<?= htmlspecialchars($_POST['subject'] ?? '') ?>"
-                                       placeholder="Tuliskan inti pertanyaan atau subjek"
-                                       class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
-                            </div>
-                        </div>
-
-                        <!-- Message -->
-                        <div>
-                            <label for="message" class="block text-xs font-semibold text-slate-300 mb-1.5">
-                                Pesan Lengkap <span class="text-rose-400">*</span>
-                            </label>
-                            <textarea id="message" name="message" rows="5" required
-                                      placeholder="Uraikan detail pertanyaan, nomor registrasi (jika berkaitan dengan PPDB), atau kronologi kendala..."
-                                      class="w-full rounded-xl border border-white/10 bg-white/5 p-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition leading-relaxed"></textarea>
-                        </div>
-
-                        <!-- Submit Button -->
-                        <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
-                            <p class="text-[11px] text-slate-400">
-                                <i class="fa-solid fa-shield-halved text-amber-400 mr-1"></i> Data Anda dijamin kerahasiaannya oleh pihak sekolah.
+                        <!-- Form Header -->
+                        <div class="mb-6 border-b border-white/10 pb-4">
+                            <h2 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-paper-plane text-amber-400 text-lg"></i>
+                                <span>Kirim Pesan atau Pertanyaan</span>
+                            </h2>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Sampaikan pertanyaan, kendala teknis, pengaduan, atau kritik saran Anda. Kami akan menindaklanjuti secara resmi dengan penomoran tiket otomatis.
                             </p>
-                            <button type="submit"
-                                    class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 px-6 py-3 text-xs sm:text-sm font-bold text-slate-950 transition shadow-lg shadow-amber-500/20 cursor-pointer">
-                                <i class="fa-solid fa-paper-plane text-xs"></i>
-                                <span>Kirim Pesan Sekarang</span>
-                            </button>
                         </div>
-                    </form>
+
+                        <!-- Contact Form -->
+                        <form action="kontak.php" method="POST" class="space-y-4">
+                            <input type="hidden" name="action" value="submit_contact">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['contact_csrf_token']) ?>">
+                            
+                            <!-- Anti-spam Honeypot -->
+                            <div class="hidden" aria-hidden="true">
+                                <label for="website_hp">Jangan isi kolom ini jika Anda manusia</label>
+                                <input type="text" id="website_hp" name="website_hp" tabindex="-1" autocomplete="off">
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <!-- Name -->
+                                <div>
+                                    <label for="name" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                        Nama Lengkap <span class="text-rose-400">*</span>
+                                    </label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
+                                            <i class="fa-solid fa-user"></i>
+                                        </span>
+                                        <input type="text" id="name" name="name" required
+                                               value="<?= htmlspecialchars($_POST['name'] ?? $user_name) ?>"
+                                               placeholder="Nama lengkap Anda"
+                                               class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
+                                    </div>
+                                </div>
+
+                                <!-- Email -->
+                                <div>
+                                    <label for="email" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                        Alamat Email <span class="text-rose-400">*</span>
+                                    </label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
+                                            <i class="fa-solid fa-envelope"></i>
+                                        </span>
+                                        <input type="email" id="email" name="email" required
+                                               value="<?= htmlspecialchars($_POST['email'] ?? $user_email) ?>"
+                                               placeholder="alamat@email.com"
+                                               class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <!-- Phone / WhatsApp -->
+                                <div>
+                                    <label for="phone" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                        No. Handphone / WhatsApp
+                                    </label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
+                                            <i class="fa-solid fa-phone"></i>
+                                        </span>
+                                        <input type="text" id="phone" name="phone"
+                                               value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>"
+                                               placeholder="Contoh: 081234567890"
+                                               class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
+                                    </div>
+                                </div>
+
+                                <!-- Category -->
+                                <div>
+                                    <label for="category" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                        Kategori Layanan <span class="text-rose-400">*</span>
+                                    </label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
+                                            <i class="fa-solid fa-list-check"></i>
+                                        </span>
+                                        <select id="category" name="category" required
+                                                class="w-full rounded-xl border border-white/10 bg-slate-900 py-2.5 pl-10 pr-8 text-xs sm:text-sm text-white focus:border-amber-400 focus:bg-slate-800 focus:outline-none transition appearance-none">
+                                            <option value="ppdb">Penerimaan Siswa Baru (PPDB)</option>
+                                            <option value="akademik">Akademik, Nilai & KBM</option>
+                                            <option value="keuangan">Keuangan & Pembayaran SPP</option>
+                                            <option value="teknis">Bantuan Teknis & Akun Portal</option>
+                                            <option value="saran">Kritik, Saran & Pengaduan</option>
+                                            <option value="umum" selected>Layanan Umum & Informasi</option>
+                                        </select>
+                                        <span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 text-xs">
+                                            <i class="fa-solid fa-chevron-down"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Subject -->
+                            <div>
+                                <label for="subject" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                    Subjek / Pokok Masalah <span class="text-rose-400">*</span>
+                                </label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
+                                        <i class="fa-solid fa-tag"></i>
+                                    </span>
+                                    <input type="text" id="subject" name="subject" required
+                                           value="<?= htmlspecialchars($_POST['subject'] ?? '') ?>"
+                                           placeholder="Tuliskan inti pertanyaan atau subjek pengaduan"
+                                           class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
+                                </div>
+                            </div>
+
+                            <!-- Message -->
+                            <div>
+                                <label for="message" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                    Pesan Lengkap <span class="text-rose-400">*</span>
+                                </label>
+                                <textarea id="message" name="message" rows="5" required
+                                          placeholder="Uraikan detail pertanyaan, nomor registrasi PPDB, atau kronologi pengaduan Anda..."
+                                          class="w-full rounded-xl border border-white/10 bg-white/5 p-3.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition leading-relaxed"></textarea>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+                                <p class="text-[11px] text-slate-400">
+                                    <i class="fa-solid fa-shield-halved text-amber-400 mr-1"></i> Data Anda dijamin kerahasiaannya oleh pihak sekolah.
+                                </p>
+                                <button type="submit"
+                                        class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 px-6 py-3 text-xs sm:text-sm font-bold text-slate-950 transition shadow-lg shadow-amber-500/20 cursor-pointer">
+                                    <i class="fa-solid fa-paper-plane text-xs"></i>
+                                    <span>Kirim Pesan & Buat Tiket</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- ================= TAB 2: PELACAKAN STATUS TIKET ================= -->
+                    <div id="viewTrackContainer" class="<?= $active_tab === 'track' ? '' : 'hidden' ?>">
+
+                        <!-- Tracker Header -->
+                        <div class="mb-6 border-b border-white/10 pb-4 no-print">
+                            <h2 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-magnifying-glass text-amber-400 text-lg"></i>
+                                <span>Pelacakan Tiket Pengaduan Publik</span>
+                            </h2>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Masukkan nomor tiket Anda untuk memantau status pemrosesan, tahapan penanganan, dan respon resmi dari pihak sekolah secara langsung.
+                            </p>
+                        </div>
+
+                        <!-- Search Ticket Box -->
+                        <div id="searchTicketBox" class="mb-6 rounded-2xl border border-white/10 bg-slate-950/70 p-4 sm:p-5 no-print">
+                            <form onsubmit="event.preventDefault(); doTrackTicket();" class="space-y-3">
+                                <label for="trackInput" class="block text-xs font-semibold text-slate-300">
+                                    Masukkan Kode / Nomor Tiket Anda:
+                                </label>
+                                <div class="flex flex-col sm:flex-row items-center gap-2">
+                                    <div class="relative flex-1 w-full">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 text-xs">
+                                            <i class="fa-solid fa-ticket text-amber-400"></i>
+                                        </span>
+                                        <input type="text" id="trackInput" name="ticket_code"
+                                               value="<?= htmlspecialchars($track_code) ?>"
+                                               placeholder="Contoh: TIK-<?= date('Ymd') ?>-ABCDE"
+                                               class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3.5 font-mono text-xs sm:text-sm text-white uppercase placeholder-slate-500 focus:border-amber-400 focus:bg-white/10 focus:outline-none transition">
+                                    </div>
+                                    <button type="submit" id="btnSubmitTrack"
+                                            class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 px-5 py-2.5 text-xs sm:text-sm font-bold text-slate-950 transition shadow-lg shadow-amber-500/20 cursor-pointer shrink-0">
+                                        <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                                        <span>Lacak Tiket</span>
+                                    </button>
+                                </div>
+                            </form>
+
+                            <!-- Recent Tickets LocalStorage Container -->
+                            <div id="recentTicketsContainer" class="hidden mt-3 pt-3 border-t border-white/5 text-xs flex flex-wrap items-center gap-2">
+                                <span class="text-[11px] text-slate-400 flex items-center gap-1">
+                                    <i class="fa-solid fa-clock-rotate-left text-amber-400/80"></i> Tiket Terakhir Anda:
+                                </span>
+                                <div id="recentTicketsChips" class="flex flex-wrap gap-1.5"></div>
+                            </div>
+                        </div>
+
+                        <!-- Track Error Alert -->
+                        <div id="trackErrorAlert" class="<?= !empty($track_error) ? '' : 'hidden' ?> mb-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-200 flex items-start gap-3 no-print">
+                            <i class="fa-solid fa-circle-exclamation text-rose-400 text-lg mt-0.5"></i>
+                            <div class="text-xs leading-relaxed">
+                                <p class="font-bold text-white mb-0.5">Tiket Tidak Ditemukan</p>
+                                <p id="trackErrorMessage"><?= htmlspecialchars($track_error) ?></p>
+                            </div>
+                        </div>
+
+                        <!-- Track Result Area -->
+                        <div id="trackResultArea">
+                            <?php if ($tracked_ticket): ?>
+                                <?php
+                                $status = strtolower($tracked_ticket['status'] ?? 'baru');
+                                $status_label = match($status) {
+                                    'diproses' => 'SEDANG DIPROSES STAF',
+                                    'selesai'  => 'SELESAI / TERJAWAB',
+                                    default    => 'MENUNGGU RESPON (BARU)'
+                                };
+                                $status_badge_class = match($status) {
+                                    'diproses' => 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+                                    'selesai'  => 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+                                    default    => 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                                };
+                                $status_desc = match($status) {
+                                    'diproses' => 'Pengaduan Anda saat ini sedang dalam penanganan aktif oleh tim terkait di sekolah.',
+                                    'selesai'  => 'Pihak sekolah telah menyelesaikan penanganan tiket dan memberikan solusi/tanggapan resmi.',
+                                    default    => 'Pesan Anda telah kami terima dalam antrean dan menunggu giliran penelaahan oleh tim Tata Usaha / Admin.'
+                                };
+                                ?>
+
+                                <!-- TICKET PRINT & DISPLAY CARD -->
+                                <div id="ticketPrintArea" class="rounded-2xl border border-white/10 bg-slate-950/60 p-5 sm:p-6 space-y-6">
+
+                                    <!-- Print Letterhead Header (Only displayed when printing) -->
+                                    <div class="print-only-block border-b-2 border-slate-900 pb-3 mb-4 text-center">
+                                        <h2 class="text-lg font-bold uppercase tracking-tight text-slate-900"><?= htmlspecialchars($school_info['school_name'] ?? 'SEKOLAH') ?></h2>
+                                        <p class="text-xs text-slate-600"><?= htmlspecialchars($school_info['school_address'] ?? '') ?> | Telp: <?= htmlspecialchars($school_info['school_phone'] ?? '') ?></p>
+                                        <p class="text-xs font-bold uppercase tracking-wider text-slate-800 mt-2 border-t border-slate-300 pt-1">LEMBAR BUKTI STATUS TIKET PENGADUAN PUBLIK</p>
+                                    </div>
+
+                                    <!-- Card Header: Ticket Code & Status Badge -->
+                                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/10 pb-4">
+                                        <div class="space-y-1">
+                                            <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Nomor Tiket:</span>
+                                            <div class="flex items-center gap-2">
+                                                <span class="font-mono text-base sm:text-lg font-black text-amber-400 tracking-wider">
+                                                    <?= htmlspecialchars($tracked_ticket['ticket_code']) ?>
+                                                </span>
+                                                <button type="button" onclick="copyTicketNumber('<?= htmlspecialchars($tracked_ticket['ticket_code']) ?>')" class="no-print text-slate-400 hover:text-white transition p-1 text-xs" title="Salin Nomor Tiket">
+                                                    <i class="fa-regular fa-copy"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex items-center gap-2">
+                                            <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border <?= $status_badge_class ?>">
+                                                <?php if ($status === 'baru'): ?>
+                                                    <span class="h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
+                                                <?php elseif ($status === 'diproses'): ?>
+                                                    <i class="fa-solid fa-spinner animate-spin text-[10px]"></i>
+                                                <?php else: ?>
+                                                    <i class="fa-solid fa-circle-check text-[11px]"></i>
+                                                <?php endif; ?>
+                                                <span><?= $status_label ?></span>
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <!-- VISUAL 3-STAGE TIMELINE / STEPPER -->
+                                    <div class="rounded-2xl border border-white/5 bg-slate-900/60 p-4 sm:p-5">
+                                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
+                                            Tahapan Penanganan Tiket:
+                                        </h4>
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 relative">
+                                            
+                                            <!-- Step 1: Diterima -->
+                                            <div class="flex items-start gap-3">
+                                                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+                                                    <i class="fa-solid fa-check"></i>
+                                                </div>
+                                                <div>
+                                                    <p class="text-xs font-bold text-white">1. Tiket Terkirim</p>
+                                                    <p class="text-[11px] text-slate-400 mt-0.5">Diterima sistem antrean</p>
+                                                    <span class="text-[10px] text-emerald-400 font-mono block mt-1">
+                                                        <?= date('d M Y, H:i', strtotime($tracked_ticket['created_at'])) ?> WIB
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <!-- Step 2: Ditinjau / Diproses -->
+                                            <div class="flex items-start gap-3">
+                                                <?php if ($status === 'baru'): ?>
+                                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold">
+                                                        <i class="fa-regular fa-clock"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-xs font-bold text-amber-300">2. Menunggu Respon</p>
+                                                        <p class="text-[11px] text-slate-400 mt-0.5">Dalam antrean telaah staf</p>
+                                                        <span class="text-[10px] text-amber-400/80 block mt-1">Antrean Layanan</span>
+                                                    </div>
+                                                <?php elseif ($status === 'diproses'): ?>
+                                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-bold animate-pulse">
+                                                        <i class="fa-solid fa-arrows-rotate animate-spin text-[10px]"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-xs font-bold text-sky-300">2. Sedang Diproses</p>
+                                                        <p class="text-[11px] text-slate-400 mt-0.5">Aktif ditangani oleh staf</p>
+                                                        <span class="text-[10px] text-sky-400 font-mono block mt-1">Dalam Penanganan</span>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+                                                        <i class="fa-solid fa-check"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-xs font-bold text-white">2. Selesai Ditelaah</p>
+                                                        <p class="text-[11px] text-slate-400 mt-0.5">Telah diverifikasi staf</p>
+                                                        <span class="text-[10px] text-emerald-400 font-mono block mt-1">Terverifikasi</span>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+
+                                            <!-- Step 3: Penyelesaian -->
+                                            <div class="flex items-start gap-3">
+                                                <?php if ($status === 'selesai'): ?>
+                                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+                                                        <i class="fa-solid fa-circle-check"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-xs font-bold text-emerald-300">3. Selesai / Terjawab</p>
+                                                        <p class="text-[11px] text-slate-400 mt-0.5">Tindak lanjut tuntas</p>
+                                                        <span class="text-[10px] text-emerald-400 font-mono block mt-1">
+                                                            <?= date('d M Y, H:i', strtotime($tracked_ticket['updated_at'] ?? $tracked_ticket['created_at'])) ?> WIB
+                                                        </span>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-500 border border-white/10 text-xs">
+                                                        <i class="fa-solid fa-flag-checkered"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-xs font-bold text-slate-400">3. Penyelesaian</p>
+                                                        <p class="text-[11px] text-slate-500 mt-0.5">Menunggu respon akhir</p>
+                                                        <span class="text-[10px] text-slate-500 block mt-1">Tahap Akhir</span>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+
+                                        </div>
+                                    </div>
+
+                                    <!-- OFFICIAL SCHOOL RESPONSE BOX -->
+                                    <?php if (!empty($tracked_ticket['admin_notes'])): ?>
+                                        <div class="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-5 relative overflow-hidden shadow-lg">
+                                            <div class="flex items-start gap-3.5">
+                                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-lg border border-emerald-500/30">
+                                                    <i class="fa-solid fa-stamp"></i>
+                                                </span>
+                                                <div class="space-y-1.5 flex-1">
+                                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                                                            <i class="fa-solid fa-circle-check text-[11px]"></i> Tanggapan Resmi Sekolah / Staf
+                                                        </span>
+                                                        <span class="text-[11px] text-emerald-400/80 font-mono">
+                                                            <?= date('d M Y, H:i', strtotime($tracked_ticket['updated_at'] ?? $tracked_ticket['created_at'])) ?> WIB
+                                                        </span>
+                                                    </div>
+                                                    <p class="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-medium">
+                                                        <?= nl2br(htmlspecialchars($tracked_ticket['admin_notes'])) ?>
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300 flex items-start gap-3">
+                                            <i class="fa-solid fa-circle-info text-amber-400 text-base mt-0.5"></i>
+                                            <div class="space-y-0.5">
+                                                <p class="font-bold text-white">Status Penanganan Saat Ini:</p>
+                                                <p class="text-slate-400 leading-relaxed"><?= $status_desc ?></p>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <!-- TICKET DETAILS SUMMARY -->
+                                    <div class="rounded-2xl border border-white/5 bg-slate-900/60 p-4 sm:p-5 space-y-4">
+                                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-white/5 pb-2">
+                                            Rincian Pengajuan Tiket:
+                                        </h4>
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                            <div>
+                                                <span class="text-slate-400 block text-[11px]">Nama Pengirim:</span>
+                                                <strong class="text-white"><?= htmlspecialchars($tracked_ticket['name']) ?></strong>
+                                            </div>
+                                            <div>
+                                                <span class="text-slate-400 block text-[11px]">Kategori Layanan:</span>
+                                                <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border mt-0.5 <?= getContactCatBadge($tracked_ticket['category']) ?>">
+                                                    <?= htmlspecialchars(getContactCatLabel($tracked_ticket['category'])) ?>
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <span class="text-slate-400 block text-[11px]">Alamat Email (Sensor):</span>
+                                                <span class="text-slate-200 font-mono"><?= htmlspecialchars(maskEmail($tracked_ticket['email'])) ?></span>
+                                            </div>
+                                            <div>
+                                                <span class="text-slate-400 block text-[11px]">No. Telepon / WhatsApp:</span>
+                                                <span class="text-emerald-400 font-mono"><?= htmlspecialchars(maskPhone($tracked_ticket['phone'])) ?></span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Subject & Message -->
+                                        <div class="pt-2 border-t border-white/5 space-y-2 text-xs">
+                                            <div>
+                                                <span class="text-slate-400 block text-[11px]">Pokok Masalah / Subjek:</span>
+                                                <strong class="text-white text-sm"><?= htmlspecialchars($tracked_ticket['subject']) ?></strong>
+                                            </div>
+                                            <div>
+                                                <span class="text-slate-400 block text-[11px] mb-1">Isi Pesan Lengkap:</span>
+                                                <div class="rounded-xl border border-white/5 bg-slate-950 p-3 text-slate-300 leading-relaxed whitespace-pre-wrap text-xs">
+                                                    <?= htmlspecialchars($tracked_ticket['message']) ?>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- ACTION BUTTONS -->
+                                    <div class="pt-2 flex flex-wrap items-center justify-between gap-3 no-print border-t border-white/10">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <button type="button" onclick="window.print()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/15 px-3.5 py-2 text-xs font-semibold text-slate-200 transition cursor-pointer flex items-center gap-1.5 shadow">
+                                                <i class="fa-solid fa-print text-amber-400"></i>
+                                                <span>Cetak Bukti Tiket</span>
+                                            </button>
+                                            <button type="button" onclick="copyTrackingLink('<?= htmlspecialchars($tracked_ticket['ticket_code']) ?>')" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/15 px-3.5 py-2 text-xs font-semibold text-slate-200 transition cursor-pointer flex items-center gap-1.5 shadow">
+                                                <i class="fa-solid fa-share-nodes text-sky-400"></i>
+                                                <span>Salin Tautan</span>
+                                            </button>
+                                            <a href="https://wa.me/<?= htmlspecialchars($clean_wa) ?>?text=<?= urlencode('Halo Admin, saya ingin menanyakan status tindak lanjut tiket pengaduan [' . $tracked_ticket['ticket_code'] . ']: ' . $tracked_ticket['subject']) ?>" target="_blank" class="rounded-xl bg-emerald-600/90 hover:bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-white transition flex items-center gap-1.5 shadow">
+                                                <i class="fa-brands fa-whatsapp text-sm"></i>
+                                                <span>Tanya via WhatsApp</span>
+                                            </a>
+                                        </div>
+
+                                        <button type="button" onclick="resetTrackSearch()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-2 text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer">
+                                            <span>Lacak Tiket Lain</span>
+                                        </button>
+                                    </div>
+
+                                </div>
+                            <?php else: ?>
+                                <!-- EMPTY PLACEHOLDER STATE -->
+                                <div class="rounded-2xl border border-dashed border-white/15 p-8 text-center no-print">
+                                    <span class="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400 text-2xl mx-auto mb-3 border border-amber-500/20">
+                                        <i class="fa-solid fa-ticket"></i>
+                                    </span>
+                                    <h3 class="text-base font-bold text-white">Masukkan Nomor Tiket</h3>
+                                    <p class="text-xs text-slate-400 max-w-sm mx-auto mt-1 leading-relaxed">
+                                        Gunakan nomor tiket yang Anda peroleh setelah mengirimkan formulir kontak (contoh: <code class="text-amber-300">TIK-<?= date('Ymd') ?>-XXXXX</code>) untuk memantau status secara langsung.
+                                    </p>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
+                    </div>
+
                 </div>
 
                 <!-- RIGHT COLUMN: DIRECTORY & OPERATIONAL INFO (5 COLS) -->
-                <div class="lg:col-span-5 space-y-6">
+                <div class="lg:col-span-5 space-y-6 no-print" id="rightDirectoryCol">
                     
                     <!-- WhatsApp Direct Support Box -->
                     <div class="rounded-3xl border border-emerald-500/30 bg-emerald-950/20 backdrop-blur-md p-6 relative overflow-hidden shadow-xl">
@@ -541,15 +1070,26 @@ if (str_starts_with($clean_wa, '0')) {
         </section>
 
         <!-- FAQ SECTION ACCORDION -->
-        <section class="max-w-4xl mx-auto px-4 sm:px-6 mb-16">
+        <section id="faqSection" class="max-w-4xl mx-auto px-4 sm:px-6 mb-16 no-print">
             <div class="text-center mb-8">
                 <span class="inline-block text-xs font-bold uppercase tracking-wider text-amber-400 mb-2">FAQ Bantuan</span>
                 <h2 class="text-2xl font-bold text-white">Pertanyaan yang Sering Diajukan</h2>
-                <p class="text-xs text-slate-400 mt-1">Jawaban cepat untuk pertanyaan lazim perihal layanan sekolah.</p>
+                <p class="text-xs text-slate-400 mt-1">Jawaban cepat untuk pertanyaan lazim perihal layanan sekolah dan pengaduan.</p>
             </div>
 
             <div class="space-y-3">
                 <!-- FAQ 1 -->
+                <div class="rounded-2xl border border-white/10 bg-slate-900/60 overflow-hidden">
+                    <button type="button" onclick="toggleFaq(this)" class="faq-toggle w-full p-4 text-left flex items-center justify-between text-xs sm:text-sm font-bold text-white hover:bg-white/5 transition">
+                        <span>Bagaimana cara memantau status atau tindak lanjut tiket pengaduan saya?</span>
+                        <i class="fa-solid fa-chevron-down text-xs text-slate-400 transition-transform duration-200"></i>
+                    </button>
+                    <div class="faq-content hidden p-4 pt-0 text-xs text-slate-300 leading-relaxed border-t border-white/5">
+                        Setiap kali Anda mengirim pesan melalui formulir kontak, sistem akan memberikan <strong>Nomor Tiket resmi</strong> (contoh: <code>TIK-YYYYMMDD-XXXXX</code>). Anda dapat memantau apakah tiket Anda masih berstatus <em>Baru</em>, <em>Sedang Diproses</em>, atau <em>Selesai</em> beserta catatan respon resmi dari pihak sekolah melalui tab <strong>"Lacak Status Tiket"</strong> di atas tanpa harus login.
+                    </div>
+                </div>
+
+                <!-- FAQ 2 -->
                 <div class="rounded-2xl border border-white/10 bg-slate-900/60 overflow-hidden">
                     <button type="button" onclick="toggleFaq(this)" class="faq-toggle w-full p-4 text-left flex items-center justify-between text-xs sm:text-sm font-bold text-white hover:bg-white/5 transition">
                         <span>Bagaimana cara mendaftar sebagai calon siswa baru (PPDB)?</span>
@@ -560,7 +1100,7 @@ if (str_starts_with($clean_wa, '0')) {
                     </div>
                 </div>
 
-                <!-- FAQ 2 -->
+                <!-- FAQ 3 -->
                 <div class="rounded-2xl border border-white/10 bg-slate-900/60 overflow-hidden">
                     <button type="button" onclick="toggleFaq(this)" class="faq-toggle w-full p-4 text-left flex items-center justify-between text-xs sm:text-sm font-bold text-white hover:bg-white/5 transition">
                         <span>Bagaimana jika lupa kata sandi akun portal siswa/guru?</span>
@@ -571,7 +1111,7 @@ if (str_starts_with($clean_wa, '0')) {
                     </div>
                 </div>
 
-                <!-- FAQ 3 -->
+                <!-- FAQ 4 -->
                 <div class="rounded-2xl border border-white/10 bg-slate-900/60 overflow-hidden">
                     <button type="button" onclick="toggleFaq(this)" class="faq-toggle w-full p-4 text-left flex items-center justify-between text-xs sm:text-sm font-bold text-white hover:bg-white/5 transition">
                         <span>Apakah orang tua dapat memantau presensi dan nilai anak?</span>
@@ -582,7 +1122,7 @@ if (str_starts_with($clean_wa, '0')) {
                     </div>
                 </div>
 
-                <!-- FAQ 4 -->
+                <!-- FAQ 5 -->
                 <div class="rounded-2xl border border-white/10 bg-slate-900/60 overflow-hidden">
                     <button type="button" onclick="toggleFaq(this)" class="faq-toggle w-full p-4 text-left flex items-center justify-between text-xs sm:text-sm font-bold text-white hover:bg-white/5 transition">
                         <span>Kapan jam operasional pelayanan langsung di kantor Tata Usaha?</span>
@@ -601,7 +1141,7 @@ if (str_starts_with($clean_wa, '0')) {
     require_once __DIR__ . '/includes/footer.php';
     ?>
 
-    <!-- Vanilla JS Interactivity -->
+    <!-- Vanilla JS Interactivity & Ticket Tracking -->
     <script>
         // Toggle Mobile Menu
         const btnMobileMenu = document.getElementById('btnMobileMenu');
@@ -626,6 +1166,463 @@ if (str_starts_with($clean_wa, '0')) {
                 icon.classList.add('rotate-180');
             }
         }
+
+        // Switch Between Form and Tracking Tabs
+        function switchContactTab(tab) {
+            const tabBtnForm = document.getElementById('tabBtnForm');
+            const tabBtnTrack = document.getElementById('tabBtnTrack');
+            const viewForm = document.getElementById('viewFormContainer');
+            const viewTrack = document.getElementById('viewTrackContainer');
+
+            if (!tabBtnForm || !tabBtnTrack || !viewForm || !viewTrack) return;
+
+            if (tab === 'track') {
+                tabBtnForm.className = "flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-white/5";
+                tabBtnTrack.className = "flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20";
+                viewForm.classList.add('hidden');
+                viewTrack.classList.remove('hidden');
+
+                const trackInput = document.getElementById('trackInput');
+                if (trackInput && !trackInput.value) {
+                    setTimeout(() => trackInput.focus(), 150);
+                }
+            } else {
+                tabBtnTrack.className = "flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-white/5";
+                tabBtnForm.className = "flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20";
+                viewTrack.classList.add('hidden');
+                viewForm.classList.remove('hidden');
+            }
+        }
+
+        // Copy Ticket Number to Clipboard
+        function copyTicketNumber(code) {
+            if (!code) return;
+            navigator.clipboard.writeText(code).then(() => {
+                showToast('Nomor tiket berhasil disalin: ' + code);
+                const copyBtnText = document.getElementById('copyBtnText');
+                if (copyBtnText) copyBtnText.textContent = 'Tersalin!';
+                setTimeout(() => {
+                    if (copyBtnText) copyBtnText.textContent = 'Salin Nomor';
+                }, 2000);
+            }).catch(() => {
+                prompt('Salin nomor tiket ini:', code);
+            });
+        }
+
+        // Copy Direct Tracking Link
+        function copyTrackingLink(code) {
+            if (!code) return;
+            const url = window.location.origin + window.location.pathname + '?ticket=' + encodeURIComponent(code);
+            navigator.clipboard.writeText(url).then(() => {
+                showToast('Tautan pelacakan tiket berhasil disalin!');
+            }).catch(() => {
+                prompt('Salin tautan pelacakan ini:', url);
+            });
+        }
+
+        // Show Toast Notification
+        function showToast(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-5 right-5 z-50 flex items-center gap-2.5 rounded-2xl border border-emerald-500/30 bg-slate-900/95 px-4 py-3 text-xs font-semibold text-emerald-300 shadow-2xl backdrop-blur-md transition-all duration-300 transform translate-y-4 opacity-0 no-print';
+            toast.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 text-sm"></i><span>${msg}</span>`;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.remove('translate-y-4', 'opacity-0');
+            }, 50);
+            setTimeout(() => {
+                toast.classList.add('translate-y-4', 'opacity-0');
+                setTimeout(() => toast.remove(), 350);
+            }, 3000);
+        }
+
+        // Save Ticket to Browser LocalStorage
+        function saveRecentTicket(code) {
+            if (!code) return;
+            try {
+                let list = JSON.parse(localStorage.getItem('recent_tickets_school') || '[]');
+                if (!Array.isArray(list)) list = [];
+                list = list.filter(item => item !== code);
+                list.unshift(code);
+                if (list.length > 3) list = list.slice(0, 3);
+                localStorage.setItem('recent_tickets_school', JSON.stringify(list));
+                renderRecentTickets();
+            } catch (e) {}
+        }
+
+        // Render Recent Ticket Chips
+        function renderRecentTickets() {
+            const container = document.getElementById('recentTicketsContainer');
+            const chips = document.getElementById('recentTicketsChips');
+            if (!container || !chips) return;
+
+            try {
+                const list = JSON.parse(localStorage.getItem('recent_tickets_school') || '[]');
+                if (Array.isArray(list) && list.length > 0) {
+                    chips.innerHTML = '';
+                    list.forEach(code => {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-amber-300 font-mono text-[11px] transition cursor-pointer';
+                        btn.textContent = code;
+                        btn.title = 'Klik untuk melacak nomor tiket ini';
+                        btn.onclick = () => loadTrackTicket(code);
+                        chips.appendChild(btn);
+                    });
+                    container.classList.remove('hidden');
+                } else {
+                    container.classList.add('hidden');
+                }
+            } catch (e) {}
+        }
+
+        // Quick Load and Track
+        function loadTrackTicket(code) {
+            if (!code) return;
+            switchContactTab('track');
+            const input = document.getElementById('trackInput');
+            if (input) input.value = code;
+            doTrackTicket(code);
+            const box = document.getElementById('mainInteractionBox');
+            if (box) {
+                box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        // Reset Tracker Search
+        function resetTrackSearch() {
+            const input = document.getElementById('trackInput');
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
+            const errAlert = document.getElementById('trackErrorAlert');
+            if (errAlert) errAlert.classList.add('hidden');
+            window.history.replaceState({}, '', window.location.pathname + '?tab=track');
+        }
+
+        // Perform Live AJAX Ticket Tracking
+        async function doTrackTicket(explicitCode = '') {
+            const input = document.getElementById('trackInput');
+            const code = (explicitCode || (input ? input.value : '')).trim();
+            const errAlert = document.getElementById('trackErrorAlert');
+            const errMsg = document.getElementById('trackErrorMessage');
+            const resultArea = document.getElementById('trackResultArea');
+            const btnSubmit = document.getElementById('btnSubmitTrack');
+
+            if (!code) {
+                if (errAlert && errMsg) {
+                    errMsg.textContent = 'Silakan masukkan nomor tiket pengaduan Anda.';
+                    errAlert.classList.remove('hidden');
+                }
+                return;
+            }
+
+            if (errAlert) errAlert.classList.add('hidden');
+            if (btnSubmit) {
+                btnSubmit.disabled = true;
+                btnSubmit.innerHTML = '<i class="fa-solid fa-spinner animate-spin text-xs"></i> <span>Mencari...</span>';
+            }
+
+            try {
+                const response = await fetch(`kontak.php?action=track_api&ticket=${encodeURIComponent(code)}`);
+                const res = await response.json();
+
+                if (res.success && res.data) {
+                    saveRecentTicket(res.data.ticket_code);
+                    window.history.replaceState({}, '', `kontak.php?ticket=${encodeURIComponent(res.data.ticket_code)}`);
+                    renderTrackedTicketHtml(res.data);
+                } else {
+                    if (errAlert && errMsg) {
+                        errMsg.textContent = res.message || 'Tiket tidak ditemukan. Pastikan format nomor tiket sudah sesuai.';
+                        errAlert.classList.remove('hidden');
+                    }
+                }
+            } catch (err) {
+                if (errAlert && errMsg) {
+                    errMsg.textContent = 'Gagal memeriksa tiket. Silakan periksa koneksi internet Anda atau coba lagi.';
+                    errAlert.classList.remove('hidden');
+                }
+            } finally {
+                if (btnSubmit) {
+                    btnSubmit.disabled = false;
+                    btnSubmit.innerHTML = '<i class="fa-solid fa-magnifying-glass text-xs"></i> <span>Lacak Tiket</span>';
+                }
+            }
+        }
+
+        // Render Dynamic Ticket Result HTML
+        function renderTrackedTicketHtml(data) {
+            const resultArea = document.getElementById('trackResultArea');
+            if (!resultArea) return;
+
+            const status = (data.status || 'baru').toLowerCase();
+            let statusLabel = 'MENUNGGU RESPON (BARU)';
+            let statusBadgeClass = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+            let statusIcon = '<span class="h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>';
+            let statusDesc = 'Pesan Anda telah kami terima dalam antrean dan menunggu giliran penelaahan oleh tim Tata Usaha / Admin.';
+
+            if (status === 'diproses') {
+                statusLabel = 'SEDANG DIPROSES STAF';
+                statusBadgeClass = 'border-sky-500/30 bg-sky-500/10 text-sky-300';
+                statusIcon = '<i class="fa-solid fa-spinner animate-spin text-[10px]"></i>';
+                statusDesc = 'Pengaduan Anda saat ini sedang dalam penanganan aktif oleh tim terkait di sekolah.';
+            } else if (status === 'selesai') {
+                statusLabel = 'SELESAI / TERJAWAB';
+                statusBadgeClass = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+                statusIcon = '<i class="fa-solid fa-circle-check text-[11px]"></i>';
+                statusDesc = 'Pihak sekolah telah menyelesaikan penanganan tiket dan memberikan solusi/tanggapan resmi.';
+            }
+
+            // Clean WA phone
+            let rawPhone = <?= json_encode($clean_wa) ?>;
+            let waText = encodeURIComponent(`Halo Admin, saya ingin menanyakan status tindak lanjut tiket pengaduan [${data.ticket_code}]: ${data.subject}`);
+
+            // Stepper Stage 2
+            let stage2Html = '';
+            if (status === 'baru') {
+                stage2Html = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold">
+                            <i class="fa-regular fa-clock"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-amber-300">2. Menunggu Respon</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Dalam antrean telaah staf</p>
+                            <span class="text-[10px] text-amber-400/80 block mt-1">Antrean Layanan</span>
+                        </div>
+                    </div>`;
+            } else if (status === 'diproses') {
+                stage2Html = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-bold animate-pulse">
+                            <i class="fa-solid fa-arrows-rotate animate-spin text-[10px]"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-sky-300">2. Sedang Diproses</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Aktif ditangani oleh staf</p>
+                            <span class="text-[10px] text-sky-400 font-mono block mt-1">Dalam Penanganan</span>
+                        </div>
+                    </div>`;
+            } else {
+                stage2Html = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+                            <i class="fa-solid fa-check"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-white">2. Selesai Ditelaah</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Telah diverifikasi staf</p>
+                            <span class="text-[10px] text-emerald-400 font-mono block mt-1">Terverifikasi</span>
+                        </div>
+                    </div>`;
+            }
+
+            // Stepper Stage 3
+            let stage3Html = '';
+            if (status === 'selesai') {
+                stage3Html = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+                            <i class="fa-solid fa-circle-check"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-emerald-300">3. Selesai / Terjawab</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Tindak lanjut tuntas</p>
+                            <span class="text-[10px] text-emerald-400 font-mono block mt-1">${data.updated_at_fmt}</span>
+                        </div>
+                    </div>`;
+            } else {
+                stage3Html = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-500 border border-white/10 text-xs">
+                            <i class="fa-solid fa-flag-checkered"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-400">3. Penyelesaian</p>
+                            <p class="text-[11px] text-slate-500 mt-0.5">Menunggu respon akhir</p>
+                            <span class="text-[10px] text-slate-500 block mt-1">Tahap Akhir</span>
+                        </div>
+                    </div>`;
+            }
+
+            // Official Response HTML
+            let responseBoxHtml = '';
+            if (data.admin_notes && data.admin_notes.trim() !== '') {
+                const escapedNotes = data.admin_notes.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+                responseBoxHtml = `
+                    <div class="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-5 relative overflow-hidden shadow-lg">
+                        <div class="flex items-start gap-3.5">
+                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-lg border border-emerald-500/30">
+                                <i class="fa-solid fa-stamp"></i>
+                            </span>
+                            <div class="space-y-1.5 flex-1">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                                        <i class="fa-solid fa-circle-check text-[11px]"></i> Tanggapan Resmi Sekolah / Staf
+                                    </span>
+                                    <span class="text-[11px] text-emerald-400/80 font-mono">${data.updated_at_fmt}</span>
+                                </div>
+                                <p class="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-medium">
+                                    ${escapedNotes}
+                                </p>
+                            </div>
+                        </div>
+                    </div>`;
+            } else {
+                responseBoxHtml = `
+                    <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300 flex items-start gap-3">
+                        <i class="fa-solid fa-circle-info text-amber-400 text-base mt-0.5"></i>
+                        <div class="space-y-0.5">
+                            <p class="font-bold text-white">Status Penanganan Saat Ini:</p>
+                            <p class="text-slate-400 leading-relaxed">${statusDesc}</p>
+                        </div>
+                    </div>`;
+            }
+
+            // Escape text fields
+            const escapeHtml = (str) => (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            resultArea.innerHTML = `
+                <div id="ticketPrintArea" class="rounded-2xl border border-white/10 bg-slate-950/60 p-5 sm:p-6 space-y-6">
+
+                    <!-- Print Letterhead Header -->
+                    <div class="print-only-block border-b-2 border-slate-900 pb-3 mb-4 text-center">
+                        <h2 class="text-lg font-bold uppercase tracking-tight text-slate-900"><?= htmlspecialchars($school_info['school_name'] ?? 'SEKOLAH') ?></h2>
+                        <p class="text-xs text-slate-600"><?= htmlspecialchars($school_info['school_address'] ?? '') ?> | Telp: <?= htmlspecialchars($school_info['school_phone'] ?? '') ?></p>
+                        <p class="text-xs font-bold uppercase tracking-wider text-slate-800 mt-2 border-t border-slate-300 pt-1">LEMBAR BUKTI STATUS TIKET PENGADUAN PUBLIK</p>
+                    </div>
+
+                    <!-- Card Header: Ticket Code & Status Badge -->
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/10 pb-4">
+                        <div class="space-y-1">
+                            <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Nomor Tiket:</span>
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-base sm:text-lg font-black text-amber-400 tracking-wider">
+                                    ${escapeHtml(data.ticket_code)}
+                                </span>
+                                <button type="button" onclick="copyTicketNumber('${escapeHtml(data.ticket_code)}')" class="no-print text-slate-400 hover:text-white transition p-1 text-xs" title="Salin Nomor Tiket">
+                                    <i class="fa-regular fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${statusBadgeClass}">
+                                ${statusIcon}
+                                <span>${statusLabel}</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- VISUAL 3-STAGE TIMELINE / STEPPER -->
+                    <div class="rounded-2xl border border-white/5 bg-slate-900/60 p-4 sm:p-5">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
+                            Tahapan Penanganan Tiket:
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 relative">
+                            
+                            <!-- Step 1: Diterima -->
+                            <div class="flex items-start gap-3">
+                                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+                                    <i class="fa-solid fa-check"></i>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold text-white">1. Tiket Terkirim</p>
+                                    <p class="text-[11px] text-slate-400 mt-0.5">Diterima sistem antrean</p>
+                                    <span class="text-[10px] text-emerald-400 font-mono block mt-1">
+                                        ${data.created_at_fmt}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Step 2: Ditinjau / Diproses -->
+                            ${stage2Html}
+
+                            <!-- Step 3: Penyelesaian -->
+                            ${stage3Html}
+
+                        </div>
+                    </div>
+
+                    <!-- OFFICIAL SCHOOL RESPONSE BOX -->
+                    ${responseBoxHtml}
+
+                    <!-- TICKET DETAILS SUMMARY -->
+                    <div class="rounded-2xl border border-white/5 bg-slate-900/60 p-4 sm:p-5 space-y-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-white/5 pb-2">
+                            Rincian Pengajuan Tiket:
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                                <span class="text-slate-400 block text-[11px]">Nama Pengirim:</span>
+                                <strong class="text-white">${escapeHtml(data.name)}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block text-[11px]">Kategori Layanan:</span>
+                                <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border mt-0.5 ${data.category_badge}">
+                                    ${escapeHtml(data.category_label)}
+                                </span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block text-[11px]">Alamat Email (Sensor):</span>
+                                <span class="text-slate-200 font-mono">${escapeHtml(data.email_masked)}</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block text-[11px]">No. Telepon / WhatsApp:</span>
+                                <span class="text-emerald-400 font-mono">${escapeHtml(data.phone_masked)}</span>
+                            </div>
+                        </div>
+
+                        <!-- Subject & Message -->
+                        <div class="pt-2 border-t border-white/5 space-y-2 text-xs">
+                            <div>
+                                <span class="text-slate-400 block text-[11px]">Pokok Masalah / Subjek:</span>
+                                <strong class="text-white text-sm">${escapeHtml(data.subject)}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block text-[11px] mb-1">Isi Pesan Lengkap:</span>
+                                <div class="rounded-xl border border-white/5 bg-slate-950 p-3 text-slate-300 leading-relaxed whitespace-pre-wrap text-xs">
+                                    ${escapeHtml(data.message)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ACTION BUTTONS -->
+                    <div class="pt-2 flex flex-wrap items-center justify-between gap-3 no-print border-t border-white/10">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button type="button" onclick="window.print()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/15 px-3.5 py-2 text-xs font-semibold text-slate-200 transition cursor-pointer flex items-center gap-1.5 shadow">
+                                <i class="fa-solid fa-print text-amber-400"></i>
+                                <span>Cetak Bukti Tiket</span>
+                            </button>
+                            <button type="button" onclick="copyTrackingLink('${escapeHtml(data.ticket_code)}')" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/15 px-3.5 py-2 text-xs font-semibold text-slate-200 transition cursor-pointer flex items-center gap-1.5 shadow">
+                                <i class="fa-solid fa-share-nodes text-sky-400"></i>
+                                <span>Salin Tautan</span>
+                            </button>
+                            <a href="https://wa.me/${rawPhone}?text=${waText}" target="_blank" class="rounded-xl bg-emerald-600/90 hover:bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-white transition flex items-center gap-1.5 shadow">
+                                <i class="fa-brands fa-whatsapp text-sm"></i>
+                                <span>Tanya via WhatsApp</span>
+                            </a>
+                        </div>
+
+                        <button type="button" onclick="resetTrackSearch()" class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-2 text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer">
+                            <span>Lacak Tiket Lain</span>
+                        </button>
+                    </div>
+
+                </div>`;
+        }
+
+        // On DOM Ready: Sync localStorage and initial tickets
+        document.addEventListener('DOMContentLoaded', () => {
+            renderRecentTickets();
+            <?php if (!empty($submitted_ticket)): ?>
+                saveRecentTicket('<?= $submitted_ticket ?>');
+            <?php elseif (!empty($tracked_ticket)): ?>
+                saveRecentTicket('<?= $tracked_ticket['ticket_code'] ?>');
+            <?php endif; ?>
+        });
     </script>
 </body>
 </html>
+

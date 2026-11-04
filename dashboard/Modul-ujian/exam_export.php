@@ -16,9 +16,10 @@ if ($exam_id <= 0) {
 
 // Ambil info ujian
 $stmt_e = $pdo->prepare("
-    SELECT e.*, u.name as teacher_name 
+    SELECT e.*, u.name as teacher_name, c.name as class_name 
     FROM exams e 
     JOIN users u ON e.teacher_id = u.id 
+    LEFT JOIN classes c ON e.class_id = c.id 
     WHERE e.id = ?
 ");
 $stmt_e->execute([$exam_id]);
@@ -64,6 +65,8 @@ fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
 // Baris Metadata Header
 fputcsv($output, ['REKAPITULASI NILAI UJIAN / LATIHAN SEKOLAH']);
 fputcsv($output, ['Judul Paket', $exam['title']]);
+fputcsv($output, ['Jenjang Pendidikan', getExamLevelLabel($exam['education_level'] ?? 'all')]);
+fputcsv($output, ['Target Kelas / Rombel', !empty($exam['class_name']) ? $exam['class_name'] : 'Semua Kelas (Terbuka)']);
 fputcsv($output, ['Mata Pelajaran', $exam['subject']]);
 fputcsv($output, ['Kategori', getExamCategoryLabel($exam['category'])]);
 fputcsv($output, ['Guru Pengampu', $exam['teacher_name']]);

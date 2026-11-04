@@ -7,8 +7,9 @@ requireLogin();
 $user_id = (int) $_SESSION['user_id'];
 $user_role = $_SESSION['user_role'] ?? 'siswa';
 
-// Hak akses: hanya Staf TU dan Administrator
-if (!in_array($user_role, ['staf', 'administrator'], true)) {
+// Hak akses: Staf TU, Administrator, dan Guru
+$is_staff = in_array($user_role, ['staf', 'administrator'], true);
+if (!in_array($user_role, ['staf', 'administrator', 'guru'], true)) {
     header("Location: ../index.php?error=unauthorized");
     exit;
 }
@@ -134,16 +135,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $message = "Lengkapi barang, nama peminjam, dan tujuan peminjaman sarana.";
             $message_type = "error";
         } else {
-            $stmt = $pdo->prepare("
-                INSERT INTO inventory_loans 
-                (item_id, borrower_name, borrower_role, borrower_phone, borrow_date, expected_return_date, status, purpose, recorded_by)
-                VALUES (?, ?, ?, ?, ?, ?, 'dipinjam', ?, ?)
+            // Deteksi Bentrok Jadwal Peminjaman (Conflict Detector)
+            $stmt_clash = $pdo->prepare("
+                SELECT id, borrower_name, borrow_date, expected_return_date 
+                FROM inventory_loans 
+                WHERE item_id = ? AND status = 'dipinjam' 
+                  AND NOT (expected_return_date < ? OR borrow_date > ?)
+                LIMIT 1
             ");
-            $stmt->execute([$item_id, $borrower_name, $borrower_role, $borrower_phone, $borrow_date, $expected_return_date, $purpose, $user_id]);
+            $stmt_clash->execute([$item_id, $borrow_date, $expected_return_date]);
+            $clash = $stmt_clash->fetch();
 
-            logActivity($pdo, 'LOAN_INVENTORY', "Mencatat peminjaman aset item #$item_id oleh $borrower_name");
-            $message = "Peminjaman sarana berhasil dicatat!";
-            $message_type = "success";
+            if ($clash) {
+                $clash_start = date('d/m/Y', strtotime($clash['borrow_date']));
+                $clash_end = date('d/m/Y', strtotime($clash['expected_return_date']));
+                $message = "Jadwal Bentrok! Fasilitas/alat ini sudah dipinjam oleh {$clash['borrower_name']} pada periode {$clash_start} s/d {$clash_end}. Silakan pilih tanggal lain.";
+                $message_type = "error";
+            } else {
+                $stmt = $pdo->prepare("
+                    INSERT INTO inventory_loans 
+                    (item_id, borrower_name, borrower_role, borrower_phone, borrow_date, expected_return_date, status, purpose, recorded_by)
+                    VALUES (?, ?, ?, ?, ?, ?, 'dipinjam', ?, ?)
+                ");
+                $stmt->execute([$item_id, $borrower_name, $borrower_role, $borrower_phone, $borrow_date, $expected_return_date, $purpose, $user_id]);
+                $loan_id = (int)$pdo->lastInsertId();
+
+                // Integrasi Otomatis ke Kalender Akademik & Agenda Kegiatan Sekolah
+                try {
+                    $stmt_it = $pdo->prepare("SELECT item_name, room_location FROM inventory_items WHERE id = ?");
+                    $stmt_it->execute([$item_id]);
+                    $it_info = $stmt_it->fetch();
+                    $it_name = $it_info['item_name'] ?? 'Sarana Sekolah';
+                    $it_loc  = $it_info['room_location'] ?? 'Lingkungan Sekolah';
+
+                    $cal_title = "[Sarpras] " . $it_name . " (" . $borrower_name . ")";
+                    $cal_desc  = "Peminjaman fasilitas/alat oleh {$borrower_name} ({$borrower_role}). Tujuan: {$purpose}. Kontak: " . ($borrower_phone ?: '-');
+                    
+                    $stmt_cal = $pdo->prepare("
+                        INSERT INTO calendar_events (title, description, event_date, end_date, category, color, facility_location, created_by)
+                        VALUES (?, ?, ?, ?, 'kegiatan', '#8b5cf6', ?, ?)
+                    ");
+                    $stmt_cal->execute([$cal_title, $cal_desc, $borrow_date, $expected_return_date, $it_loc, $user_id]);
+                } catch (Exception $e_cal) {
+                    // Fallback jika terjadi kendala pada insert kalender
+                }
+
+                logActivity($pdo, 'LOAN_INVENTORY', "Mencatat peminjaman aset item #$item_id ($it_name) oleh $borrower_name - terintegrasi ke Kalender");
+                $message = "Peminjaman sarana berhasil dicatat dan otomatis terjadwal di Kalender Sekolah!";
+                $message_type = "success";
+            }
         }
     }
 }
@@ -188,6 +228,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $stmt->execute([$delete_id]);
             logActivity($pdo, 'DELETE_INVENTORY', "Menghapus aset inventaris #$delete_id");
             $message = "Barang telah dihapus dari buku inventaris.";
+            $message_type = "success";
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 6. AJUKAN ANGGARAN PEMELIHARAAN / PENGADAAN KE BKU KEUANGAN
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'propose_maintenance_expense' && $is_staff) {
+    if (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
+        $item_id   = (int)($_POST['item_id'] ?? 0);
+        $amount    = (float)str_replace(['.', ','], ['', '.'], $_POST['amount'] ?? 0);
+        $title     = trim($_POST['title'] ?? '');
+        $category  = trim($_POST['category'] ?? 'Pemeliharaan & Kebersihan');
+        $recipient = trim($_POST['recipient'] ?? 'Rekanan Servis / Vendor');
+        $notes     = trim($_POST['notes'] ?? '');
+
+        $stmt_item = $pdo->prepare("SELECT * FROM inventory_items WHERE id = ?");
+        $stmt_item->execute([$item_id]);
+        $item = $stmt_item->fetch();
+
+        if (!$item || $amount <= 0 || empty($title)) {
+            $message = "Lengkapi data pengajuan anggaran (judul dan estimasi biaya harus valid).";
+            $message_type = "error";
+        } else {
+            $next_bkk_id = (int)$pdo->query("SELECT MAX(id) FROM financial_expenses")->fetchColumn() + 1;
+            $bkk_no = "BKK-INV-" . date('Ym') . "-" . sprintf('%04d', $next_bkk_id);
+            $exp_notes = "Pengajuan Sarpras Aset [{$item['item_code']}] {$item['item_name']} ({$item['room_location']}). {$notes}";
+
+            $stmt_bkk = $pdo->prepare("
+                INSERT INTO financial_expenses (expense_no, category, title, expense_date, amount, recipient, notes, recorded_by)
+                VALUES (?, ?, ?, CURDATE(), ?, ?, ?, ?)
+            ");
+            $stmt_bkk->execute([$bkk_no, $category, $title, $amount, $recipient, $exp_notes, $user_id]);
+
+            // Catat riwayat pengajuan pada notes aset sarpras
+            $up_notes = ($item['notes'] ? $item['notes'] . " | " : "") . "[Diajukan ke BKU: $bkk_no sebesar Rp " . number_format($amount, 0, ',', '.') . "]";
+            $stmt_up_item = $pdo->prepare("UPDATE inventory_items SET notes = ? WHERE id = ?");
+            $stmt_up_item->execute([$up_notes, $item_id]);
+
+            logActivity($pdo, 'PROPOSE_SARPRAS_BKU', "Mengajukan pengeluaran BKU {$bkk_no} Rp {$amount} untuk pemeliharaan aset {$item['item_code']}");
+            $message = "Pengajuan anggaran pemeliharaan sarpras ({$bkk_no}) berhasil dikirimkan ke Buku Kas Umum (BKU)!";
             $message_type = "success";
         }
     }
@@ -298,13 +383,15 @@ require_once __DIR__ . "/../includes/header.php";
     </div>
 
     <div class="flex items-center gap-2 flex-wrap">
-        <button onclick="document.getElementById('modalAddItem').classList.remove('hidden')" 
-                class="inline-flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition cursor-pointer">
-            <i class="fa-solid fa-plus"></i> Tambah Aset Barang
-        </button>
+        <?php if ($is_staff): ?>
+            <button onclick="document.getElementById('modalAddItem').classList.remove('hidden')" 
+                    class="inline-flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition cursor-pointer">
+                <i class="fa-solid fa-plus"></i> Tambah Aset Barang
+            </button>
+        <?php endif; ?>
         <button onclick="document.getElementById('modalLoanItem').classList.remove('hidden')" 
                 class="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition cursor-pointer">
-            <i class="fa-solid fa-hand-holding-hand"></i> Catat Peminjaman
+            <i class="fa-solid fa-hand-holding-hand"></i> <?= $is_staff ? 'Catat Peminjaman' : 'Ajukan Peminjaman Sarpras' ?>
         </button>
         <button onclick="window.print()" class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition cursor-pointer">
             <i class="fa-solid fa-print"></i> Cetak Laporan
@@ -512,6 +599,16 @@ require_once __DIR__ . "/../includes/header.php";
 
                                 <td class="px-6 py-4 text-right">
                                     <div class="flex items-center justify-end gap-2">
+                                        <?php if ($is_staff): ?>
+                                            <button 
+                                                type="button"
+                                                onclick='openProposeModal(<?= htmlspecialchars(json_encode($item), ENT_QUOTES) ?>)'
+                                                class="rounded-xl border border-blue-500/25 bg-blue-500/10 hover:bg-blue-500/25 px-2.5 py-1.5 text-xs font-semibold text-blue-400 transition cursor-pointer flex items-center gap-1"
+                                                title="Ajukan Anggaran Pemeliharaan / Pengadaan ke Buku Kas Umum (BKU)">
+                                                <i class="fa-solid fa-file-invoice-dollar"></i> <span class="hidden xl:inline">Anggaran BKU</span>
+                                            </button>
+                                        <?php endif; ?>
+
                                         <button 
                                             onclick='openEditItemModal(<?= json_encode($item) ?>)'
                                             class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-amber-400 transition cursor-pointer"
@@ -908,6 +1005,81 @@ require_once __DIR__ . "/../includes/header.php";
     </div>
 </div>
 
+<!-- ========================================================= -->
+<!-- MODAL: AJUKAN ANGGARAN PEMELIHARAAN KE BKU KEUANGAN -->
+<!-- ========================================================= -->
+<div id="modalProposeExpense" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur p-4 hidden">
+    <div class="w-full max-w-lg rounded-3xl border border-blue-500/30 bg-slate-900 p-6 sm:p-8 shadow-2xl relative">
+        <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-file-invoice-dollar text-blue-400"></i> Ajukan Anggaran Pemeliharaan ke BKU
+            </h3>
+            <button onclick="document.getElementById('modalProposeExpense').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg font-bold cursor-pointer">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <form method="POST" class="space-y-4 text-xs">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="propose_maintenance_expense">
+            <input type="hidden" name="item_id" id="propose_item_id" value="">
+
+            <!-- Info Preview Barang -->
+            <div class="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                <div class="h-10 w-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg shrink-0">
+                    <i class="fa-solid fa-boxes-stacked"></i>
+                </div>
+                <div>
+                    <h4 class="font-bold text-white text-sm" id="propose_item_name">-</h4>
+                    <p class="text-[11px] text-slate-400">
+                        Kode: <span class="font-mono text-cyan-300 font-semibold" id="propose_item_code">-</span> &bull; 
+                        Lokasi: <span class="text-slate-300" id="propose_item_room">-</span>
+                    </p>
+                </div>
+            </div>
+
+            <div>
+                <label class="mb-1 block font-semibold uppercase text-slate-300">Uraian / Judul Pengeluaran *</label>
+                <input type="text" name="title" id="propose_title" required class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-xs text-white outline-none focus:border-blue-500" placeholder="Contoh: Perbaikan modul power supply & servis lampu proyektor">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="mb-1 block font-semibold uppercase text-slate-300">Kategori Belanja BKU</label>
+                    <select name="category" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500">
+                        <option value="Pemeliharaan & Kebersihan">Pemeliharaan & Kebersihan</option>
+                        <option value="ATK & Operasional Kantor">ATK & Operasional Kantor</option>
+                        <option value="Perlengkapan Sekolah & Sarpras">Perlengkapan Sekolah & Sarpras</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="mb-1 block font-semibold uppercase text-slate-300">Estimasi Biaya (Rp) *</label>
+                    <input type="number" name="amount" id="propose_amount" required min="1000" step="500" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs text-white font-mono outline-none focus:border-blue-500" placeholder="Contoh: 350000">
+                </div>
+            </div>
+
+            <div>
+                <label class="mb-1 block font-semibold uppercase text-slate-300">Rekomendasi Rekanan / Teknisi / Toko</label>
+                <input type="text" name="recipient" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs text-white outline-none focus:border-blue-500" placeholder="Contoh: CV Prima Servis Mandiri / Teknisi Komputer">
+            </div>
+
+            <div>
+                <label class="mb-1 block font-semibold uppercase text-slate-300">Catatan Kerusakan / Rincian Kebutuhan</label>
+                <textarea name="notes" rows="2" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs text-white outline-none focus:border-blue-500" placeholder="Jelaskan kondisi kerusakan fisik atau spesifikasi suku cadang yang dibutuhkan..."></textarea>
+            </div>
+
+            <div class="mt-6 flex justify-end gap-2.5 pt-4 border-t border-white/10">
+                <button type="button" onclick="document.getElementById('modalProposeExpense').classList.add('hidden')" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 font-semibold text-slate-300 hover:bg-white/10 cursor-pointer">
+                    Batal
+                </button>
+                <button type="submit" class="rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2 font-bold text-white transition shadow-lg shadow-blue-500/25 cursor-pointer flex items-center gap-1.5">
+                    <i class="fa-solid fa-paper-plane"></i> Kirim ke BKU
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 function openEditItemModal(data) {
     document.getElementById('edit_id').value = data.id;
@@ -922,6 +1094,15 @@ function openEditItemModal(data) {
     document.getElementById('edit_purchase_cost').value = data.purchase_cost || 0;
     document.getElementById('edit_notes').value = data.notes || '';
     document.getElementById('modalEditItem').classList.remove('hidden');
+}
+
+function openProposeModal(data) {
+    document.getElementById('propose_item_id').value = data.id;
+    document.getElementById('propose_item_name').innerText = data.item_name;
+    document.getElementById('propose_item_code').innerText = data.item_code;
+    document.getElementById('propose_item_room').innerText = data.room_location;
+    document.getElementById('propose_title').value = 'Pemeliharaan/Servis: ' + data.item_name + ' (' + data.room_location + ')';
+    document.getElementById('modalProposeExpense').classList.remove('hidden');
 }
 </script>
 

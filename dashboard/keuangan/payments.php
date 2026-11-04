@@ -14,13 +14,16 @@ $message_type = "";
 // Buat folder upload bukti jika belum ada
 $upload_dir = __DIR__ . "/../../uploads/payments";
 if (!is_dir($upload_dir)) {
-    mkdir($upload_dir, 0777, true);
+    mkdir($upload_dir, 0755, true);
 }
 
 // -------------------------------------------------------------
 // 1. RESOLUSI SISWA TERKAIT (UNTUK SISWA & ORANG TUA)
 // -------------------------------------------------------------
 $target_student_id = null;
+$parent_children = [];
+$child_info = null;
+
 if ($user_role === 'siswa') {
     $target_student_id = $user_id;
 } elseif ($user_role === 'orang_tua') {
@@ -29,12 +32,25 @@ if ($user_role === 'siswa') {
         FROM parent_students ps
         JOIN users u ON ps.student_id = u.id
         LEFT JOIN classes c ON u.class_id = c.id
-        WHERE ps.parent_id = ? LIMIT 1
+        WHERE ps.parent_id = ?
+        ORDER BY u.name ASC
     ");
     $stmt_child->execute([$user_id]);
-    $child_info = $stmt_child->fetch();
-    if ($child_info) {
-        $target_student_id = (int)$child_info['id'];
+    $parent_children = $stmt_child->fetchAll();
+    $p_kids_ids = array_map('intval', array_column($parent_children, 'id'));
+
+    $req_kid = isset($_GET['student_id']) && is_numeric($_GET['student_id']) ? (int)$_GET['student_id'] : (isset($_GET['child_id']) ? (int)$_GET['child_id'] : 0);
+    if ($req_kid > 0 && in_array($req_kid, $p_kids_ids, true)) {
+        $target_student_id = $req_kid;
+    } else {
+        $target_student_id = !empty($p_kids_ids) ? (int)$p_kids_ids[0] : 0;
+    }
+
+    foreach ($parent_children as $pk) {
+        if ((int)$pk['id'] === $target_student_id) {
+            $child_info = $pk;
+            break;
+        }
     }
 }
 
@@ -102,48 +118,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $notes = trim($_POST['notes'] ?? '');
         $proof_url = null;
 
-        // Ambil info tagihan
-        $stmt_b = $pdo->prepare("SELECT * FROM student_bills WHERE id = ?");
-        $stmt_b->execute([$bill_id]);
-        $bill = $stmt_b->fetch();
+        // Gunakan transaction + FOR UPDATE untuk cegah race condition duplikasi pembayaran
+        $pdo->beginTransaction();
+        try {
+            // Ambil info tagihan dengan row lock
+            $stmt_b = $pdo->prepare("SELECT * FROM student_bills WHERE id = ? FOR UPDATE");
+            $stmt_b->execute([$bill_id]);
+            $bill = $stmt_b->fetch();
 
-        if (!$bill) {
-            $message = "Tagihan tidak ditemukan.";
-            $message_type = "error";
-        } else {
-            // Upload bukti transfer jika ada
-            if (isset($_FILES['proof_file']) && $_FILES['proof_file']['error'] === UPLOAD_ERR_OK) {
-                $file_tmp = $_FILES['proof_file']['tmp_name'];
-                $file_name = $_FILES['proof_file']['name'];
-                $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                $allowed_exts = ['jpg', 'jpeg', 'png', 'pdf'];
+            if (!$bill) {
+                $pdo->rollBack();
+                $message = "Tagihan tidak ditemukan.";
+                $message_type = "error";
+            // -1 fix: Cek kepemilikan tagihan — siswa hanya tagihan sendiri, orang tua untuk anak-anaknya yang terdaftar
+            } elseif (!$can_manage && ($user_role === 'orang_tua' ? !in_array((int)$bill['student_id'], $p_kids_ids, true) : (int)$bill['student_id'] !== $target_student_id)) {
+                $pdo->rollBack();
+                $message = "Anda tidak memiliki akses ke tagihan ini.";
+                $message_type = "error";
+            // -6 fix: Cegah pembayaran ganda jika status sudah bukan belum_lunas
+            } elseif ($bill['status'] !== 'belum_lunas') {
+                $pdo->rollBack();
+                $message = "Tagihan ini sudah dalam proses pembayaran atau sudah lunas.";
+                $message_type = "error";
+            } else {
+                // -7 & -8 fix: Validasi ukuran file (maks 5MB) dan MIME type pada upload bukti pembayaran
+                $upload_error = false;
+                if (isset($_FILES['proof_file']) && $_FILES['proof_file']['error'] === UPLOAD_ERR_OK) {
+                    // -7 fix: Cek ukuran file maksimal 5MB
+                    if ($_FILES['proof_file']['size'] > 5 * 1024 * 1024) {
+                        $pdo->rollBack();
+                        $message = "Ukuran file bukti transfer maksimal 5MB.";
+                        $message_type = "error";
+                        $upload_error = true;
+                    } else {
+                        $file_tmp = $_FILES['proof_file']['tmp_name'];
+                        $file_name = $_FILES['proof_file']['name'];
+                        $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+                        $allowed_exts = ['jpg', 'jpeg', 'png', 'pdf'];
+                        $allowed_mimes = ['image/jpeg', 'image/pjpeg', 'image/png', 'application/pdf'];
 
-                if (in_array($file_ext, $allowed_exts, true)) {
-                    $new_file_name = 'pay_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
-                    $dest_path = $upload_dir . '/' . $new_file_name;
-                    if (move_uploaded_file($file_tmp, $dest_path)) {
-                        $proof_url = 'uploads/payments/' . $new_file_name;
+                        // -8 fix: Verifikasi MIME type asli via finfo
+                        $file_mime = '';
+                        if (function_exists('finfo_open')) {
+                            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                            if ($finfo) {
+                                $file_mime = finfo_file($finfo, $file_tmp);
+                                finfo_close($finfo);
+                            }
+                        } elseif (function_exists('mime_content_type')) {
+                            $file_mime = mime_content_type($file_tmp);
+                        }
+
+                        if (!in_array($file_ext, $allowed_exts, true) || ($file_mime && !in_array(strtolower($file_mime), $allowed_mimes, true))) {
+                            $pdo->rollBack();
+                            $message = "Format file bukti transfer tidak valid. Hanya JPG, PNG, dan PDF yang diizinkan.";
+                            $message_type = "error";
+                            $upload_error = true;
+                        } else {
+                            $new_file_name = 'pay_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
+                            $dest_path = $upload_dir . '/' . $new_file_name;
+                            if (move_uploaded_file($file_tmp, $dest_path)) {
+                                $proof_url = 'uploads/payments/' . $new_file_name;
+                            }
+                        }
                     }
                 }
+
+                if (!$upload_error) {
+                    // Simpan transaksi pembayaran
+                    $stmt_ins_pay = $pdo->prepare("
+                        INSERT INTO bill_payments (bill_id, student_id, amount_paid, payment_method, payment_date, proof_url, status, notes)
+                        VALUES (?, ?, ?, ?, CURRENT_DATE(), ?, 'menunggu', ?)
+                    ");
+                    $stmt_ins_pay->execute([$bill_id, $bill['student_id'], $bill['amount'], $payment_method, $proof_url, $notes]);
+
+                    // Update status tagihan jadi menunggu_verifikasi
+                    $pdo->prepare("UPDATE student_bills SET status = 'menunggu_verifikasi' WHERE id = ?")->execute([$bill_id]);
+
+                    $pdo->commit();
+
+                    logActivity($pdo, 'SUBMIT_PAYMENT', "Mengajukan pembayaran tagihan ID $bill_id metode $payment_method senilai " . $bill['amount']);
+                    if ($payment_method === 'tunai') {
+                        $message = "Konfirmasi pembayaran tunai berhasil dikirim. Silakan serahkan setoran di loket Tata Usaha sekolah (jam kerja 07.30 - 15.00 WIB) untuk verifikasi langsung.";
+                    } else {
+                        $message = "Konfirmasi pembayaran berhasil dikirim. Staf Tata Usaha akan segera memverifikasi mutasi rekening Anda.";
+                    }
+                    $message_type = "success";
+                }
             }
-
-            // Simpan transaksi pembayaran
-            $stmt_ins_pay = $pdo->prepare("
-                INSERT INTO bill_payments (bill_id, student_id, amount_paid, payment_method, payment_date, proof_url, status, notes)
-                VALUES (?, ?, ?, ?, CURRENT_DATE(), ?, 'menunggu', ?)
-            ");
-            $stmt_ins_pay->execute([$bill_id, $bill['student_id'], $bill['amount'], $payment_method, $proof_url, $notes]);
-
-            // Update status tagihan jadi menunggu_verifikasi
-            $pdo->prepare("UPDATE student_bills SET status = 'menunggu_verifikasi' WHERE id = ?")->execute([$bill_id]);
-
-            logActivity($pdo, 'SUBMIT_PAYMENT', "Mengajukan pembayaran tagihan ID $bill_id metode $payment_method senilai " . $bill['amount']);
-            if ($payment_method === 'tunai') {
-                $message = "Konfirmasi pembayaran tunai berhasil dikirim. Silakan serahkan setoran di loket Tata Usaha sekolah (jam kerja 07.30 - 15.00 WIB) untuk verifikasi langsung.";
-            } else {
-                $message = "Konfirmasi pembayaran berhasil dikirim. Staf Tata Usaha akan segera memverifikasi mutasi rekening Anda.";
-            }
-            $message_type = "success";
+        } catch (Exception $e_pay) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $message = "Gagal memproses pembayaran. Silakan coba lagi.";
+            $message_type = "error";
         }
     }
 }
@@ -175,6 +241,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $pdo->prepare("UPDATE student_bills SET status = ? WHERE id = ?")->execute([$bill_status, $payment['bill_id']]);
 
             logActivity($pdo, 'VERIFY_PAYMENT', "Verifikasi pembayaran ID $payment_id ($new_status)");
+
+            // Notifikasi WhatsApp ke Orang Tua jika Pembayaran Diterima
+            if ($decision === 'terima') {
+                try {
+                    $stmt_parent = $pdo->prepare("
+                        SELECT u_p.name as parent_name, u_p.phone as parent_phone, u_s.name as student_name, b.title as bill_title
+                        FROM student_bills b
+                        JOIN users u_s ON b.student_id = u_s.id
+                        LEFT JOIN parent_students ps ON u_s.id = ps.student_id
+                        LEFT JOIN users u_p ON ps.parent_id = u_p.id
+                        WHERE b.id = ? LIMIT 1
+                    ");
+                    $stmt_parent->execute([$payment['bill_id']]);
+                    $p_pay = $stmt_parent->fetch();
+                    if ($p_pay && !empty($p_pay['parent_phone'])) {
+                        $formatted_amount = "Rp " . number_format((float)$payment['amount_paid'], 0, ',', '.');
+                        $wa_pay_msg = "Halo Bpk/Ibu *{$p_pay['parent_name']}*,\n\n"
+                                    . "Pembayaran tagihan *{$p_pay['bill_title']}* untuk ananda *{$p_pay['student_name']}* sebesar *{$formatted_amount}* telah berhasil *DIVERIFIKASI & LUNAS* oleh Bagian Keuangan.\n\n"
+                                    . "Kuitansi digital resmi ber-QR Code validasi keaslian dapat diunduh pada portal sekolah. Terima kasih.";
+                        sendWhatsAppNotification($pdo, $p_pay['parent_phone'], $p_pay['parent_name'], $wa_pay_msg, 'keuangan');
+                    }
+                } catch (Exception $e_wa_p) {}
+            }
+
             $message = "Status pembayaran berhasil diperbarui menjadi: " . strtoupper($new_status);
             $message_type = "success";
         }
@@ -187,28 +277,165 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'quick_cash_pay' && $can_manage) {
     if (validateCsrfToken()) {
         $bill_id = (int)($_POST['bill_id'] ?? 0);
-        $stmt_b = $pdo->prepare("SELECT * FROM student_bills WHERE id = ?");
-        $stmt_b->execute([$bill_id]);
-        $bill = $stmt_b->fetch();
 
-        if ($bill) {
-            $stmt_ins = $pdo->prepare("
-                INSERT INTO bill_payments (bill_id, student_id, amount_paid, payment_method, payment_date, status, notes, verified_by, verified_at)
-                VALUES (?, ?, ?, 'tunai', CURRENT_DATE(), 'diterima', 'Pembayaran tunai langsung di loket TU', ?, NOW())
-            ");
-            $stmt_ins->execute([$bill_id, $bill['student_id'], $bill['amount'], $user_id]);
+        // -6 fix: Gunakan transaction + FOR UPDATE untuk cegah race condition
+        $pdo->beginTransaction();
+        try {
+            $stmt_b = $pdo->prepare("SELECT * FROM student_bills WHERE id = ? FOR UPDATE");
+            $stmt_b->execute([$bill_id]);
+            $bill = $stmt_b->fetch();
 
-            $pdo->prepare("UPDATE student_bills SET status = 'lunas' WHERE id = ?")->execute([$bill_id]);
+            if (!$bill) {
+                $pdo->rollBack();
+                $message = "Tagihan tidak ditemukan.";
+                $message_type = "error";
+            } elseif ($bill['status'] === 'lunas') {
+                $pdo->rollBack();
+                $message = "Tagihan ini sudah berstatus LUNAS.";
+                $message_type = "error";
+            } else {
+                $stmt_ins = $pdo->prepare("
+                    INSERT INTO bill_payments (bill_id, student_id, amount_paid, payment_method, payment_date, status, notes, verified_by, verified_at)
+                    VALUES (?, ?, ?, 'tunai', CURRENT_DATE(), 'diterima', 'Pembayaran tunai langsung di loket TU', ?, NOW())
+                ");
+                $stmt_ins->execute([$bill_id, $bill['student_id'], $bill['amount'], $user_id]);
 
-            logActivity($pdo, 'CASH_PAYMENT', "Pembayaran tunai tagihan ID $bill_id senilai " . $bill['amount']);
-            $message = "Pembayaran tunai tagihan berhasil dicatat dan status telah LUNAS.";
-            $message_type = "success";
+                $pdo->prepare("UPDATE student_bills SET status = 'lunas' WHERE id = ?")->execute([$bill_id]);
+
+                $pdo->commit();
+
+                logActivity($pdo, 'CASH_PAYMENT', "Pembayaran tunai tagihan ID $bill_id senilai " . $bill['amount']);
+
+                // Notifikasi WhatsApp ke Orang Tua untuk Pembayaran Tunai Loket
+                try {
+                    $stmt_parent = $pdo->prepare("
+                        SELECT u_p.name as parent_name, u_p.phone as parent_phone, u_s.name as student_name, b.title as bill_title
+                        FROM student_bills b
+                        JOIN users u_s ON b.student_id = u_s.id
+                        LEFT JOIN parent_students ps ON u_s.id = ps.student_id
+                        LEFT JOIN users u_p ON ps.parent_id = u_p.id
+                        WHERE b.id = ? LIMIT 1
+                    ");
+                    $stmt_parent->execute([$bill_id]);
+                    $p_pay = $stmt_parent->fetch();
+                    if ($p_pay && !empty($p_pay['parent_phone'])) {
+                        $formatted_amount = "Rp " . number_format((float)$bill['amount'], 0, ',', '.');
+                        $wa_pay_msg = "Halo Bpk/Ibu *{$p_pay['parent_name']}*,\n\n"
+                                    . "Setoran tunai tagihan *{$p_pay['bill_title']}* untuk ananda *{$p_pay['student_name']}* sebesar *{$formatted_amount}* di loket TU telah berhasil dicatat dan status telah *LUNAS*.\n\n"
+                                    . "Kuitansi digital sah dapat dicetak melalui portal sekolah. Terima kasih.";
+                        sendWhatsAppNotification($pdo, $p_pay['parent_phone'], $p_pay['parent_name'], $wa_pay_msg, 'keuangan');
+                    }
+                } catch (Exception $e_wa_c) {}
+
+                $message = "Pembayaran tunai tagihan berhasil dicatat dan status telah LUNAS.";
+                $message_type = "success";
+            }
+        } catch (Exception $e_cash) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $message = "Gagal memproses pembayaran tunai. Silakan coba lagi.";
+            $message_type = "error";
         }
     }
 }
 
 // -------------------------------------------------------------
-// 6. AMBIL DATA TAGIHAN & PEMBAYARAN
+// 6. ONLINE PAYMENT GATEWAY SETTLEMENT (QRIS & Virtual Account - Fase 4)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'instant_gateway_pay') {
+    // -2 fix: Gateway payment settlement hanya boleh dilakukan oleh Staf & Admin
+    if (!$can_manage) {
+        $message = "Anda tidak memiliki wewenang untuk memproses settlement pembayaran gateway.";
+        $message_type = "error";
+    } elseif (!validateCsrfToken()) {
+        $message = "Token keamanan tidak valid.";
+        $message_type = "error";
+    } else {
+        $bill_id = (int)($_POST['bill_id'] ?? 0);
+        $channel = trim($_POST['payment_channel'] ?? 'QRIS');
+        $trx_id  = 'GW-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
+        $va_num  = trim($_POST['va_number'] ?? '');
+
+        // -6 fix: Gunakan transaction + FOR UPDATE untuk cegah race condition
+        $pdo->beginTransaction();
+        try {
+            $stmt_b = $pdo->prepare("
+                SELECT sb.*, u.name as student_name, u.phone as student_phone, u.id as student_user_id 
+                FROM student_bills sb 
+                JOIN users u ON sb.student_id = u.id 
+                WHERE sb.id = ? FOR UPDATE
+            ");
+            $stmt_b->execute([$bill_id]);
+            $bill = $stmt_b->fetch();
+
+            if (!$bill) {
+                $pdo->rollBack();
+                $message = "Tagihan tidak ditemukan.";
+                $message_type = "error";
+            } elseif ($bill['status'] === 'lunas') {
+                $pdo->rollBack();
+                $message = "Tagihan ini sudah berstatus LUNAS.";
+                $message_type = "error";
+            } else {
+                $stmt_upd = $pdo->prepare("
+                    UPDATE student_bills 
+                    SET status = 'lunas',
+                        payment_channel = ?,
+                        gateway_trx_id = ?,
+                        va_number = ?,
+                        paid_at = CURRENT_TIMESTAMP,
+                        notes = CONCAT(COALESCE(notes, ''), ' | Lunas via ', ?, ' (Trx: ', ?, ')')
+                    WHERE id = ?
+                ");
+                $stmt_upd->execute([$channel, $trx_id, $va_num ?: null, $channel, $trx_id, $bill_id]);
+
+                // Catat di bill_payments agar kuitansi cetak otomatis tersedia
+                $stmt_ins_p = $pdo->prepare("
+                    INSERT INTO bill_payments (bill_id, student_id, amount_paid, payment_method, payment_date, status, verified_by, verified_at, notes)
+                    VALUES (?, ?, ?, 'online_gateway', CURRENT_DATE(), 'diterima', ?, NOW(), ?)
+                ");
+                $stmt_ins_p->execute([$bill_id, $bill['student_id'], $bill['amount'], $user_id, "Settlement Otomatis Gateway $channel (ID: $trx_id)"]);
+
+                $pdo->commit();
+
+                // Kirim notifikasi WA ke Orang Tua
+                try {
+                    $stmt_parent = $pdo->prepare("
+                        SELECT u_p.name, u_p.phone 
+                        FROM parent_students ps
+                        JOIN users u_p ON ps.parent_id = u_p.id
+                        WHERE ps.student_id = ?
+                        LIMIT 1
+                    ");
+                    $stmt_parent->execute([$bill['student_user_id']]);
+                    $parent = $stmt_parent->fetch();
+
+                    $target_phone = $parent['phone'] ?? $bill['student_phone'] ?? '';
+                    $target_name  = $parent['name'] ?? $bill['student_name'];
+
+                    if (!empty($target_phone)) {
+                        $nominal_fmt = "Rp " . number_format($bill['amount'], 0, ',', '.');
+                        $wa_msg = "PEMBAYARAN DIVERIFIKASI (LUNAS)\n\n" .
+                                  "Yth. Bpk/Ibu $target_name,\n" .
+                                  "Pembayaran tagihan *" . $bill['title'] . "* untuk *" . $bill['student_name'] . "* sebesar *$nominal_fmt* telah BERHASIL terverifikasi lunas melalui kanal *$channel* (Trx: $trx_id).\n\n" .
+                                  "Kuitansi resmi digital telah tersedia pada portal keuangan sekolah. Terima kasih.\n\n- Bagian Keuangan Sekolah";
+                        sendWhatsAppNotification($pdo, $target_phone, $target_name, $wa_msg, 'keuangan');
+                    }
+                } catch (Exception $e_wa_gw) {}
+
+                logActivity($pdo, 'GATEWAY_PAYMENT', "Pembayaran tagihan ID $bill_id (" . $bill['title'] . ") lunas via gateway $channel");
+                $message = "Pembayaran via " . htmlspecialchars($channel) . " sukses diverifikasi! Kuitansi digital telah terbit.";
+                $message_type = "success";
+            }
+        } catch (Exception $e_gw) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $message = "Gagal memproses settlement gateway. Silakan coba lagi.";
+            $message_type = "error";
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 7. AMBIL DATA TAGIHAN & PEMBAYARAN
 // -------------------------------------------------------------
 $classes = $pdo->query("SELECT id, name FROM classes ORDER BY name ASC")->fetchAll();
 $all_students = $pdo->query("SELECT id, name, nisn, class_id FROM users WHERE role = 'siswa' ORDER BY name ASC")->fetchAll();
@@ -355,6 +582,24 @@ require_once __DIR__ . "/../includes/header.php";
                     <span class="rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 px-2.5 py-1 font-medium inline-flex items-center gap-1.5"><i class="fa-solid fa-qrcode"></i> QRIS</span>
                 </div>
             </div>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($user_role === 'orang_tua' && count($parent_children) > 1): ?>
+        <div class="rounded-2xl border border-blue-500/30 bg-blue-950/40 p-4 backdrop-blur flex flex-wrap items-center justify-between gap-3 shadow-lg">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-blue-300"><i class="fa-solid fa-children mr-1"></i> Pilih Data Tagihan Anak:</span>
+                <form method="GET" class="inline-flex items-center gap-2">
+                    <select name="student_id" onchange="this.form.submit()" class="rounded-xl border border-blue-500/40 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white focus:outline-none">
+                        <?php foreach ($parent_children as $pk): ?>
+                            <option value="<?= $pk['id'] ?>" <?= ($target_student_id == $pk['id']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($pk['name']) ?> (<?= htmlspecialchars($pk['class_name'] ?: 'Umum') ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
+            </div>
+            <span class="text-xs text-slate-400">Menampilkan tagihan SPP dan status pembayaran untuk anak terpilih</span>
         </div>
     <?php endif; ?>
 
@@ -528,24 +773,41 @@ require_once __DIR__ . "/../includes/header.php";
 
                                 <td class="px-5 py-4 text-right">
                                     <?php if ($bill['status'] === 'lunas'): ?>
-                                        <a href="receipt.php?bill_id=<?= $bill['id'] ?>" target="_blank" class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition">
-                                            <i class="fa-solid fa-print"></i> Cetak Kuitansi
-                                        </a>
-                                    <?php elseif ($can_manage): ?>
-                                        <form method="POST" onsubmit="return confirm('Catat pembayaran tunai lunas di kasir TU?');" class="inline">
-                                             <?= csrfField() ?>
-                                             <input type="hidden" name="action" value="quick_cash_pay">
-                                             <input type="hidden" name="bill_id" value="<?= $bill['id'] ?>">
-                                             <button type="submit" class="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 transition cursor-pointer inline-flex items-center gap-1.5">
-                                                 <i class="fa-solid fa-money-bill-wave"></i> Bayar Tunai
-                                             </button>
-                                        </form>
-                                    <?php elseif (in_array($user_role, ['siswa', 'orang_tua'], true) && $bill['status'] === 'belum_lunas'): ?>
-                                        <button onclick="openPaymentModal(<?= $bill['id'] ?>, '<?= htmlspecialchars($bill['title'], ENT_QUOTES) ?>', <?= $bill['amount'] ?>)" class="rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition cursor-pointer inline-flex items-center gap-1.5">
-                                            <i class="fa-solid fa-credit-card"></i> Bayar Sekarang
-                                        </button>
+                                        <div class="flex flex-col items-end gap-1">
+                                            <?php if (!empty($bill['payment_channel'])): ?>
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30 uppercase font-mono">
+                                                    <i class="fa-solid fa-bolt text-[9px]"></i> <?= htmlspecialchars(strtoupper(str_replace('_', ' ', $bill['payment_channel']))) ?>
+                                                </span>
+                                            <?php endif; ?>
+                                            <a href="receipt.php?bill_id=<?= $bill['id'] ?>" target="_blank" class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition">
+                                                <i class="fa-solid fa-print"></i> Kuitansi
+                                            </a>
+                                        </div>
+                                    <?php elseif ($bill['status'] === 'belum_lunas'): ?>
+                                        <div class="flex items-center justify-end gap-1.5 flex-wrap">
+                                            <button type="button" onclick="openGatewayModal(<?= $bill['id'] ?>, '<?= htmlspecialchars($bill['title'], ENT_QUOTES) ?>', <?= $bill['amount'] ?>, '<?= htmlspecialchars($bill['student_name'] ?? ($current_user['name'] ?? 'Siswa'), ENT_QUOTES) ?>', '<?= htmlspecialchars($bill['nisn'] ?? '0098765432', ENT_QUOTES) ?>')" class="rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/20 hover:from-purple-500 hover:to-indigo-500 transition cursor-pointer inline-flex items-center gap-1.5">
+                                                <i class="fa-solid fa-bolt text-amber-300"></i> Bayar Gateway
+                                            </button>
+                                            
+                                            <?php if ($can_manage): ?>
+                                                <form method="POST" onsubmit="return confirm('Catat pembayaran tunai lunas di kasir TU?');" class="inline">
+                                                    <?= csrfField() ?>
+                                                    <input type="hidden" name="action" value="quick_cash_pay">
+                                                    <input type="hidden" name="bill_id" value="<?= $bill['id'] ?>">
+                                                    <button type="submit" class="rounded-xl bg-emerald-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 transition cursor-pointer inline-flex items-center gap-1">
+                                                        <i class="fa-solid fa-money-bill-wave"></i> Tunai
+                                                    </button>
+                                                </form>
+                                            <?php elseif (in_array($user_role, ['siswa', 'orang_tua'], true)): ?>
+                                                <button onclick="openPaymentModal(<?= $bill['id'] ?>, '<?= htmlspecialchars($bill['title'], ENT_QUOTES) ?>', <?= $bill['amount'] ?>)" class="rounded-xl border border-white/10 bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 transition cursor-pointer inline-flex items-center gap-1">
+                                                    <i class="fa-solid fa-upload"></i> Unggah Bukti
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
                                     <?php else: ?>
-                                        <span class="text-xs text-slate-500">Diproses TU</span>
+                                        <span class="inline-flex items-center gap-1 text-xs text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">
+                                            <i class="fa-solid fa-hourglass-half"></i> Sedang Diverifikasi
+                                        </span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -731,6 +993,177 @@ require_once __DIR__ . "/../includes/header.php";
 </div>
 <?php endif; ?>
 
+<!-- Modal Payment Gateway Simulator (Fase 4) -->
+<div id="modalGatewayPay" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-md hidden">
+    <div class="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <!-- Header -->
+        <div class="relative bg-gradient-to-r from-purple-900/60 via-indigo-900/50 to-slate-900 p-6 border-b border-white/10">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        <i class="fa-solid fa-bolt text-lg"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            Payment Gateway
+                            <span class="rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono px-2 py-0.5 font-bold uppercase tracking-wider">
+                                Instant Settlement
+                            </span>
+                        </h3>
+                        <p class="text-xs text-slate-300">Simulasi Pembayaran Otomatis & Notifikasi WA</p>
+                    </div>
+                </div>
+                <button type="button" onclick="document.getElementById('modalGatewayPay').classList.add('hidden')" class="rounded-xl p-2 text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Bill Info Banner -->
+            <div class="mt-4 rounded-2xl bg-slate-950/60 p-4 border border-white/5 flex items-center justify-between">
+                <div>
+                    <div id="gw_bill_title" class="text-xs font-semibold text-slate-300 line-clamp-1"></div>
+                    <div id="gw_student_name" class="text-[11px] text-slate-400 font-mono"></div>
+                </div>
+                <div class="text-right">
+                    <div class="text-[10px] text-slate-400 uppercase font-semibold">Total Tagihan</div>
+                    <div id="gw_bill_amount" class="text-lg font-black text-emerald-400 font-mono"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Body Form -->
+        <form method="POST" id="formGatewayPay" class="p-6 space-y-5">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="instant_gateway_pay">
+            <input type="hidden" name="bill_id" id="gw_bill_id" value="">
+            <input type="hidden" name="payment_channel" id="gw_payment_channel" value="qris">
+
+            <!-- Channel Selector Tabs -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-2">Pilih Saluran Pembayaran (Channel):</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button type="button" onclick="selectGatewayChannel('qris')" id="tab_channel_qris" class="gw-channel-tab flex flex-col items-center justify-center p-2.5 rounded-xl border border-purple-500/50 bg-purple-500/10 text-white font-semibold text-xs transition">
+                        <i class="fa-solid fa-qrcode text-base mb-1 text-purple-400"></i>
+                        <span>QRIS</span>
+                    </button>
+                    <button type="button" onclick="selectGatewayChannel('bca_va')" id="tab_channel_bca_va" class="gw-channel-tab flex flex-col items-center justify-center p-2.5 rounded-xl border border-white/10 bg-slate-950 text-slate-300 font-semibold text-xs hover:border-white/20 transition">
+                        <i class="fa-solid fa-building-columns text-base mb-1 text-blue-400"></i>
+                        <span>BCA VA</span>
+                    </button>
+                    <button type="button" onclick="selectGatewayChannel('mandiri_va')" id="tab_channel_mandiri_va" class="gw-channel-tab flex flex-col items-center justify-center p-2.5 rounded-xl border border-white/10 bg-slate-950 text-slate-300 font-semibold text-xs hover:border-white/20 transition">
+                        <i class="fa-solid fa-building-columns text-base mb-1 text-amber-400"></i>
+                        <span>Mandiri VA</span>
+                    </button>
+                    <button type="button" onclick="selectGatewayChannel('bri_va')" id="tab_channel_bri_va" class="gw-channel-tab flex flex-col items-center justify-center p-2.5 rounded-xl border border-white/10 bg-slate-950 text-slate-300 font-semibold text-xs hover:border-white/20 transition">
+                        <i class="fa-solid fa-building-columns text-base mb-1 text-cyan-400"></i>
+                        <span>BRI VA</span>
+                    </button>
+                    <button type="button" onclick="selectGatewayChannel('bni_va')" id="tab_channel_bni_va" class="gw-channel-tab flex flex-col items-center justify-center p-2.5 rounded-xl border border-white/10 bg-slate-950 text-slate-300 font-semibold text-xs hover:border-white/20 transition">
+                        <i class="fa-solid fa-building-columns text-base mb-1 text-emerald-400"></i>
+                        <span>BNI VA</span>
+                    </button>
+                    <div class="flex flex-col items-center justify-center p-2.5 rounded-xl border border-dashed border-white/10 bg-slate-950/40 text-slate-500 text-[10px] text-center">
+                        <i class="fa-solid fa-wallet text-sm mb-0.5"></i>
+                        <span>E-Wallet</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel Content: QRIS -->
+            <div id="panel_channel_qris" class="rounded-2xl border border-purple-500/20 bg-purple-950/20 p-4 text-center space-y-3">
+                <div class="flex items-center justify-center gap-2">
+                    <span class="text-xs font-bold text-purple-300 uppercase tracking-wider">QRIS Standar Nasional</span>
+                    <span class="rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-mono text-purple-200">GOPAY / OVO / DANA / BCA</span>
+                </div>
+                
+                <!-- Simulated QR SVG -->
+                <div class="inline-block p-3 bg-white rounded-2xl shadow-lg shadow-purple-500/10">
+                    <svg class="w-36 h-36" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Simulated QR Grid -->
+                        <rect width="100" height="100" fill="#ffffff" />
+                        <rect x="10" y="10" width="25" height="25" fill="#0f172a" rx="4" />
+                        <rect x="15" y="15" width="15" height="15" fill="#ffffff" rx="2" />
+                        <rect x="19" y="19" width="7" height="7" fill="#0f172a" />
+
+                        <rect x="65" y="10" width="25" height="25" fill="#0f172a" rx="4" />
+                        <rect x="70" y="15" width="15" height="15" fill="#ffffff" rx="2" />
+                        <rect x="74" y="19" width="7" height="7" fill="#0f172a" />
+
+                        <rect x="10" y="65" width="25" height="25" fill="#0f172a" rx="4" />
+                        <rect x="15" y="70" width="15" height="15" fill="#ffffff" rx="2" />
+                        <rect x="19" y="74" width="7" height="7" fill="#0f172a" />
+
+                        <!-- Center QR Pattern -->
+                        <rect x="42" y="15" width="6" height="6" fill="#0f172a" />
+                        <rect x="52" y="15" width="6" height="6" fill="#0f172a" />
+                        <rect x="42" y="25" width="6" height="6" fill="#0f172a" />
+                        <rect x="15" y="42" width="6" height="6" fill="#0f172a" />
+                        <rect x="25" y="42" width="6" height="6" fill="#0f172a" />
+                        <rect x="40" y="40" width="20" height="20" fill="#6366f1" rx="4" />
+                        <path d="M47 50L53 50M50 47L50 53" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+                        <rect x="65" y="42" width="6" height="6" fill="#0f172a" />
+                        <rect x="75" y="42" width="6" height="6" fill="#0f172a" />
+                        <rect x="42" y="68" width="6" height="6" fill="#0f172a" />
+                        <rect x="52" y="68" width="6" height="6" fill="#0f172a" />
+                        <rect x="68" y="68" width="18" height="6" fill="#0f172a" />
+                        <rect x="68" y="78" width="6" height="8" fill="#0f172a" />
+                        <rect x="78" y="78" width="8" height="8" fill="#0f172a" />
+                    </svg>
+                </div>
+
+                <div class="text-[11px] text-slate-300">
+                    NMID: <strong class="text-white font-mono">ID1020030040506</strong> • Berlaku s.d. 24 jam
+                </div>
+            </div>
+
+            <!-- Panel Content: Virtual Account -->
+            <div id="panel_channel_va" class="hidden rounded-2xl border border-blue-500/20 bg-blue-950/20 p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span id="va_bank_title" class="text-xs font-bold text-blue-300 uppercase">Virtual Account</span>
+                    <span class="rounded bg-blue-500/20 text-blue-300 text-[10px] font-mono px-2 py-0.5">Otomatis Terverifikasi</span>
+                </div>
+
+                <div class="rounded-xl bg-slate-950/80 p-3 border border-white/5 flex items-center justify-between">
+                    <div>
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase">Nomor Virtual Account</div>
+                        <div id="va_number_display" class="text-lg font-mono font-bold text-amber-300 tracking-wider">8808123456789026</div>
+                    </div>
+                    <button type="button" onclick="copyVaNumber()" class="rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 px-3 py-1.5 text-xs font-medium transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-regular fa-copy"></i> <span id="copy_btn_text">Salin</span>
+                    </button>
+                </div>
+
+                <div class="text-[11px] text-slate-400 space-y-1">
+                    <div>1. Buka aplikasi Mobile Banking atau ATM bank pilihan Anda.</div>
+                    <div>2. Pilih menu <strong>Transfer &gt; Virtual Account</strong>.</div>
+                    <div>3. Masukkan nomor VA di atas. Total bayar akan muncul otomatis.</div>
+                </div>
+            </div>
+
+            <!-- Automated Execution / Simulation CTA -->
+            <div class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-200 flex items-start gap-2.5">
+                <i class="fa-solid fa-circle-check text-emerald-400 text-base mt-0.5"></i>
+                <div class="space-y-0.5">
+                    <div class="font-bold text-emerald-300">Simulator Gateway Instan</div>
+                    <div class="text-[11px] text-emerald-200/80">
+                        Klik tombol di bawah untuk menyimulasikan pembayaran lunas seketika melalui webhook gateway. Sistem akan langsung memperbarui status tagihan menjadi <strong>LUNAS</strong> dan mengirimkan kuitansi digital via <strong>WhatsApp Gateway</strong>.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center justify-end gap-3 pt-2">
+                <button type="button" onclick="document.getElementById('modalGatewayPay').classList.add('hidden')" class="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer">
+                    Batal
+                </button>
+                <button type="submit" class="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-500/25 hover:from-emerald-500 hover:to-teal-500 transition cursor-pointer flex items-center gap-2">
+                    <i class="fa-solid fa-bolt"></i> Simulasikan Sukses Bayar Sekarang
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 function handlePaymentMethodChange(method) {
     const infoBank = document.getElementById('info_transfer_bank');
@@ -743,7 +1176,7 @@ function handlePaymentMethodChange(method) {
 
     if (infoBank) infoBank.classList.add('hidden');
     if (infoQris) infoQris.classList.add('hidden');
-    if (infoTunai) infoTunai.classList.add('hidden');
+    if (infoTunai) infoTunai.classList.remove('hidden');
 
     if (method === 'tunai') {
         if (infoTunai) infoTunai.classList.remove('hidden');
@@ -782,6 +1215,66 @@ function openPaymentModal(id, title, amount) {
     if (notesInput) notesInput.value = '';
 
     document.getElementById('modalPayBill').classList.remove('hidden');
+}
+
+let currentGatewayNisn = '0098765432';
+
+function openGatewayModal(id, title, amount, studentName, studentNisn) {
+    document.getElementById('gw_bill_id').value = id;
+    document.getElementById('gw_bill_title').innerText = title;
+    document.getElementById('gw_student_name').innerText = 'Siswa: ' + studentName + (studentNisn ? ' (' + studentNisn + ')' : '');
+    document.getElementById('gw_bill_amount').innerText = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
+    currentGatewayNisn = studentNisn || '0098765432';
+
+    selectGatewayChannel('qris');
+    document.getElementById('modalGatewayPay').classList.remove('hidden');
+}
+
+function selectGatewayChannel(channel) {
+    document.getElementById('gw_payment_channel').value = channel;
+    
+    // Update tab styling
+    document.querySelectorAll('.gw-channel-tab').forEach(el => {
+        el.className = 'gw-channel-tab flex flex-col items-center justify-center p-2.5 rounded-xl border border-white/10 bg-slate-950 text-slate-300 font-semibold text-xs hover:border-white/20 transition';
+    });
+    const activeTab = document.getElementById('tab_channel_' + channel);
+    if (activeTab) {
+        activeTab.className = 'gw-channel-tab flex flex-col items-center justify-center p-2.5 rounded-xl border border-purple-500/50 bg-purple-500/15 text-white font-semibold text-xs transition';
+    }
+
+    const panelQris = document.getElementById('panel_channel_qris');
+    const panelVa = document.getElementById('panel_channel_va');
+    const vaBankTitle = document.getElementById('va_bank_title');
+    const vaDisplay = document.getElementById('va_number_display');
+
+    if (channel === 'qris') {
+        panelQris.classList.remove('hidden');
+        panelVa.classList.add('hidden');
+    } else {
+        panelQris.classList.add('hidden');
+        panelVa.classList.remove('hidden');
+
+        let prefix = '8808';
+        let bankName = 'Virtual Account';
+        if (channel === 'bca_va') { prefix = '8808'; bankName = 'BCA Virtual Account'; }
+        else if (channel === 'mandiri_va') { prefix = '8890'; bankName = 'Mandiri Virtual Account'; }
+        else if (channel === 'bri_va') { prefix = '8812'; bankName = 'BRI Virtual Account (BRIVA)'; }
+        else if (channel === 'bni_va') { prefix = '8834'; bankName = 'BNI Virtual Account'; }
+
+        vaBankTitle.innerText = bankName;
+        // Clean nisn only digits
+        const cleanNisn = currentGatewayNisn.replace(/\D/g, '').padEnd(8, '0').slice(0, 10);
+        vaDisplay.innerText = prefix + cleanNisn + '26';
+    }
+}
+
+function copyVaNumber() {
+    const text = document.getElementById('va_number_display').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy_btn_text');
+        btn.innerText = 'Tersalin!';
+        setTimeout(() => { btn.innerText = 'Salin'; }, 2000);
+    });
 }
 
 function toggleBillTarget(mode) {

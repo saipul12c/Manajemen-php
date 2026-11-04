@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $link_url = trim($_POST['link_url'] ?? '');
     $file_url = $link_url ?: null;
 
-    // BUG-09 fix: Handle File Upload jika ada dengan validasi MIME-type
+    // -09 fix: Handle File Upload jika ada dengan validasi MIME-type
     if (isset($_FILES['submission_file']) && $_FILES['submission_file']['error'] === UPLOAD_ERR_OK) {
         $file_tmp  = $_FILES['submission_file']['tmp_name'];
         $file_name = $_FILES['submission_file']['name'];

@@ -12,15 +12,40 @@ $school = getSchoolSettings($pdo);
 // Mode: 'single' (default) atau 'batch' (cetak massal rombel)
 $view_mode = $_GET['mode'] ?? 'single';
 $selected_class_id = isset($_GET['class_id']) && $_GET['class_id'] !== '' ? (int)$_GET['class_id'] : null;
+$batch_side = $_GET['side'] ?? 'front'; // 'front', 'back', 'both'
+
+// Inisialisasi TTE & Stempel Resmi Kepala Sekolah
+$ks_signers = getSchoolSigners($pdo)['headmaster'] ?? [];
+$ks_ttd_img = $ks_signers['signature_image'] ?: 'uploads/signatures/default_headmaster_ttd.svg';
+$stamp_img = $school['school_stamp_image'] ?: 'uploads/signatures/default_stamp.svg';
+$sig_mode = $school['signature_mode'] ?? 'hybrid';
+$show_stamp = ($school['show_school_stamp'] ?? '1') === '1';
+
+// Base Web Path untuk TTE & Verifikasi
+$base_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+$base_dir = rtrim(dirname($_SERVER['PHP_SELF'] ?? ''), '/\\');
+$root_path = preg_replace('/\/dashboard.*$/', '', $base_dir);
+$web_ttd_path = (strpos($ks_ttd_img, '/') === 0 || strpos($ks_ttd_img, 'http') === 0) ? $ks_ttd_img : $root_path . '/' . ltrim($ks_ttd_img, '/');
+$web_stamp_path = (strpos($stamp_img, '/') === 0 || strpos($stamp_img, 'http') === 0) ? $stamp_img : $root_path . '/' . ltrim($stamp_img, '/');
 
 // Tentukan siswa target jika single mode
 $target_student_id = $user_id;
 if ($is_staff && isset($_GET['student_id'])) {
     $target_student_id = (int)$_GET['student_id'];
 } elseif ($user_role === 'orang_tua') {
-    $stmt_child = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? LIMIT 1");
-    $stmt_child->execute([$user_id]);
-    $target_student_id = (int)($stmt_child->fetchColumn() ?: $user_id);
+    $req_child = isset($_GET['student_id']) ? (int)$_GET['student_id'] : 0;
+    if ($req_child > 0) {
+        $stmt_verify = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? AND student_id = ? LIMIT 1");
+        $stmt_verify->execute([$user_id, $req_child]);
+        if ($stmt_verify->fetchColumn()) {
+            $target_student_id = $req_child;
+        }
+    }
+    if ($target_student_id === $user_id) {
+        $stmt_child = $pdo->prepare("SELECT student_id FROM parent_students WHERE parent_id = ? LIMIT 1");
+        $stmt_child->execute([$user_id]);
+        $target_student_id = (int)($stmt_child->fetchColumn() ?: $user_id);
+    }
 } elseif ($is_staff && !isset($_GET['student_id'])) {
     $stmt_first = $pdo->query("SELECT id FROM users WHERE role = 'siswa' ORDER BY class_id ASC, name ASC LIMIT 1");
     $target_student_id = (int)($stmt_first->fetchColumn() ?: 0);
@@ -287,17 +312,60 @@ require_once __DIR__ . "/../includes/header.php";
                         <svg id="singleBarcode" class="w-full max-h-11"></svg>
                     </div>
 
-                    <!-- Tanda Tangan & Stempel Kepala Sekolah -->
+                    <!-- Tanda Tangan & Stempel Kepala Sekolah Sah (TTE) -->
+                    <?php
+                    $single_doc_num = $student['nisn'] ?: ('ID-' . $student['id']);
+                    $single_doc_hash = strtoupper(substr(md5($single_doc_num . ($ks_signers['nip'] ?? '') . 'SEKOLAH_AUTH_TTE'), 0, 16));
+                    $single_verify_url = $base_url . $root_path . "/verify_document.php?doc_type=KARTU_PELAJAR"
+                        . "&doc_num=" . urlencode($single_doc_num)
+                        . "&signer_role=" . urlencode($ks_signers['title'] ?? 'Kepala Sekolah')
+                        . "&signer_name=" . urlencode($school['headmaster_name'])
+                        . "&signer_nip=" . urlencode($school['headmaster_nip'])
+                        . "&student_name=" . urlencode($student['name'])
+                        . "&date=" . urlencode(date('d F Y'))
+                        . "&hash=" . $single_doc_hash;
+                    ?>
                     <div class="relative z-10 border-t border-white/10 pt-2 flex items-end justify-between text-[9px]">
-                        <div>
-                            <span class="text-slate-400 block text-[8px]">Scan QR untuk:</span>
-                            <span class="text-emerald-400 font-semibold text-[8px]">Presensi & Perpus Digital</span>
+                        <div class="space-y-1">
+                            <div>
+                                <span class="text-slate-400 block text-[7.5px] uppercase font-semibold">Tujuan Pemindaian:</span>
+                                <span class="text-emerald-400 font-bold text-[8px] flex items-center gap-1">
+                                    <i class="fa-solid fa-check-double text-[7px]"></i> Presensi & Perpus
+                                </span>
+                            </div>
+                            <div class="pt-1">
+                                <a href="<?= htmlspecialchars($single_verify_url) ?>" target="_blank" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[7px] font-mono hover:bg-blue-500/30 transition">
+                                    <i class="fa-solid fa-shield-halved text-[6px]"></i> TTE Terverifikasi
+                                </a>
+                            </div>
                         </div>
-                        <div class="text-right">
-                            <span class="text-slate-400 block text-[8px]">Kepala Sekolah,</span>
-                            <div class="h-6"></div>
-                            <span class="font-bold underline text-white block text-[9px]"><?= htmlspecialchars($school['headmaster_name']) ?></span>
-                            <span class="font-mono text-[7px] text-slate-400 block">NIP. <?= htmlspecialchars($school['headmaster_nip']) ?></span>
+                        <div class="text-right relative max-w-[170px]">
+                            <span class="text-slate-400 block text-[7.5px] leading-tight">Kepala Sekolah,</span>
+                            
+                            <!-- Stempel & TTD Dinamis -->
+                            <div class="relative h-12 flex items-center justify-end my-0.5">
+                                <?php if ($show_stamp): ?>
+                                    <img src="<?= htmlspecialchars($web_stamp_path) ?>" alt="Stempel" 
+                                         class="absolute right-4 w-12 h-12 object-contain pointer-events-none opacity-85 rotate-[-8deg] z-0">
+                                <?php endif; ?>
+                                
+                                <?php if ($sig_mode === 'manual'): ?>
+                                    <div class="h-10"></div>
+                                <?php elseif ($sig_mode === 'digital_qr'): ?>
+                                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=48x48&margin=0&data=<?= urlencode($single_verify_url) ?>" 
+                                         alt="QR TTE" class="w-10 h-10 border border-white/20 p-0.5 rounded bg-white relative z-10">
+                                <?php else: // hybrid atau digital_image ?>
+                                    <img src="<?= htmlspecialchars($web_ttd_path) ?>" alt="TTD KS" 
+                                         class="h-11 max-w-[110px] object-contain relative z-10 brightness-110 drop-shadow">
+                                    <?php if ($sig_mode === 'hybrid'): ?>
+                                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=36x36&margin=0&data=<?= urlencode($single_verify_url) ?>" 
+                                             alt="QR TTE" class="w-8 h-8 border border-white/20 p-0.5 rounded bg-white relative z-10 ml-1">
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
+
+                            <span class="font-bold underline text-white block text-[8.5px] leading-tight"><?= htmlspecialchars($school['headmaster_name']) ?></span>
+                            <span class="font-mono text-[7px] text-slate-400 block leading-tight">NIP. <?= htmlspecialchars($school['headmaster_nip']) ?></span>
                         </div>
                     </div>
                 </div>
@@ -342,7 +410,18 @@ require_once __DIR__ . "/../includes/header.php";
     <?php else: ?>
         <div class="print-sheet">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center">
-                <?php foreach ($batch_students as $idx => $st): ?>
+                <?php foreach ($batch_students as $idx => $st): 
+                    $b_doc_num = $st['nisn'] ?: ('ID-' . $st['id']);
+                    $b_doc_hash = strtoupper(substr(md5($b_doc_num . ($ks_signers['nip'] ?? '') . 'SEKOLAH_AUTH_TTE'), 0, 16));
+                    $b_verify_url = $base_url . $root_path . "/verify_document.php?doc_type=KARTU_PELAJAR"
+                        . "&doc_num=" . urlencode($b_doc_num)
+                        . "&signer_role=" . urlencode($ks_signers['title'] ?? 'Kepala Sekolah')
+                        . "&signer_name=" . urlencode($school['headmaster_name'])
+                        . "&signer_nip=" . urlencode($school['headmaster_nip'])
+                        . "&student_name=" . urlencode($st['name'])
+                        . "&date=" . urlencode(date('d F Y'))
+                        . "&hash=" . $b_doc_hash;
+                ?>
                     <!-- Kartu Sisi Depan Siswa -->
                     <div class="id-card-wrap id-card-print relative rounded-3xl border border-blue-500/40 bg-gradient-to-br from-slate-900 via-slate-950 to-blue-950/80 p-5 shadow-md flex flex-col justify-between overflow-hidden text-slate-100">
                         <div class="border-b border-white/10 pb-2 flex items-center gap-2">
@@ -372,9 +451,25 @@ require_once __DIR__ . "/../includes/header.php";
                             <svg id="batchBarcode_<?= $st['id'] ?>" class="flex-1 max-h-9 ml-2"></svg>
                         </div>
 
+                        <!-- Footer Kartu: Status & TTE Kepala Sekolah -->
                         <div class="border-t border-white/10 pt-2 flex items-center justify-between text-[8px] text-slate-400">
-                            <span class="font-bold text-emerald-400">STATUS: AKTIF</span>
-                            <span><?= htmlspecialchars($school['academic_year'] ?? '2026/2027') ?></span>
+                            <div>
+                                <span class="font-bold text-emerald-400 block">STATUS: AKTIF</span>
+                                <span class="text-[7px] text-slate-400"><?= htmlspecialchars($school['academic_year'] ?? '2026/2027') ?></span>
+                            </div>
+                            <div class="flex items-center gap-1.5 text-right">
+                                <div class="relative h-8 w-16 flex items-center justify-end">
+                                    <?php if ($show_stamp): ?>
+                                        <img src="<?= htmlspecialchars($web_stamp_path) ?>" alt="Stempel" class="absolute right-2 w-8 h-8 object-contain pointer-events-none opacity-85 rotate-[-8deg] z-0">
+                                    <?php endif; ?>
+                                    <img src="<?= htmlspecialchars($web_ttd_path) ?>" alt="TTD KS" class="h-7 max-w-[60px] object-contain relative z-10 brightness-110">
+                                </div>
+                                <div class="text-right leading-tight">
+                                    <span class="text-[6.5px] text-slate-400 block">Kepala Sekolah,</span>
+                                    <span class="text-[7.5px] font-bold text-white underline block truncate max-w-[100px]"><?= htmlspecialchars($school['headmaster_name']) ?></span>
+                                    <span class="text-[6.5px] font-mono text-slate-400 block">NIP. <?= htmlspecialchars($school['headmaster_nip']) ?></span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 <?php endforeach; ?>

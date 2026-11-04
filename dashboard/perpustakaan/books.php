@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $cover_image = null;
                 if (isset($_FILES['cover_file']) && $_FILES['cover_file']['error'] === UPLOAD_ERR_OK) {
                     $up_dir = __DIR__ . '/../../uploads/books';
-                    if (!is_dir($up_dir)) { mkdir($up_dir, 0777, true); }
+                    if (!is_dir($up_dir)) { mkdir($up_dir, 0755, true); }
                     $ext = strtolower(pathinfo($_FILES['cover_file']['name'], PATHINFO_EXTENSION));
                     if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) && $_FILES['cover_file']['size'] <= 2 * 1024 * 1024) {
                         $cover_name = 'book_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
@@ -74,7 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $message = "Buku '$title' berhasil ditambahkan ke katalog perpustakaan!";
                 $message_type = "success";
             } catch (Exception $e) {
-                $message = "Gagal menyimpan buku (Kode buku mungkin sudah digunakan): " . $e->getMessage();
+                error_log("Create book error: " . $e->getMessage());
+                $message = "Gagal menyimpan data buku. Pastikan kode buku atau ISBN belum pernah digunakan sebelumnya.";
                 $message_type = "error";
             }
         }
@@ -381,6 +382,15 @@ include __DIR__ . "/../includes/header.php";
                                class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition inline-flex items-center gap-1">
                                 <?= $is_librarian ? 'Pinjamkan' : 'Pinjam' ?> <i class="fa-solid fa-arrow-right"></i>
                             </a>
+
+                            <?php if (in_array($user_role, ['administrator', 'staf', 'guru'], true)): ?>
+                                <a href="../informasi/news.php?action=create&source=book&book_id=<?= $b['id'] ?>&title=<?= urlencode('Resensi Buku: ' . $b['title']) ?>&excerpt=<?= urlencode('Ulasan dan rekomendasi buku ' . $b['title'] . ' karya ' . $b['author'] . ' yang tersedia di Perpustakaan Sekolah.') ?>&category=artikel" 
+                                   class="rounded-xl border border-teal-500/30 bg-teal-500/10 hover:bg-teal-500/20 px-2.5 py-1.5 text-xs font-semibold text-teal-300 transition inline-flex items-center gap-1"
+                                   title="Tulis Resensi / Review Buku di Portal Berita Sekolah">
+                                    <i class="fa-solid fa-feather-pointed"></i>
+                                    <span class="hidden sm:inline">Resensi</span>
+                                </a>
+                            <?php endif; ?>
                         </div>
 
                         <?php if ($is_librarian): ?>

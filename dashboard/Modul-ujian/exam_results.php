@@ -48,7 +48,7 @@ $hide_answers = !empty($exam['hide_answers_until_due']) && !empty($exam['due_dat
 // AKSI GURU / ADMIN: SIMPAN NILAI KOREKSI ESAI
 // -------------------------------------------------------------
 if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_essay_grades') {
-    // BUG-04 fix: Validasi CSRF Token untuk penilaian esai
+    // -04 fix: Validasi CSRF Token untuk penilaian esai
     if (!validateCsrfToken()) {
         header("Location: exam_results.php?id=$exam_id&error=invalid_csrf");
         exit;
@@ -70,16 +70,52 @@ if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
 
         foreach ($questions as $q) {
             $qid = (int) $q['id'];
+            $q_type = $q['question_type'] ?? 'multiple_choice';
             $max_pts = !empty($q['max_score']) ? (float)$q['max_score'] : 10;
             $total_possible += $max_pts;
 
-            if (($q['question_type'] ?? 'multiple_choice') === 'essay') {
+            if ($q_type === 'essay') {
                 $awarded = isset($submitted_essay_scores[$qid]) ? max(0, min($max_pts, (float)$submitted_essay_scores[$qid])) : 0;
                 $clean_essay_scores[$qid] = $awarded;
                 $earned_essay += $awarded;
+            } elseif ($q_type === 'multiple_choice_complex') {
+                $raw_user = $sub_answers[$qid] ?? '';
+                if (is_array($raw_user)) {
+                    $user_parts = array_filter(array_map(fn($v) => strtoupper(trim((string)$v)), $raw_user));
+                } else {
+                    $user_parts = array_filter(array_map('trim', explode(',', strtoupper((string)$raw_user))));
+                }
+                sort($user_parts);
+                $user_ans = implode(',', $user_parts);
+
+                $correct_parts = array_filter(array_map(fn($v) => strtoupper(trim((string)$v)), explode(',', (string)$q['correct_answer'])));
+                sort($correct_parts);
+                $correct_ans = implode(',', $correct_parts);
+
+                if ($user_ans !== '' && $user_ans === $correct_ans) {
+                    $earned_pg += $max_pts;
+                }
+            } elseif ($q_type === 'true_false') {
+                $user_ans = strtoupper(trim((string)($sub_answers[$qid] ?? '')));
+                if ($user_ans === 'BENAR') $user_ans = 'B';
+                if ($user_ans === 'SALAH') $user_ans = 'S';
+
+                $correct_ans = strtoupper(trim((string)$q['correct_answer']));
+                if ($correct_ans === 'BENAR') $correct_ans = 'B';
+                if ($correct_ans === 'SALAH') $correct_ans = 'S';
+
+                if ($user_ans !== '' && $user_ans === $correct_ans) {
+                    $earned_pg += $max_pts;
+                }
+            } elseif ($q_type === 'short_answer') {
+                $user_ans = trim((string)($sub_answers[$qid] ?? ''));
+                $valid_options = array_map(fn($v) => strtolower(trim((string)$v)), explode('|', (string)$q['correct_answer']));
+                if ($user_ans !== '' && in_array(strtolower($user_ans), $valid_options, true)) {
+                    $earned_pg += $max_pts;
+                }
             } else {
-                $s_ans = $sub_answers[$qid] ?? '';
-                if ($s_ans !== '' && strtoupper($s_ans) === strtoupper($q['correct_answer'])) {
+                $s_ans = strtoupper(trim((string)($sub_answers[$qid] ?? '')));
+                if ($s_ans !== '' && $s_ans === strtoupper(trim((string)$q['correct_answer']))) {
                     $earned_pg += $max_pts;
                 }
             }
@@ -103,7 +139,7 @@ if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
 }
 
 // -------------------------------------------------------------
-// AKSI GURU / ADMIN: BERI ATAU BATALKAN IZIN REMEDIAL (BUG-03 fix: POST + CSRF)
+// AKSI GURU / ADMIN: BERI ATAU BATALKAN IZIN REMEDIAL (-03 fix: POST + CSRF)
 // -------------------------------------------------------------
 if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array($_POST['action'], ['grant_remedial', 'revoke_remedial'], true)) {
     if (!validateCsrfToken()) {
@@ -126,6 +162,82 @@ if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acti
             exit;
         }
     }
+}
+
+// -------------------------------------------------------------
+// AKSI GURU / ADMIN: TERBITKAN TUGAS REMEDIAL OTOMATIS (CBT -> E-LEARNING)
+// -------------------------------------------------------------
+if ($can_view_all && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_remedial_task') {
+    if (!validateCsrfToken()) {
+        header("Location: exam_results.php?id=$exam_id&error=invalid_csrf");
+        exit;
+    }
+
+    $remedial_title = trim($_POST['remedial_title'] ?? ('Tugas Remedial: ' . $exam['title']));
+    $due_date = $_POST['due_date'] ?? date('Y-m-d', strtotime('+3 days'));
+    $instructions = trim($_POST['remedial_instructions'] ?? '');
+
+    // Cari seluruh siswa yang nilainya di bawah KKM
+    $stmt_fail = $pdo->prepare("
+        SELECT es.id as submission_id, es.student_id, es.score, u.name as student_name, u.phone as student_phone 
+        FROM exam_submissions es 
+        JOIN users u ON es.student_id = u.id 
+        WHERE es.exam_id = ? AND es.score < ?
+    ");
+    $stmt_fail->execute([$exam_id, (float)$exam['passing_grade']]);
+    $fail_students = $stmt_fail->fetchAll();
+
+    if (empty($fail_students)) {
+        header("Location: exam_results.php?id=$exam_id&error=no_remedial_students");
+        exit;
+    }
+
+    $student_names_list = implode(', ', array_map(fn($s) => $s['student_name'], $fail_students));
+    $full_desc = ($instructions ? $instructions . "\n\n" : "") 
+        . "📌 Tugas Perbaikan Nilai (Remedial) untuk Modul Ujian: " . $exam['title'] . " (Standar KKM: " . $exam['passing_grade'] . ")\n"
+        . "Dikhususkan untuk peserta didik: " . $student_names_list;
+
+    // 1. Simpan tugas ke tabel assignments
+    $stmt_asgn = $pdo->prepare("
+        INSERT INTO assignments (subject, title, description, due_date, teacher_id) 
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    $stmt_asgn->execute([$exam['subject'], $remedial_title, $full_desc, $due_date, $user_id]);
+
+    // 2. Berikan izin remedial di submission ujian
+    $stmt_up_sub = $pdo->prepare("UPDATE exam_submissions SET remedial_granted = 1 WHERE exam_id = ? AND score < ?");
+    $stmt_up_sub->execute([$exam_id, (float)$exam['passing_grade']]);
+
+    // 3. Notifikasi WhatsApp Otomatis ke Siswa & Orang Tua
+    foreach ($fail_students as $fs) {
+        $stmt_p = $pdo->prepare("
+            SELECT u.phone as parent_phone, u.name as parent_name 
+            FROM parent_students ps 
+            JOIN users u ON ps.parent_id = u.id 
+            WHERE ps.student_id = ? LIMIT 1
+        ");
+        $stmt_p->execute([$fs['student_id']]);
+        $parent = $stmt_p->fetch();
+
+        $wa_msg = "📢 *PEMBERITAHUAN TUGAS REMEDIAL KBM*\n\n"
+            . "Yth. *" . $fs['student_name'] . "* " . ($parent ? "dan Bapak/Ibu (" . $parent['parent_name'] . ")" : "") . ",\n"
+            . "Diberitahukan bahwa perolehan nilai evaluasi mata pelajaran *" . $exam['subject'] . "* (" . $exam['title'] . ") belum memenuhi KKM (Skor: " . number_format($fs['score'], 0) . " / Standar KKM: " . $exam['passing_grade'] . ").\n\n"
+            . "Guru pengampu telah menerbitkan tugas perbaikan: *" . $remedial_title . "*.\n"
+            . "📅 Batas Waktu: *" . date('d M Y', strtotime($due_date)) . "*\n\n"
+            . "Silakan akses portal E-Learning dan menu Tugas untuk mempelajari materi perbaikan. Tetap semangat!";
+
+        if (!empty($fs['student_phone']) && $fs['student_phone'] !== '-') {
+            sendWhatsAppNotification($pdo, $fs['student_phone'], $fs['student_name'], $wa_msg, 'akademik');
+        }
+        if ($parent && !empty($parent['parent_phone']) && $parent['parent_phone'] !== '-') {
+            sendWhatsAppNotification($pdo, $parent['parent_phone'], $parent['parent_name'], $wa_msg, 'akademik');
+        }
+    }
+
+    logActivity($pdo, 'CREATE_REMEDIAL_TASK', "Menerbitkan tugas remedial untuk ujian {$exam['title']} (" . count($fail_students) . " siswa)");
+
+    header("Location: exam_results.php?id=$exam_id&msg=remedial_task_created&cnt=" . count($fail_students));
+    exit;
 }
 
 // Jika Guru/Admin: Ambil seluruh submission siswa
@@ -163,26 +275,53 @@ if ($can_view_all) {
 // Untuk Siswa atau Orang Tua: Ambil hasil submission milik siswa
 $my_submission = null;
 $target_student_id = $user_id;
+$parent_children = [];
 
 if ($user_role === 'siswa') {
     $stmt_my = $pdo->prepare("SELECT * FROM exam_submissions WHERE exam_id = ? AND student_id = ?");
     $stmt_my->execute([$exam_id, $target_student_id]);
     $my_submission = $stmt_my->fetch();
 } elseif ($user_role === 'orang_tua') {
-    $stmt_p = $pdo->prepare("
-        SELECT es.*, u.name as student_name 
-        FROM exam_submissions es 
-        JOIN users u ON es.student_id = u.id 
-        WHERE es.exam_id = ? 
-        ORDER BY es.id DESC LIMIT 1
+    // Ambil daftar anak kandung yang terhubung ke akun orang tua
+    $stmt_kids = $pdo->prepare("
+        SELECT u.id, u.name, u.nisn 
+        FROM parent_students ps 
+        JOIN users u ON ps.student_id = u.id 
+        WHERE ps.parent_id = ?
+        ORDER BY u.name ASC
     ");
-    $stmt_p->execute([$exam_id]);
-    $my_submission = $stmt_p->fetch();
+    $stmt_kids->execute([$user_id]);
+    $parent_children = $stmt_kids->fetchAll();
+    $parent_children_ids = array_map('intval', array_column($parent_children, 'id'));
+
+    $req_child = isset($_GET['student_id']) ? (int)$_GET['student_id'] : (isset($_GET['child_id']) ? (int)$_GET['child_id'] : 0);
+    if ($req_child > 0 && in_array($req_child, $parent_children_ids, true)) {
+        $target_student_id = $req_child;
+    } else {
+        $target_student_id = !empty($parent_children_ids) ? (int)$parent_children_ids[0] : 0;
+    }
+
+    if ($target_student_id > 0) {
+        $stmt_p = $pdo->prepare("
+            SELECT es.*, u.name as student_name 
+            FROM exam_submissions es 
+            JOIN users u ON es.student_id = u.id 
+            WHERE es.exam_id = ? AND es.student_id = ?
+            ORDER BY es.id DESC LIMIT 1
+        ");
+        $stmt_p->execute([$exam_id, $target_student_id]);
+        $my_submission = $stmt_p->fetch();
+    }
 }
 
 $page_title = "Rekap Nilai - " . $exam['title'];
 require_once __DIR__ . "/../includes/header.php";
 ?>
+
+<!-- KaTeX Library untuk Rumus Matematika & Sains (Auto-rendered) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
 
 <div class="space-y-8">
 
@@ -236,8 +375,28 @@ require_once __DIR__ . "/../includes/header.php";
         </div>
     </div>
 
+    <!-- Alert Terkunci Otomatis (Exam Lockdown) -->
+    <?php if (isset($_GET['locked']) || (!empty($my_submission['is_locked']) && (int)$my_submission['is_locked'] === 1)): ?>
+        <div class="rounded-3xl border border-rose-500/50 bg-rose-950/40 p-6 text-rose-200 shadow-xl flex items-start gap-4">
+            <div class="h-12 w-12 rounded-2xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 text-xl shrink-0">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h3 class="text-base sm:text-lg font-bold text-white">Ujian Terkunci Otomatis (Anti-Cheat Lockdown)</h3>
+                    <span class="rounded-full bg-rose-500/20 border border-rose-500/40 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-300 uppercase">
+                        Auto-Submitted
+                    </span>
+                </div>
+                <p class="text-xs text-rose-200 mt-1 leading-relaxed">
+                    Sistem mendeteksi aktivitas perpindahan tab, membuka jendela aplikasi lain, atau keluar dari layar penuh melebihi batas toleransi maksimal 3 kali. Lembar jawaban telah dikunci dan dikumpulkan secara otomatis demi integritas asesmen.
+                </p>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- Alert Sukses Submit Ujian Standar -->
-    <?php if (isset($_GET['submitted'])): ?>
+    <?php if (isset($_GET['submitted']) && !isset($_GET['locked'])): ?>
         <div class="rounded-3xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-emerald-200 shadow-xl flex items-center gap-4">
             <i class="fa-solid fa-circle-check text-emerald-400 text-3xl"></i>
             <div>
@@ -280,6 +439,16 @@ require_once __DIR__ . "/../includes/header.php";
         <div class="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-semibold text-amber-300 flex items-center gap-2">
             <i class="fa-solid fa-circle-check"></i> Izin remedial berhasil dibatalkan.
         </div>
+    <?php elseif (isset($_GET['msg']) && $_GET['msg'] === 'remedial_task_created'): ?>
+        <div class="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs font-semibold text-emerald-300 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check text-emerald-400 text-base"></i> 
+            <span>Sukses! Tugas Remedial E-Learning berhasil diterbitkan untuk <?= (int)($_GET['cnt'] ?? 0) ?> peserta didik di bawah KKM. Izin remedial ujian telah diaktifkan dan notifikasi WhatsApp otomatis dikirimkan.</span>
+        </div>
+    <?php elseif (isset($_GET['error']) && $_GET['error'] === 'no_remedial_students'): ?>
+        <div class="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-semibold text-amber-300 flex items-center gap-2">
+            <i class="fa-solid fa-info-circle text-amber-400 text-base"></i> 
+            <span>Semua peserta didik telah mencapai nilai standar KKM! Tidak ada siswa yang memerlukan remedial.</span>
+        </div>
     <?php elseif (isset($_GET['error']) && $_GET['error'] === 'invalid_csrf'): ?>
         <div class="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs font-semibold text-rose-300 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation"></i> Token keamanan tidak valid atau telah kadaluarsa. Silakan ulangi aksi Anda.
@@ -288,6 +457,25 @@ require_once __DIR__ . "/../includes/header.php";
 
     <!-- TAMPILAN SISWA & ORANG TUA: KARTU SKOR & PEMBAHASAN -->
     <?php if (in_array($user_role, ['siswa', 'orang_tua'], true)): ?>
+        <?php if ($user_role === 'orang_tua' && count($parent_children) > 1): ?>
+            <div class="rounded-2xl border border-blue-500/30 bg-blue-950/40 p-4 backdrop-blur flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-blue-300"><i class="fa-solid fa-children mr-1"></i> Pilih Data Anak:</span>
+                    <form method="GET" class="inline-flex items-center gap-2">
+                        <input type="hidden" name="id" value="<?= $exam_id ?>">
+                        <select name="student_id" onchange="this.form.submit()" class="rounded-xl border border-blue-500/40 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white focus:outline-none">
+                            <?php foreach ($parent_children as $pk): ?>
+                                <option value="<?= $pk['id'] ?>" <?= ($target_student_id == $pk['id']) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($pk['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </form>
+                </div>
+                <span class="text-xs text-slate-400">Menampilkan rekap nilai ujian untuk anak terpilih</span>
+            </div>
+        <?php endif; ?>
+
         <?php if ($my_submission): ?>
             <?php 
                 $my_score = (float) $my_submission['score'];
@@ -330,6 +518,23 @@ require_once __DIR__ . "/../includes/header.php";
                             <?php if ($is_remedial_sub): ?>
                                 <span class="inline-flex items-center gap-1 rounded-full border border-purple-500/30 bg-purple-500/20 px-2.5 py-1 text-xs font-bold text-purple-300">
                                     <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Hasil Remedial
+                                </span>
+                            <?php endif; ?>
+                            <?php 
+                                $my_v_cnt = (int)($my_submission['violation_count'] ?? 0);
+                                $my_locked = !empty($my_submission['is_locked']) && (int)$my_submission['is_locked'] === 1;
+                            ?>
+                            <?php if ($my_locked || $my_v_cnt >= 3): ?>
+                                <span class="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-300">
+                                    <i class="fa-solid fa-lock mr-1"></i> Terkunci Otomatis (<?= $my_v_cnt ?>x Pelanggaran Tab)
+                                </span>
+                            <?php elseif ($my_v_cnt > 0): ?>
+                                <span class="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/20 px-2.5 py-1 text-xs font-bold text-amber-300">
+                                    <i class="fa-solid fa-triangle-exclamation mr-1"></i> Tercatat <?= $my_v_cnt ?>x Peringatan Tab
+                                </span>
+                            <?php else: ?>
+                                <span class="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/20 px-2.5 py-1 text-xs font-bold text-emerald-300">
+                                    <i class="fa-solid fa-shield-check mr-1"></i> Integritas Bersih (0 Pelanggaran)
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -406,7 +611,31 @@ require_once __DIR__ . "/../includes/header.php";
                                 $q_type = $q['question_type'] ?? 'multiple_choice';
                                 $student_choice = $answers_data[$q['id']] ?? '';
                                 $is_essay = ($q_type === 'essay');
-                                $is_correct = (!$is_essay && strtoupper($student_choice) === strtoupper($q['correct_answer']));
+                                
+                                if ($is_essay) {
+                                    $is_correct = null;
+                                } elseif ($q_type === 'multiple_choice_complex') {
+                                    $raw_u = is_array($student_choice) ? $student_choice : explode(',', (string)$student_choice);
+                                    $u_parts = array_filter(array_map(fn($v) => strtoupper(trim((string)$v)), $raw_u));
+                                    sort($u_parts);
+                                    $c_parts = array_filter(array_map(fn($v) => strtoupper(trim((string)$v)), explode(',', (string)$q['correct_answer'])));
+                                    sort($c_parts);
+                                    $is_correct = (!empty($u_parts) && implode(',', $u_parts) === implode(',', $c_parts));
+                                } elseif ($q_type === 'true_false') {
+                                    $u_tf = strtoupper(trim((string)$student_choice));
+                                    if ($u_tf === 'BENAR') $u_tf = 'B';
+                                    if ($u_tf === 'SALAH') $u_tf = 'S';
+                                    $c_tf = strtoupper(trim((string)$q['correct_answer']));
+                                    if ($c_tf === 'BENAR') $c_tf = 'B';
+                                    if ($c_tf === 'SALAH') $c_tf = 'S';
+                                    $is_correct = (!empty($u_tf) && $u_tf === $c_tf);
+                                } elseif ($q_type === 'short_answer') {
+                                    $u_sa = strtolower(trim((string)$student_choice));
+                                    $c_sa_list = array_map(fn($v) => strtolower(trim((string)$v)), explode('|', (string)$q['correct_answer']));
+                                    $is_correct = (!empty($u_sa) && in_array($u_sa, $c_sa_list, true));
+                                } else {
+                                    $is_correct = (strtoupper(trim((string)$student_choice)) === strtoupper(trim((string)$q['correct_answer'])));
+                                }
                                 
                                 $card_border = $is_essay ? 'border-purple-500/30' : ($is_correct ? 'border-emerald-500/30' : 'border-rose-500/30');
                             ?>
@@ -415,19 +644,13 @@ require_once __DIR__ . "/../includes/header.php";
                                 <!-- Header Soal & Status Jawaban -->
                                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
                                     <div class="flex items-center gap-3">
-                                        <span class="flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 text-white font-extrabold text-xs">
+                                        <span class="flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 text-white font-extrabold text-xs font-mono">
                                             <?= $idx + 1 ?>
                                         </span>
-                                        <?php if ($is_essay): ?>
-                                            <span class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                                <i class="fa-solid fa-pen-nib"></i> Soal Esai / Uraian
-                                            </span>
-                                            <span class="text-xs text-slate-400">Bobot Maks: <?= (int)$q['max_score'] ?> Poin</span>
-                                        <?php else: ?>
-                                            <span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-bold <?= $is_correct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30' ?>">
-                                                <?= $is_correct ? '<i class="fa-solid fa-check"></i> Pilihan Ganda Benar' : '<i class="fa-solid fa-xmark"></i> Pilihan Ganda Salah' ?>
-                                            </span>
-                                        <?php endif; ?>
+                                        <span class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-bold <?= getExamQuestionTypeBadge($q_type) ?>">
+                                            <?= htmlspecialchars(getExamQuestionTypeLabel($q_type)) ?>
+                                        </span>
+                                        <span class="text-xs text-slate-400">Bobot Maks: <?= (int)$q['max_score'] ?> Poin</span>
                                     </div>
 
                                     <div>
@@ -442,17 +665,30 @@ require_once __DIR__ . "/../includes/header.php";
                                                 </span>
                                             <?php endif; ?>
                                         <?php else: ?>
-                                            <div class="text-xs text-slate-400">
-                                                Jawaban Anda: <strong class="<?= $is_correct ? 'text-emerald-400' : 'text-rose-400' ?>"><?= $student_choice ?: '-' ?></strong> | Kunci: <strong class="text-emerald-400"><?= $q['correct_answer'] ?></strong>
-                                            </div>
+                                            <span class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold <?= $is_correct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30' ?>">
+                                                <?= $is_correct ? '<i class="fa-solid fa-check"></i> Jawaban Benar' : '<i class="fa-solid fa-xmark"></i> Jawaban Kurang Tepat' ?>
+                                            </span>
                                         <?php endif; ?>
                                     </div>
                                 </div>
 
-                                <!-- Pertanyaan -->
-                                <p class="text-sm font-medium text-white leading-relaxed">
+                                <!-- Audio Listening Player (Jika Ada) -->
+                                <?php if (!empty($q['audio_url'])): ?>
+                                    <div class="rounded-2xl border border-sky-500/30 bg-sky-950/30 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                                        <div class="flex items-center gap-2 text-sky-300 font-semibold">
+                                            <i class="fa-solid fa-headphones text-sm"></i>
+                                            <span>Audio Listening Soal No. <?= $idx + 1 ?></span>
+                                        </div>
+                                        <audio controls controlsList="nodownload" class="w-full sm:w-64 h-8 rounded-lg bg-slate-900">
+                                            <source src="<?= htmlspecialchars($q['audio_url']) ?>" type="audio/mpeg">
+                                        </audio>
+                                    </div>
+                                <?php endif; ?>
+
+                                <!-- Pertanyaan (KaTeX Auto-rendered) -->
+                                <div class="text-sm font-medium text-white leading-relaxed">
                                     <?= nl2br(htmlspecialchars($q['question_text'])) ?>
-                                </p>
+                                </div>
 
                                 <!-- Gambar Pendukung Soal (Jika Ada) -->
                                 <?php if (!empty($q['image_url'])): ?>
@@ -482,8 +718,64 @@ require_once __DIR__ . "/../includes/header.php";
                                         </div>
                                     <?php endif; ?>
 
+                                <?php elseif ($q_type === 'short_answer'): ?>
+                                    <!-- Review Isian Singkat -->
+                                    <div class="space-y-2.5 text-xs">
+                                        <div class="p-3 rounded-2xl border border-white/10 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                            <div>
+                                                <span class="text-slate-400 block mb-0.5">Jawaban Anda:</span>
+                                                <strong class="<?= $is_correct ? 'text-emerald-400' : 'text-rose-400' ?> font-mono text-sm">
+                                                    <?= !empty($student_choice) ? htmlspecialchars($student_choice) : '<em class="text-slate-500">Kosong (Tidak diisi)</em>' ?>
+                                                </strong>
+                                            </div>
+                                            <div class="sm:text-right">
+                                                <span class="text-slate-400 block mb-0.5">Kunci Jawaban yang Diterima:</span>
+                                                <strong class="text-emerald-400 font-mono text-xs">
+                                                    <?= htmlspecialchars(str_replace('|', ' ATAU ', $q['correct_answer'])) ?>
+                                                </strong>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                <?php elseif ($q_type === 'true_false'): ?>
+                                    <!-- Review Benar / Salah -->
+                                    <div class="grid grid-cols-2 gap-3 text-xs">
+                                        <?php 
+                                        $norm_student = strtoupper(trim((string)$student_choice));
+                                        if ($norm_student === 'BENAR') $norm_student = 'B';
+                                        if ($norm_student === 'SALAH') $norm_student = 'S';
+
+                                        $norm_correct = strtoupper(trim((string)$q['correct_answer']));
+                                        if ($norm_correct === 'BENAR') $norm_correct = 'B';
+                                        if ($norm_correct === 'SALAH') $norm_correct = 'S';
+                                        ?>
+                                        <?php foreach (['B' => 'BENAR', 'S' => 'SALAH'] as $tf_key => $tf_label): ?>
+                                            <?php 
+                                                $is_this_key = ($tf_key === $norm_correct);
+                                                $is_this_chosen = ($tf_key === $norm_student);
+                                                $tf_style = 'border-white/5 bg-white/5 text-slate-400';
+                                                if ($is_this_key) {
+                                                    $tf_style = 'border-emerald-500/50 bg-emerald-500/15 text-emerald-200 font-bold';
+                                                } elseif ($is_this_chosen && !$is_this_key) {
+                                                    $tf_style = 'border-rose-500/50 bg-rose-500/15 text-rose-300 font-bold line-through';
+                                                }
+                                            ?>
+                                            <div class="rounded-xl border p-3 flex items-center justify-between gap-2 <?= $tf_style ?>">
+                                                <span class="flex items-center gap-2">
+                                                    <i class="fa-solid <?= $tf_key === 'B' ? 'fa-check text-emerald-400' : 'fa-xmark text-rose-400' ?>"></i>
+                                                    <span><?= $tf_label ?></span>
+                                                </span>
+                                                <?php if ($is_this_key): ?>
+                                                    <span class="text-emerald-400 font-bold flex items-center gap-1 text-[11px]"><i class="fa-solid fa-check"></i> Kunci</span>
+                                                <?php elseif ($is_this_chosen): ?>
+                                                    <span class="text-rose-400 font-bold text-[11px]">Pilihan Anda</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+
                                 <?php else: ?>
-                                    <!-- Pilihan Jawaban PG -->
+                                    <!-- Pilihan Jawaban PG & PG Kompleks (A - E) -->
                                     <?php 
                                     $options = [
                                         'A' => $q['option_a'],
@@ -491,12 +783,18 @@ require_once __DIR__ . "/../includes/header.php";
                                         'C' => $q['option_c'],
                                         'D' => $q['option_d'],
                                     ];
+                                    if (!empty($q['option_e'])) {
+                                        $options['E'] = $q['option_e'];
+                                    }
+
+                                    $correct_keys = array_filter(array_map('trim', explode(',', strtoupper((string)$q['correct_answer']))));
+                                    $student_keys = is_array($student_choice) ? $student_choice : array_filter(array_map('trim', explode(',', strtoupper((string)$student_choice))));
                                     ?>
                                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                                         <?php foreach ($options as $opt_key => $opt_val): ?>
                                             <?php 
-                                                $is_this_correct = ($opt_key === $q['correct_answer']);
-                                                $is_this_student = ($opt_key === $student_choice);
+                                                $is_this_correct = in_array($opt_key, $correct_keys, true);
+                                                $is_this_student = in_array($opt_key, $student_keys, true);
 
                                                 $opt_style = 'border-white/5 bg-white/5 text-slate-400';
                                                 if ($is_this_correct) {
@@ -506,7 +804,7 @@ require_once __DIR__ . "/../includes/header.php";
                                                 }
                                             ?>
                                             <div class="rounded-xl border p-2.5 flex items-center gap-2 <?= $opt_style ?>">
-                                                <span class="font-bold"><?= $opt_key ?>.</span>
+                                                <span class="font-bold font-mono"><?= $opt_key ?>.</span>
                                                 <span><?= htmlspecialchars($opt_val) ?></span>
                                                 <?php if ($is_this_correct): ?>
                                                     <span class="ml-auto text-emerald-400 font-bold flex items-center gap-1"><i class="fa-solid fa-check"></i> Kunci</span>
@@ -517,11 +815,11 @@ require_once __DIR__ . "/../includes/header.php";
                                         <?php endforeach; ?>
                                     </div>
 
-                                    <!-- Pembahasan PG -->
+                                    <!-- Pembahasan PG / Penjelasan -->
                                     <?php if (!empty($q['explanation'])): ?>
                                         <div class="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-3 text-xs text-blue-300">
                                             <strong class="font-bold text-white flex items-center gap-1.5 mb-0.5"><i class="fa-solid fa-lightbulb text-amber-400"></i> Pembahasan / Penjelasan:</strong>
-                                            <?= htmlspecialchars($q['explanation']) ?>
+                                            <?= nl2br(htmlspecialchars($q['explanation'])) ?>
                                         </div>
                                     <?php endif; ?>
                                 <?php endif; ?>
@@ -537,13 +835,15 @@ require_once __DIR__ . "/../includes/header.php";
                 <i class="fa-regular fa-file-lines text-slate-500 text-4xl block mb-3"></i>
                 <h3 class="text-lg font-bold text-white">Belum Ada Riwayat Pengerjaan</h3>
                 <p class="text-sm text-slate-400 mt-1 max-w-md mx-auto">
-                    Ujian atau latihan ini belum dikerjakan.
+                    <?= ($user_role === 'orang_tua') ? 'Putra/putri Anda belum mengerjakan modul ujian ini.' : 'Ujian atau latihan ini belum Anda kerjakan.' ?>
                 </p>
-                <div class="mt-4">
-                    <a href="exam_take.php?id=<?= $exam['id'] ?>" class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-500 transition inline-flex items-center gap-1.5">
-                        <i class="fa-solid fa-pen-to-square"></i> Kerjakan Sekarang
-                    </a>
-                </div>
+                <?php if ($user_role === 'siswa'): ?>
+                    <div class="mt-4">
+                        <a href="exam_take.php?id=<?= $exam['id'] ?>" class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-500 transition inline-flex items-center gap-1.5">
+                            <i class="fa-solid fa-pen-to-square"></i> Kerjakan Sekarang
+                        </a>
+                    </div>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
     <?php endif; ?>
@@ -584,6 +884,37 @@ require_once __DIR__ . "/../includes/header.php";
             </div>
         </div>
 
+        <?php 
+        $fail_count = count($all_submissions) - $pass_count;
+        ?>
+        <?php if ($fail_count > 0): ?>
+            <!-- Smart Action Card: Terbitkan Tugas Remedial E-Learning Otomatis -->
+            <div class="rounded-3xl border border-amber-500/30 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 p-5 sm:p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div class="flex items-start gap-3.5">
+                    <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 text-xl border border-amber-500/30">
+                        <i class="fa-solid fa-bolt-lightning"></i>
+                    </span>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/30 uppercase tracking-wider">
+                                <i class="fa-solid fa-link"></i> Smart Bridge CBT &rarr; E-Learning
+                            </span>
+                            <span class="text-xs text-rose-300 font-bold"><?= $fail_count ?> Peserta Didik di Bawah KKM (<?= $exam['passing_grade'] ?>)</span>
+                        </div>
+                        <h4 class="text-base font-bold text-white mt-1">Terbitkan Tugas Pengayaan / Remedial Otomatis</h4>
+                        <p class="text-xs text-slate-300 mt-0.5 max-w-2xl leading-relaxed">
+                            Hubungkan hasil evaluasi ini dengan modul E-Learning secara instan. Sistem akan membuat entri tugas terstruktur, mengizinkan pengerjaan ulang, serta mengirimkan notifikasi WhatsApp kepada siswa dan orang tua.
+                        </p>
+                    </div>
+                </div>
+                <button type="button" onclick="document.getElementById('remedialModal').classList.remove('hidden')" 
+                        class="shrink-0 inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 px-5 py-2.5 text-xs font-black shadow-lg shadow-amber-500/25 transition cursor-pointer">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span>⚡ Terbitkan Remedial (<?= $fail_count ?> Siswa)</span>
+                </button>
+            </div>
+        <?php endif; ?>
+
         <!-- Tabel Rekapitulasi Nilai Siswa -->
         <div class="rounded-3xl border border-white/10 bg-slate-900/80 overflow-hidden shadow-xl">
             <div class="p-5 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -613,6 +944,7 @@ require_once __DIR__ . "/../includes/header.php";
                                 <th class="py-3.5 px-4 font-semibold text-center">Jawaban Benar</th>
                                 <th class="py-3.5 px-4 font-semibold text-center">Skor Nilai</th>
                                 <th class="py-3.5 px-4 font-semibold text-center">Status KKM</th>
+                                <th class="py-3.5 px-4 font-semibold text-center">Integritas Proctoring</th>
                                 <?php if ($has_essay_questions): ?>
                                     <th class="py-3.5 px-4 font-semibold text-center">Koreksi Esai</th>
                                 <?php endif; ?>
@@ -628,6 +960,8 @@ require_once __DIR__ . "/../includes/header.php";
                                     $is_remed = !empty($sub['is_remedial']) && (int)$sub['is_remedial'] === 1;
                                     $granted = !empty($sub['remedial_granted']) && (int)$sub['remedial_granted'] === 1;
                                     $essay_done = !empty($sub['essay_graded']) && (int)$sub['essay_graded'] === 1;
+                                    $v_cnt = (int)($sub['violation_count'] ?? 0);
+                                    $is_lock = !empty($sub['is_locked']) && (int)$sub['is_locked'] === 1;
                                 ?>
                                 <tr class="hover:bg-white/5 transition">
                                     <td class="py-3.5 px-4 font-bold text-slate-400"><?= $idx + 1 ?></td>
@@ -657,6 +991,21 @@ require_once __DIR__ . "/../includes/header.php";
                                         <span class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold border <?= $pass ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300' ?>">
                                             <?= $pass ? '<i class="fa-solid fa-circle-check text-emerald-400"></i> Lulus' : '<i class="fa-solid fa-triangle-exclamation text-rose-400"></i> Remedial' ?>
                                         </span>
+                                    </td>
+                                    <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                                        <?php if ($is_lock || $v_cnt >= 3): ?>
+                                            <span class="inline-flex items-center gap-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 text-[11px] font-bold">
+                                                <i class="fa-solid fa-lock text-rose-400"></i> Terkunci (<?= $v_cnt ?>x)
+                                            </span>
+                                        <?php elseif ($v_cnt > 0): ?>
+                                            <span class="inline-flex items-center gap-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 text-[11px] font-bold">
+                                                <i class="fa-solid fa-triangle-exclamation text-amber-400"></i> <?= $v_cnt ?>x Warning
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-bold">
+                                                <i class="fa-solid fa-shield-check text-emerald-400"></i> Bersih
+                                            </span>
+                                        <?php endif; ?>
                                     </td>
                                     <?php if ($has_essay_questions): ?>
                                         <td class="py-3.5 px-4 text-center">
@@ -714,6 +1063,145 @@ require_once __DIR__ . "/../includes/header.php";
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- MODUL TAMBAHAN GURU: ANALISIS BUTIR SOAL (ITEM ANALYSIS) -->
+        <!-- ============================================================== -->
+        <div class="rounded-3xl border border-white/10 bg-slate-900/80 overflow-hidden shadow-xl mt-6">
+            <div class="p-5 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie text-indigo-400"></i> Analisis Butir Soal & Daya Pembeda
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Statistik tingkat kesukaran, rasio jawaban benar/salah, dan efektivitas pilihan pengecoh (distraktor).</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-semibold">
+                        <?= count($questions) ?> Butir Soal
+                    </span>
+                </div>
+            </div>
+
+            <?php if (empty($all_submissions)): ?>
+                <div class="p-8 text-center text-slate-400 text-xs">
+                    Belum ada siswa yang menyelesaikan ujian ini, analisis butir soal akan tampil otomatis setelah ada pengerjaan siswa.
+                </div>
+            <?php else: ?>
+                <div class="p-5 space-y-4">
+                    <?php 
+                    $total_sub_count = count($all_submissions);
+                    foreach ($questions as $q_idx => $q): 
+                        $qid = (int)$q['id'];
+                        $qtype = $q['question_type'] ?? 'multiple_choice';
+                        $correct_key = strtoupper($q['correct_answer'] ?? '');
+                        
+                        $count_a = 0; $count_b = 0; $count_c = 0; $count_d = 0;
+                        $correct_count = 0;
+                        $essay_total_points = 0;
+                        $essay_graded_count = 0;
+
+                        foreach ($all_submissions as $sub_item) {
+                            $ans_map = json_decode($sub_item['answers'] ?? '{}', true);
+                            $essay_map = json_decode($sub_item['essay_scores'] ?? '{}', true);
+
+                            if ($qtype === 'multiple_choice') {
+                                $ch = strtoupper($ans_map[$qid] ?? '');
+                                if ($ch === 'A') $count_a++;
+                                elseif ($ch === 'B') $count_b++;
+                                elseif ($ch === 'C') $count_c++;
+                                elseif ($ch === 'D') $count_d++;
+
+                                if ($ch === $correct_key) {
+                                    $correct_count++;
+                                }
+                            } else {
+                                if (isset($essay_map[$qid])) {
+                                    $essay_total_points += (float)$essay_map[$qid];
+                                    $essay_graded_count++;
+                                }
+                            }
+                        }
+
+                        // Perhitungan Indeks Kesukaran (P)
+                        if ($qtype === 'multiple_choice') {
+                            $p_index = $total_sub_count > 0 ? ($correct_count / $total_sub_count) : 0;
+                        } else {
+                            $max_p = (float)($q['max_score'] ?: 10);
+                            $avg_pts = $essay_graded_count > 0 ? ($essay_total_points / $essay_graded_count) : 0;
+                            $p_index = $max_p > 0 ? ($avg_pts / $max_p) : 0;
+                        }
+
+                        // Kategori Kesukaran
+                        if ($p_index >= 0.70) {
+                            $diff_label = "Mudah";
+                            $diff_color = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+                        } elseif ($p_index >= 0.30) {
+                            $diff_label = "Sedang (Ideal)";
+                            $diff_color = "bg-blue-500/10 text-blue-400 border-blue-500/30";
+                        } else {
+                            $diff_label = "Sukar";
+                            $diff_color = "bg-rose-500/10 text-rose-400 border-rose-500/30";
+                        }
+                    ?>
+                        <div class="rounded-2xl border border-white/5 bg-slate-950/50 p-4 space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-white/5 text-white font-mono font-bold text-xs">
+                                        <?= $q_idx + 1 ?>
+                                    </span>
+                                    <span class="text-xs font-bold text-white">
+                                        Soal No. <?= $q_idx + 1 ?> (<?= $qtype === 'essay' ? 'Esai / Uraian' : 'Pilihan Ganda' ?>)
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border <?= $diff_color ?>">
+                                        Tingkat: <?= $diff_label ?> (Indeks: <?= number_format($p_index, 2) ?>)
+                                    </span>
+                                </div>
+                            </div>
+
+                            <p class="text-xs text-slate-300 font-medium leading-relaxed">
+                                <?= htmlspecialchars($q['question_text']) ?>
+                            </p>
+
+                            <?php if ($qtype === 'multiple_choice'): ?>
+                                <!-- Visual Bar Distribusi Opsi Jawaban -->
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+                                    <?php 
+                                    $options_stat = [
+                                        'A' => ['val' => $q['option_a'], 'cnt' => $count_a],
+                                        'B' => ['val' => $q['option_b'], 'cnt' => $count_b],
+                                        'C' => ['val' => $q['option_c'], 'cnt' => $count_c],
+                                        'D' => ['val' => $q['option_d'], 'cnt' => $count_d]
+                                    ];
+                                    foreach ($options_stat as $opt_k => $opt_d):
+                                        $is_key = ($opt_k === $correct_key);
+                                        $pct = $total_sub_count > 0 ? round(($opt_d['cnt'] / $total_sub_count) * 100) : 0;
+                                        $card_style = $is_key ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-white/5 bg-white/5 text-slate-400';
+                                    ?>
+                                        <div class="p-2.5 rounded-xl border <?= $card_style ?> relative overflow-hidden">
+                                            <div class="flex items-center justify-between font-bold mb-1">
+                                                <span><?= $opt_k ?><?= $is_key ? ' (Kunci)' : '' ?></span>
+                                                <span><?= $opt_d['cnt'] ?> siswa (<?= $pct ?>%)</span>
+                                            </div>
+                                            <p class="truncate text-[10px] opacity-80"><?= htmlspecialchars($opt_d['val']) ?></p>
+                                            <div class="w-full bg-black/30 h-1.5 rounded-full mt-2 overflow-hidden">
+                                                <div class="h-full <?= $is_key ? 'bg-emerald-400' : 'bg-slate-500' ?>" style="width: <?= $pct ?>%"></div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else: ?>
+                                <div class="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-300 flex items-center justify-between">
+                                    <span>Rata-rata Skor Esai Diperoleh Siswa:</span>
+                                    <strong class="text-white font-mono"><?= number_format($avg_pts ?? 0, 1) ?> / <?= $q['max_score'] ?> Poin</strong>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
                 </div>
             <?php endif; ?>
         </div>
@@ -845,6 +1333,81 @@ require_once __DIR__ . "/../includes/header.php";
                 }
             </script>
         <?php endif; ?>
+
+        <!-- Modal Terbitkan Tugas Remedial Otomatis -->
+        <div id="remedialModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="w-full max-w-lg rounded-3xl border border-amber-500/40 bg-slate-900 p-6 shadow-2xl space-y-5">
+                <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                    <div class="flex items-center gap-2.5">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
+                            <i class="fa-solid fa-bolt-lightning text-sm"></i>
+                        </span>
+                        <div>
+                            <h3 class="text-base font-bold text-white">Terbitkan Tugas Remedial E-Learning</h3>
+                            <p class="text-[11px] text-slate-400">Otomatisasi perbaikan nilai untuk peserta didik di bawah KKM</p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="document.getElementById('remedialModal').classList.add('hidden')" class="text-slate-400 hover:text-white transition">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <form method="POST" action="exam_results.php?id=<?= $exam_id ?>" class="space-y-4">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="create_remedial_task">
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 mb-1">Judul Tugas Pembelajaran / Remedial</label>
+                        <input type="text" name="remedial_title" required
+                               value="Remedial Mandiri: <?= htmlspecialchars($exam['title']) ?>"
+                               class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-xs text-white focus:border-amber-400 focus:outline-none">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1">Mata Pelajaran</label>
+                            <input type="text" value="<?= htmlspecialchars($exam['subject']) ?>" readonly
+                                   class="w-full rounded-xl border border-white/5 bg-slate-950/60 px-3.5 py-2.5 text-xs text-slate-400 cursor-not-allowed">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1">Batas Waktu (Due Date)</label>
+                            <input type="date" name="due_date" required min="<?= date('Y-m-d') ?>"
+                                   value="<?= date('Y-m-d', strtotime('+3 days')) ?>"
+                                   class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-xs text-white focus:border-amber-400 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 mb-1">Instruksi / Catatan Pengayaan (Opsional)</label>
+                        <textarea name="remedial_instructions" rows="3"
+                                  placeholder="Contoh: Silakan pelajari kembali Bab 3 dan kerjakan ringkasan evaluasi sesuai petunjuk pada materi ajar..."
+                                  class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-xs text-white focus:border-amber-400 focus:outline-none placeholder-slate-500"></textarea>
+                    </div>
+
+                    <div class="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-[11px] text-amber-200/90 space-y-1">
+                        <div class="font-bold flex items-center gap-1.5 text-amber-300">
+                            <i class="fa-solid fa-circle-info"></i> Otomatisasi yang akan dijalankan:
+                        </div>
+                        <ul class="list-disc list-inside space-y-0.5 text-slate-300 pl-1">
+                            <li>Membuat entri tugas baru di modul <strong class="text-white">E-Learning & Tugas</strong>.</li>
+                            <li>Mengaktifkan izin pengerjaan ulang pada lembar ujian siswa terkait.</li>
+                            <li>Mengirim notifikasi <strong class="text-white">WhatsApp Otomatis</strong> ke siswa & orang tua.</li>
+                        </ul>
+                    </div>
+
+                    <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-white/10">
+                        <button type="button" onclick="document.getElementById('remedialModal').classList.add('hidden')"
+                                class="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-semibold text-slate-300 transition cursor-pointer">
+                            Batal
+                        </button>
+                        <button type="submit"
+                                class="rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 px-5 py-2 text-xs font-black shadow-lg shadow-amber-500/20 transition cursor-pointer">
+                            <i class="fa-solid fa-paper-plane mr-1.5"></i> Terbitkan Sekarang
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
     <?php endif; ?>
 

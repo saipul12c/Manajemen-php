@@ -20,8 +20,9 @@ ErrorDocument 503 /manajemen-php/error/503.php
     RewriteEngine On
 
     # Mencegah akses langsung ke folder atau file sistem sensitif
-    RewriteRule ^(config|sql)/ - [F,L]
-    RewriteRule \.(sql|log|ini|md)$ - [F,L]
+    RewriteRule ^(config|sql|includes)/ - [F,L]
+    RewriteRule (^|/)\. - [F,L]
+    RewriteRule \.(env|sql|log|ini|md|bak|sh|lock)$ - [F,L]
 
     # Abaikan jika target adalah folder/direktori fisik yang valid
     RewriteCond %{REQUEST_FILENAME} !-d

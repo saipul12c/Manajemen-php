@@ -13,9 +13,9 @@ function renderErrorPage(int $statusCode, ?string $customTitle = null, ?string $
     // Tentukan relasi path ke root direktori projek secara dinamis
     $currentUri = $_SERVER['REQUEST_URI'] ?? '';
     $pathOnly = explode('?', $currentUri)[0];
-    if (preg_match('#/(dashboard/(admin|akademik|bk|keuangan|pesan|presensi|perpustakaan|surat|Modul-ujian))/#i', $pathOnly)) {
+    if (preg_match('#/dashboard/[^/]+/#i', $pathOnly)) {
         $toRoot = '../../';
-    } elseif (preg_match('#/(auth|error|dashboard)/#i', $pathOnly)) {
+    } elseif (preg_match('#/(auth|error|dashboard|ppdb|api)/#i', $pathOnly)) {
         $toRoot = '../';
     } else {
         $toRoot = './';

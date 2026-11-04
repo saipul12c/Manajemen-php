@@ -44,6 +44,21 @@ try {
     $stmt_events->execute();
     $upcoming_events = $stmt_events->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
+
+// Ambil berita terbaru yang dipublikasikan untuk landing page
+$index_news = [];
+try {
+    $stmt_idx_news = $pdo->prepare("
+        SELECT n.*, u.name as author_name, u.role as author_role
+        FROM news n
+        JOIN users u ON n.author_id = u.id
+        WHERE n.status = 'published'
+        ORDER BY n.is_featured DESC, n.published_at DESC
+        LIMIT 3
+    ");
+    $stmt_idx_news->execute();
+    $index_news = $stmt_idx_news->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
 ?>
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth">
@@ -567,6 +582,88 @@ try {
         </div>
 
     </section>
+
+    <!-- ======================================================== -->
+    <!-- SEKSI BERITA & LIPUTAN SEKOLAH TERKINI -->
+    <!-- ======================================================== -->
+    <?php if (!empty($index_news)): ?>
+    <section class="border-t border-white/10 bg-slate-950 py-16 sm:py-20 relative overflow-hidden">
+        <div class="absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-blue-600/10 blur-3xl pointer-events-none"></div>
+
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative z-10 space-y-10">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                <div>
+                    <div class="inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-sky-400/10 px-3.5 py-1 text-xs text-sky-300 font-semibold mb-3">
+                        <i class="fa-solid fa-newspaper text-sky-400"></i>
+                        <span>Kabar & Publikasi Sekolah</span>
+                    </div>
+                    <h2 class="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
+                        Liputan Berita & Prestasi Terbaru
+                    </h2>
+                    <p class="mt-2 text-sm sm:text-base text-slate-400 max-w-2xl">
+                        Dokumentasi kegiatan unggulan, prestasi siswa di kancah daerah maupun nasional, dan artikel inspiratif dari dewan guru.
+                    </p>
+                </div>
+
+                <a href="berita.php" class="inline-flex items-center gap-2 rounded-2xl bg-blue-600 hover:bg-blue-500 px-5 py-3 text-xs font-bold text-white shadow-lg shadow-blue-600/30 transition self-start md:self-auto">
+                    <span>Lihat Semua Berita</span>
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
+                </a>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <?php foreach ($index_news as $in_item): ?>
+                    <?php 
+                        $in_cat = NEWS_CATEGORIES[$in_item['category']] ?? ['label' => ucfirst($in_item['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
+                        $in_thumb = !empty($in_item['thumbnail']) ? 'uploads/news/' . htmlspecialchars($in_item['thumbnail']) : null;
+                    ?>
+                    <article class="glass-card rounded-3xl overflow-hidden flex flex-col justify-between hover:border-sky-500/40 hover:bg-slate-900/90 transition duration-300 group shadow-lg">
+                        <div>
+                            <a href="berita.php?id=<?= $in_item['id'] ?>" class="block relative h-48 w-full bg-slate-950 overflow-hidden">
+                                <?php if ($in_thumb): ?>
+                                    <img src="<?= $in_thumb ?>" alt="<?= htmlspecialchars($in_item['title']) ?>" class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
+                                <?php else: ?>
+                                    <div class="w-full h-full bg-gradient-to-tr from-slate-950 via-slate-900 to-indigo-950/70 flex items-center justify-center text-slate-700">
+                                        <i class="fa-solid fa-newspaper text-5xl opacity-40"></i>
+                                    </div>
+                                <?php endif; ?>
+                                <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30"></div>
+                                <div class="absolute top-3 left-3">
+                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border <?= $in_cat['badge'] ?>">
+                                        <?= htmlspecialchars($in_cat['label']) ?>
+                                    </span>
+                                </div>
+                                <div class="absolute bottom-2.5 left-3 text-[11px] text-slate-300 flex items-center gap-1.5">
+                                    <i class="fa-regular fa-calendar-days text-slate-400"></i>
+                                    <?= date('d M Y', strtotime($in_item['published_at'] ?? $in_item['created_at'])) ?>
+                                </div>
+                            </a>
+
+                            <div class="p-5 space-y-2.5">
+                                <h3 class="text-base font-bold text-white line-clamp-2 group-hover:text-sky-400 transition leading-snug">
+                                    <a href="berita.php?id=<?= $in_item['id'] ?>">
+                                        <?= htmlspecialchars($in_item['title']) ?>
+                                    </a>
+                                </h3>
+                                <p class="text-xs text-slate-400 line-clamp-3 leading-relaxed">
+                                    <?= htmlspecialchars($in_item['excerpt'] ?: strip_tags($in_item['content'])) ?>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="p-5 pt-0 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-400 mt-2">
+                            <span class="font-medium text-slate-300 truncate max-w-[150px]"><?= htmlspecialchars($in_item['author_name']) ?></span>
+                            <a href="berita.php?id=<?= $in_item['id'] ?>" class="text-sky-400 font-bold group-hover:underline flex items-center gap-1">
+                                <span>Baca Selengkapnya</span>
+                                <i class="fa-solid fa-chevron-right text-[9px]"></i>
+                            </a>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </section>
+    <?php endif; ?>
 
     <!-- ======================================================== -->
     <!-- MODAL DETAIL PENGUMUMAN LENGKAP -->

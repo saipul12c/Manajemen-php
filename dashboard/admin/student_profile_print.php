@@ -294,15 +294,13 @@ $page_title = "Lembar Buku Induk Siswa - " . htmlspecialchars($student['name']);
             </div>
 
             <!-- Tanda Tangan Pengesahan Kepala Sekolah & Staf TU -->
-            <div class="text-right flex flex-col justify-between h-40">
-                <div>
-                    <p class="text-slate-600">Jakarta, <?= tglIndoFormat(date('Y-m-d'), $bulan_indo) ?></p>
-                    <p class="font-bold text-slate-900 mt-0.5">Kepala Sekolah,</p>
-                </div>
-                <div>
-                    <p class="font-bold underline text-slate-900"><?= htmlspecialchars($school_info['headmaster_name']) ?></p>
-                    <p class="text-xs text-slate-600 font-mono">NIP. <?= htmlspecialchars($school_info['headmaster_nip']) ?></p>
-                </div>
+            <div class="text-right">
+                <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
+                    'doc_type' => 'BUKU_INDUK',
+                    'doc_num' => 'BI-' . $student['id'] . '-' . ($student['nisn'] ?: 'REG'),
+                    'student_name' => $student['name'],
+                    'date' => tglIndoFormat(date('Y-m-d'), $bulan_indo)
+                ]) ?>
             </div>
 
         </div>

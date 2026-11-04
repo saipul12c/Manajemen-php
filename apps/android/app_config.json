@@ -1,0 +1,40 @@
+{
+  "server_base_url": "http://localhost/manajemen-php",
+  "comment": "Ganti 'server_base_url' dengan IP atau domain server sekolah Anda (contoh: https://sekolah.sch.id atau http://192.168.1.10/manajemen-php)",
+  "apps": {
+    "cbt": {
+      "name": "CBT Ujian Sekolah",
+      "package_name": "com.sekolah.cbt",
+      "version_name": "1.0.0",
+      "version_code": 1,
+      "target_url": "/dashboard/Modul-ujian/exams.php",
+      "features": {
+        "kiosk_mode": true,
+        "fullscreen": true,
+        "keep_screen_on": true
+      }
+    },
+    "presensi": {
+      "name": "Presensi Siswa & Guru",
+      "package_name": "com.sekolah.presensi",
+      "version_name": "1.0.0",
+      "version_code": 1,
+      "target_url": "/dashboard/presensi/attendance.php",
+      "features": {
+        "camera_permission": true,
+        "qr_hardware_accel": true
+      }
+    },
+    "perpustakaan": {
+      "name": "E-Perpustakaan Digital",
+      "package_name": "com.sekolah.perpustakaan",
+      "version_name": "1.0.0",
+      "version_code": 1,
+      "target_url": "/dashboard/perpustakaan/books.php",
+      "features": {
+        "camera_permission": true,
+        "file_chooser": true
+      }
+    }
+  }
+}
