@@ -15,8 +15,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $fields = [
             'school_name', 'school_address', 'school_phone', 'school_email',
             'school_website', 'headmaster_name', 'headmaster_nip', 'headmaster_title', 'academic_year', 'academic_semester', 'school_logo',
+            'school_npsn', 'school_accreditation', 'school_curriculum',
+            'school_history', 'school_vision', 'school_mission',
+            'school_work_hours_weekday', 'school_work_hours_weekend',
+            'social_instagram', 'social_youtube', 'social_facebook', 'social_tiktok',
+            'maps_embed_url',
             'ppdb_status', 'ppdb_wave_name', 'ppdb_quota', 'ppdb_start_date', 'ppdb_end_date', 'ppdb_closed_message',
             'ppdb_next_wave_name', 'ppdb_next_open_date', 'ppdb_announcement_date', 'ppdb_re_registration_date', 'ppdb_contact_phone',
+            'ppdb_available_majors',
+            'hero_title', 'hero_description',
             'school_latitude', 'school_longitude', 'school_radius_meters',
             'tu_head_name', 'tu_head_nip', 'tu_head_title',
             'bk_coordinator_name', 'bk_coordinator_nip', 'bk_coordinator_title',
@@ -50,24 +57,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         foreach ($file_mappings as $input_name => $setting_key) {
             if (isset($_FILES[$input_name]) && $_FILES[$input_name]['error'] === UPLOAD_ERR_OK) {
-                $file_ext = strtolower(pathinfo($_FILES[$input_name]['name'], PATHINFO_EXTENSION));
-                if (in_array($file_ext, ['png', 'jpg', 'jpeg', 'svg', 'webp'], true)) {
-                    // Sanitasi berkas SVG untuk mencegah Stored XSS via <script> atau event handlers
-                    if ($file_ext === 'svg') {
-                        $svg_content = (string) file_get_contents($_FILES[$input_name]['tmp_name']);
-                        $svg_content = preg_replace('/<script\b[^>]*>(.*?)<\/script>/is', '', $svg_content);
-                        $svg_content = preg_replace('/\bon\w+\s*=\s*(["\']).*?\1/is', '', $svg_content);
-                        $svg_content = preg_replace('/\bon\w+\s*=\s*[^>\s]+/is', '', $svg_content);
-                        $svg_content = preg_replace('/javascript:/i', 'blocked:', $svg_content);
-                        $svg_content = preg_replace('/<foreignObject\b[^>]*>(.*?)<\/foreignObject>/is', '', $svg_content);
-                        file_put_contents($_FILES[$input_name]['tmp_name'], $svg_content);
-                    }
-
-                    $new_filename = $setting_key . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $file_ext;
-                    $destination = $upload_dir . $new_filename;
-                    if (move_uploaded_file($_FILES[$input_name]['tmp_name'], $destination)) {
-                        updateSchoolSetting($pdo, $setting_key, 'uploads/signatures/' . $new_filename);
-                    }
+                $uploadRes = saveSecureUpload(
+                    $_FILES[$input_name],
+                    'signatures',
+                    ['png', 'jpg', 'jpeg', 'svg', 'webp'],
+                    [],
+                    2 * 1024 * 1024,
+                    $setting_key
+                );
+                if ($uploadRes['success']) {
+                    updateSchoolSetting($pdo, $setting_key, $uploadRes['path']);
+                } else {
+                    $message = "Gagal mengunggah berkas: " . $uploadRes['error'];
+                    $message_type = "error";
                 }
             }
         }
@@ -205,6 +207,25 @@ require_once __DIR__ . "/../includes/header.php";
                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
                 </div>
             </div>
+
+            <!-- Legalitas & Akreditasi Resmi -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-white/5">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">NPSN (Nomor Pokok Sekolah)</label>
+                    <input type="text" name="school_npsn" value="<?= htmlspecialchars($school_info['school_npsn'] ?? '20108921') ?>" placeholder="Contoh: 20108921"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-blue-500 focus:outline-none font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Status Akreditasi</label>
+                    <input type="text" name="school_accreditation" value="<?= htmlspecialchars($school_info['school_accreditation'] ?? 'Akreditasi A (Unggul)') ?>" placeholder="Contoh: Akreditasi A (Unggul)"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Kurikulum Pembelajaran</label>
+                    <input type="text" name="school_curriculum" value="<?= htmlspecialchars($school_info['school_curriculum'] ?? 'Kurikulum Merdeka') ?>" placeholder="Contoh: Kurikulum Merdeka"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                </div>
+            </div>
         </div>
 
         <div class="pt-4">
@@ -330,11 +351,102 @@ require_once __DIR__ . "/../includes/header.php";
         }
         </script>
 
-        <!-- 3. PENGATURAN PPDB ONLINE -->
+        <!-- 3. PROFIL, VISI, MISI & DEDIKASI LEMBAGA -->
+        <div class="pt-4">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-indigo-400 mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
+                <i class="fa-solid fa-bullseye"></i> 3. Profil, Visi, Misi & Dedikasi Lembaga
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Visi Sekolah *</label>
+                    <textarea name="school_vision" rows="2" required 
+                              placeholder="Ketik visi resmi lembaga pendidikan..."
+                              class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-xs sm:text-sm text-white focus:border-indigo-500 focus:outline-none"><?= htmlspecialchars($school_info['school_vision'] ?? 'Menjadi lembaga pendidikan terdepan yang menghasilkan insan berkarakter mulia, cerdas berteknologi, berwawasan lingkungan, serta unggul dalam persaingan global pada tahun 2030.') ?></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                        <span>Misi Utama Sekolah (1 Butir per Baris) *</span>
+                        <span class="text-[10px] text-slate-400 italic">Tekan Enter untuk menambah butir misi baru</span>
+                    </label>
+                    <textarea name="school_mission" rows="4" required 
+                              placeholder="Menyelenggarakan proses pembelajaran aktif...&#10;Menanamkan nilai-nilai religiusitas..."
+                              class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-xs sm:text-sm text-white focus:border-indigo-500 focus:outline-none font-mono"><?= htmlspecialchars($school_info['school_mission'] ?? "Menyelenggarakan proses pembelajaran aktif, kreatif, dan berbasis teknologi mutakhir.\nMenanamkan nilai-nilai religiusitas, kejujuran, dan toleransi dalam kehidupan bersosial.\nMenerapkan tata kelola digital terpadu yang transparan, akuntabel, dan bebas kertas (paperless).\nMempererat sinergi aktif antara guru, orang tua, dan masyarakat demi perkembangan siswa.") ?></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Narasi Pengantar / Sejarah Lembaga</label>
+                    <textarea name="school_history" rows="3" 
+                              placeholder="Deskripsi sejarah, dedikasi, atau komitmen pembelajaran sekolah..."
+                              class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-xs sm:text-sm text-white focus:border-indigo-500 focus:outline-none"><?= htmlspecialchars($school_info['school_history'] ?? 'Didirikan dengan komitmen tinggi terhadap kualitas pembelajaran, kami memadukan kurikulum nasional berbasis kompetensi dengan pembelajaran digital modern. Sistem ini dirancang untuk memfasilitasi setiap aspek akademik, administratif, dan komunikasi antar stakeholder sekolah secara instan dan tanpa sekat birokrasi konvensional.') ?></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. JAM LAYANAN KANTOR & MEDIA SOSIAL RESMI -->
+        <div class="pt-4">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-teal-400 mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
+                <i class="fa-solid fa-clock"></i> 4. Jam Operasional Layanan & Media Sosial Resmi
+            </h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Jam Layanan Hari Kerja (Senin - Jumat)</label>
+                    <input type="text" name="school_work_hours_weekday" value="<?= htmlspecialchars($school_info['school_work_hours_weekday'] ?? 'Senin – Jumat: 07.30 – 15.30 WIB') ?>" placeholder="Contoh: Senin – Jumat: 07.30 – 15.30 WIB"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-teal-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Jam Layanan Akhir Pekan (Sabtu / Piket)</label>
+                    <input type="text" name="school_work_hours_weekend" value="<?= htmlspecialchars($school_info['school_work_hours_weekend'] ?? 'Sabtu: 08.00 – 12.00 WIB (Terbatas)') ?>" placeholder="Contoh: Sabtu: 08.00 – 12.00 WIB (Terbatas)"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-teal-500 focus:outline-none">
+                </div>
+            </div>
+
+            <!-- Tautan Media Sosial -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                        <i class="fa-brands fa-instagram text-rose-400"></i> Akun Instagram Resmi
+                    </label>
+                    <input type="url" name="social_instagram" value="<?= htmlspecialchars($school_info['social_instagram'] ?? '') ?>" placeholder="https://instagram.com/namasekolah"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-teal-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                        <i class="fa-brands fa-youtube text-red-500"></i> Kanal YouTube Resmi
+                    </label>
+                    <input type="url" name="social_youtube" value="<?= htmlspecialchars($school_info['social_youtube'] ?? '') ?>" placeholder="https://youtube.com/@namasekolah"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-teal-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                        <i class="fa-brands fa-facebook text-blue-500"></i> Halaman Facebook
+                    </label>
+                    <input type="url" name="social_facebook" value="<?= htmlspecialchars($school_info['social_facebook'] ?? '') ?>" placeholder="https://facebook.com/namasekolah"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-teal-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                        <i class="fa-brands fa-tiktok text-slate-200"></i> Akun TikTok Sekolah
+                    </label>
+                    <input type="url" name="social_tiktok" value="<?= htmlspecialchars($school_info['social_tiktok'] ?? '') ?>" placeholder="https://tiktok.com/@namasekolah"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-teal-500 focus:outline-none">
+                </div>
+            </div>
+
+            <!-- Google Maps Embed URL -->
+            <div class="mt-4">
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                    <i class="fa-solid fa-map-location-dot text-teal-400"></i> URL Embed Google Maps (Opsional)
+                </label>
+                <input type="text" name="maps_embed_url" value="<?= htmlspecialchars($school_info['maps_embed_url'] ?? '') ?>" placeholder="https://www.google.com/maps/embed?pb=..."
+                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-teal-500 focus:outline-none font-mono text-xs">
+                <span class="text-[10px] text-slate-400 mt-1 block">Salin link 'src' dari fitur Bagikan Peta -> Sematkan Peta pada Google Maps.</span>
+            </div>
+        </div>
+
+        <!-- 5. PENGATURAN PPDB ONLINE & PILIHAN JURUSAN -->
         <div class="pt-4">
             <div class="flex items-center justify-between border-b border-white/10 pb-2 mb-4">
                 <h3 class="text-sm font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-                    <i class="fa-solid fa-graduation-cap"></i> 3. Kontrol Buka / Tutup & Kuota PPDB Online
+                    <i class="fa-solid fa-graduation-cap"></i> 5. Kontrol Buka / Tutup, Kuota & Pilihan Jurusan PPDB
                 </h3>
                 <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold <?= ($school_info['ppdb_status'] ?? 'buka') === 'buka' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30' ?>">
                     ● Status: <?= ($school_info['ppdb_status'] ?? 'buka') === 'buka' ? 'Pendaftaran DIBUKA' : 'Pendaftaran DITUTUP' ?>
@@ -386,6 +498,22 @@ require_once __DIR__ . "/../includes/header.php";
                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"><?= htmlspecialchars($school_info['ppdb_closed_message'] ?? 'Pendaftaran Peserta Didik Baru (PPDB) saat ini sedang ditutup atau batas kuota telah terpenuhi.') ?></textarea>
             </div>
 
+            <!-- Pilihan Jurusan / Peminatan PPDB -->
+            <div class="mt-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2">
+                <div class="flex items-center justify-between">
+                    <label class="block text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-list-check"></i> Pilihan Jurusan / Peminatan PPDB (1 Baris = 1 Opsi)
+                    </label>
+                    <span class="text-[11px] text-slate-400 italic">Muncul otomatis di form pendaftaran siswa baru</span>
+                </div>
+                <textarea name="ppdb_available_majors" rows="4" 
+                          placeholder="MIPA (Matematika & IPA)&#10;IPS (Ilmu Pengetahuan Sosial)&#10;Bahasa & Budaya&#10;Teknologi Informasi & Jaringan"
+                          class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-xs sm:text-sm text-white focus:border-emerald-500 focus:outline-none font-mono"><?= htmlspecialchars($school_info['ppdb_available_majors'] ?? "MIPA (Matematika & IPA)\nIPS (Ilmu Pengetahuan Sosial)\nBahasa & Budaya\nTeknologi Informasi & Jaringan") ?></textarea>
+                <p class="text-[11px] text-slate-400">
+                    Ketik setiap jurusan pada baris terpisah. Untuk jenjang SMP/SD yang tidak memiliki penjurusan, cukup ketik <code>Umum / Reguler</code>.
+                </p>
+            </div>
+
             <!-- Informasi Gelombang Berikutnya & Hotline Seleksi -->
             <div class="mt-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4">
                 <span class="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -425,11 +553,32 @@ require_once __DIR__ . "/../includes/header.php";
             </div>
         </div>
 
-        <!-- 4. GEOFENCING GPS & RADIUS PRESENSI GURU -->
+        <!-- 6. KONTEN BERANDA & HERO LANDING PAGE -->
+        <div class="pt-4">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-sky-400 mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
+                <i class="fa-solid fa-window-maximize"></i> 6. Konten Beranda & Hero Landing Page
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Judul Utama Hero Landing Page</label>
+                    <input type="text" name="hero_title" value="<?= htmlspecialchars($school_info['hero_title'] ?? 'Pusat Informasi & Administrasi Digital') ?>" 
+                           placeholder="Contoh: Pusat Informasi & Administrasi Digital"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-sky-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">Deskripsi Ringkas / Sambutan Hero</label>
+                    <textarea name="hero_description" rows="3" 
+                              placeholder="Deskripsi singkat yang tampil di banner beranda utama..."
+                              class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-xs sm:text-sm text-white focus:border-sky-500 focus:outline-none"><?= htmlspecialchars($school_info['hero_description'] ?? 'Platform cerdas operasional sekolah yang mengintegrasikan Papan Pengumuman Resmi, Katalog Perpustakaan & E-Book, PPDB Online, hingga portal akademik terpadu untuk 5 role pengguna.') ?></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. GEOFENCING GPS & RADIUS PRESENSI GURU -->
         <div class="pt-4">
             <div class="flex items-center justify-between border-b border-white/10 pb-2 mb-4">
                 <h3 class="text-sm font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
-                    <i class="fa-solid fa-location-dot"></i> 4. Titik Koordinat GPS & Radius Presensi (Geofencing)
+                    <i class="fa-solid fa-location-dot"></i> 7. Titik Koordinat GPS & Radius Presensi (Geofencing)
                 </h3>
                 <button type="button" onclick="detectCurrentLocation()" 
                         class="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/20 transition cursor-pointer">
@@ -470,12 +619,12 @@ require_once __DIR__ . "/../includes/header.php";
             </div>
         </div>
 
-        <!-- 5. MANAJEMEN TANDA TANGAN DIGITAL (TTE), STEMPEL & QR CODE -->
+        <!-- 8. MANAJEMEN TANDA TANGAN DIGITAL (TTE), STEMPEL & QR CODE -->
         <div class="pt-6 border-t border-white/10">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10 pb-3 mb-6 gap-2">
                 <div>
                     <h3 class="text-sm font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
-                        <i class="fa-solid fa-signature"></i> 5. Manajemen Pengesahan Dokumen, Stempel & Tanda Tangan Digital (TTE)
+                        <i class="fa-solid fa-signature"></i> 8. Manajemen Pengesahan Dokumen, Stempel & Tanda Tangan Digital (TTE)
                     </h3>
                     <p class="text-xs text-slate-400 mt-0.5">
                         Konfigurasi mode tanda tangan (manual, gambar scan, QR TTE, atau hybrid), stempel sekolah, serta pejabat berwenang.

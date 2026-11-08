@@ -213,6 +213,10 @@ $exam_token = "EXAM-" . date('Y') . "-" . str_pad((string)$student['id'], 4, '0'
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <style>
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body { background: white !important; color: black !important; padding: 0 !important; }
             .no-print { display: none !important; }
             .print-card { border: 2px solid #000 !important; box-shadow: none !important; margin: 0 !important; max-width: 100% !important; background: white !important; color: black !important; }
@@ -246,9 +250,17 @@ $exam_token = "EXAM-" . date('Y') . "-" . str_pad((string)$student['id'], 4, '0'
         <!-- Header Kop Kartu -->
         <div class="flex items-center justify-between border-b-2 border-white/10 pb-6 mb-6">
             <div class="flex items-center gap-4">
-                <span class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white text-2xl font-extrabold shadow-lg shadow-blue-500/30 shrink-0">
-                    <i class="fa-solid fa-graduation-cap"></i>
-                </span>
+                <?php 
+                    $clean_exm_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                    $exm_logo_exists = !empty($clean_exm_logo) && (strpos($clean_exm_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+                ?>
+                <?php if ($exm_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_exm_logo) ?>" alt="Logo" class="h-14 w-14 object-contain shrink-0">
+                <?php else: ?>
+                    <span class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white text-2xl font-extrabold shadow-lg shadow-blue-500/30 shrink-0">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </span>
+                <?php endif; ?>
                 <div>
                     <h2 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-white leading-tight">
                         <?= htmlspecialchars($school_info['school_name']) ?>

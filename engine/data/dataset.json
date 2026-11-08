@@ -1,0 +1,52 @@
+{
+  "description": "Dataset biner, multi-fitur, dan credit risk untuk pelatihan Jaringan Syaraf Tiruan (Neural Network MLP)",
+  "xor_dataset": [
+    { "input": [0, 0], "target": [0], "label": "0 XOR 0 = 0" },
+    { "input": [0, 1], "target": [1], "label": "0 XOR 1 = 1" },
+    { "input": [1, 0], "target": [1], "label": "1 XOR 0 = 1" },
+    { "input": [1, 1], "target": [0], "label": "1 XOR 1 = 0" }
+  ],
+  "admission_dataset": [
+    { "input": [0.95, 0.95, 0.90], "target": [1], "label": "Lulus (Istimewa - Nilai Sempurna)" },
+    { "input": [0.88, 0.92, 0.85], "target": [1], "label": "Lulus (Sangat Baik - Akademik & Presensi)" },
+    { "input": [0.85, 0.90, 0.80], "target": [1], "label": "Lulus (Nilai Tinggi, Kehadiran Tinggi, Wawancara Baik)" },
+    { "input": [0.82, 0.80, 0.88], "target": [1], "label": "Lulus (Wawancara Sangat Menonjol)" },
+    { "input": [0.78, 0.85, 0.75], "target": [1], "label": "Lulus (Konsisten di Atas Rata-Rata)" },
+    { "input": [0.75, 0.85, 0.70], "target": [1], "label": "Lulus (Nilai Bagus, Kehadiran Bagus)" },
+    { "input": [0.72, 0.95, 0.65], "target": [1], "label": "Lulus (Presensi Sempurna Menolong Nilai Cukup)" },
+    { "input": [0.70, 0.70, 0.65], "target": [1], "label": "Lulus (Cukup Memenuhi Syarat Minimal)" },
+    { "input": [0.68, 0.80, 0.72], "target": [1], "label": "Lulus (Borderline Atas - Komitmen Kuat)" },
+    { "input": [0.80, 0.60, 0.75], "target": [1], "label": "Lulus (Nilai Bagus Menutup Kehadiran Cukup)" },
+    { "input": [0.90, 0.55, 0.85], "target": [1], "label": "Lulus (Akademik Sangat Tinggi)" },
+    { "input": [0.65, 0.88, 0.70], "target": [1], "label": "Lulus (Kehadiran Sangat Tinggi)" },
+
+    { "input": [0.62, 0.60, 0.58], "target": [0], "label": "Tidak Lulus (Borderline Bawah - Belum Cukup)" },
+    { "input": [0.58, 0.65, 0.50], "target": [0], "label": "Tidak Lulus (Semua Aspek Menggantung)" },
+    { "input": [0.55, 0.50, 0.55], "target": [0], "label": "Tidak Lulus (Di Bawah Standar Kelulusan)" },
+    { "input": [0.50, 0.45, 0.40], "target": [0], "label": "Tidak Lulus (Nilai & Presensi Kurang)" },
+    { "input": [0.45, 0.50, 0.35], "target": [0], "label": "Tidak Lulus (Kriteria Di Bawah Rata-Rata)" },
+    { "input": [0.40, 0.75, 0.30], "target": [0], "label": "Tidak Lulus (Nilai Terlalu Rendah Meski Hadir)" },
+    { "input": [0.35, 0.30, 0.50], "target": [0], "label": "Tidak Lulus (Kehadiran dan Nilai Rendah)" },
+    { "input": [0.30, 0.40, 0.20], "target": [0], "label": "Tidak Lulus (Semua Kriteria Rendah)" },
+    { "input": [0.25, 0.50, 0.30], "target": [0], "label": "Tidak Lulus (Akademik Kritis)" },
+    { "input": [0.20, 0.60, 0.30], "target": [0], "label": "Tidak Lulus (Nilai Rendah Sekali)" },
+    { "input": [0.15, 0.20, 0.25], "target": [0], "label": "Tidak Lulus (Hampir Tidak Pernah Masuk)" },
+    { "input": [0.10, 0.10, 0.10], "target": [0], "label": "Tidak Lulus (Diskualifikasi Total)" }
+  ],
+  "credit_risk_dataset": [
+    { "input": [0.90, 0.85, 0.20, 0.10], "target": [1], "label": "Aman (Penghasilan Tinggi, Skor Kredit Tinggi, Hutang Rendah)" },
+    { "input": [0.80, 0.80, 0.25, 0.20], "target": [1], "label": "Aman (Kondisi Keuangan Prima)" },
+    { "input": [0.75, 0.70, 0.30, 0.25], "target": [1], "label": "Aman (Profil Finansial Sehat)" },
+    { "input": [0.70, 0.75, 0.35, 0.30], "target": [1], "label": "Aman (Kapasitas Memadai)" },
+    { "input": [0.65, 0.60, 0.40, 0.20], "target": [1], "label": "Aman (Cukup Memenuhi Persyaratan Kredit)" },
+    { "input": [0.85, 0.65, 0.45, 0.30], "target": [1], "label": "Aman (Penghasilan Menopang Beban)" },
+    { "input": [0.55, 0.65, 0.35, 0.15], "target": [1], "label": "Aman (Beban Minim)" },
+
+    { "input": [0.45, 0.50, 0.65, 0.50], "target": [0], "label": "Beresiko (Rasio Hutang Mulai Terlalu Tinggi)" },
+    { "input": [0.40, 0.45, 0.70, 0.60], "target": [0], "label": "Beresiko (Skor Kredit Rendah, Hutang Tinggi)" },
+    { "input": [0.35, 0.30, 0.80, 0.50], "target": [0], "label": "Beresiko (Riwayat Kredit Buruk)" },
+    { "input": [0.30, 0.40, 0.75, 0.70], "target": [0], "label": "Beresiko (Tanggungan Banyak & Hutang Menumpuk)" },
+    { "input": [0.25, 0.20, 0.85, 0.60], "target": [0], "label": "Beresiko (Tingkat Default Tinggi)" },
+    { "input": [0.20, 0.30, 0.90, 0.80], "target": [0], "label": "Beresiko (Kolektibilitas Macet)" }
+  ]
+}

@@ -110,6 +110,10 @@ include __DIR__ . "/../includes/header.php";
 
 <style>
 @media print {
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
     body * {
         visibility: hidden;
     }
@@ -257,12 +261,25 @@ include __DIR__ . "/../includes/header.php";
         <div id="certificateSheet" class="rounded-3xl border border-white/10 bg-white p-8 sm:p-12 text-slate-900 shadow-2xl max-w-4xl mx-auto font-serif">
             
             <!-- KOP SURAT SEKOLAH -->
-            <div class="text-center border-b-4 border-double border-slate-900 pb-4 mb-6">
-                <h2 class="text-xl sm:text-2xl font-bold uppercase tracking-wider text-slate-900"><?= htmlspecialchars($school_name) ?></h2>
-                <h3 class="text-sm font-semibold uppercase tracking-widest text-slate-700 mt-0.5">Unit Pelaksana Teknis (UPT) Perpustakaan Sekolah</h3>
-                <p class="text-xs text-slate-600 mt-1.5 font-sans leading-relaxed">
-                    <?= htmlspecialchars($school_address) ?> • Telp: <?= htmlspecialchars($school_phone) ?> • Email: <?= htmlspecialchars($school_email) ?>
-                </p>
+            <div class="flex items-center gap-4 border-b-4 border-double border-slate-900 pb-4 mb-6">
+                <?php 
+                    $clean_clr_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                    $clr_logo_exists = !empty($clean_clr_logo) && (strpos($clean_clr_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+                ?>
+                <?php if ($clr_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_clr_logo) ?>" alt="Logo" class="h-16 w-16 object-contain shrink-0">
+                <?php else: ?>
+                    <div class="h-16 w-16 rounded-2xl bg-teal-700 text-white flex items-center justify-center text-2xl font-black shrink-0">
+                        <i class="fa-solid fa-book-bookmark"></i>
+                    </div>
+                <?php endif; ?>
+                <div class="flex-1 text-center pr-6">
+                    <h2 class="text-xl sm:text-2xl font-bold uppercase tracking-wider text-slate-900"><?= htmlspecialchars($school_name) ?></h2>
+                    <h3 class="text-sm font-semibold uppercase tracking-widest text-slate-700 mt-0.5">Unit Pelaksana Teknis (UPT) Perpustakaan Sekolah</h3>
+                    <p class="text-xs text-slate-600 mt-1.5 font-sans leading-relaxed">
+                        <?= htmlspecialchars($school_address) ?> • Telp: <?= htmlspecialchars($school_phone) ?> • Email: <?= htmlspecialchars($school_email) ?>
+                    </p>
+                </div>
             </div>
 
             <!-- JUDUL SURAT -->

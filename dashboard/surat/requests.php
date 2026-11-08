@@ -30,31 +30,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $target_date = !empty($_POST['target_date']) ? $_POST['target_date'] : date('Y-m-d');
         $attachment_url = null;
 
-        // -09 fix: Handle Upload Berkas / Surat Dokter dengan validasi MIME-type
+        // Handle Upload Berkas / Surat Dokter dengan validasi keamanan terpusat
         if (isset($_FILES['attachment_file']) && $_FILES['attachment_file']['error'] === UPLOAD_ERR_OK) {
-            $file_tmp  = $_FILES['attachment_file']['tmp_name'];
-            $file_name = $_FILES['attachment_file']['name'];
-            $file_size = $_FILES['attachment_file']['size'];
-            $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-            $allowed_ext   = ['pdf', 'jpg', 'jpeg', 'png'];
-            $allowed_mimes = ['application/pdf', 'image/jpeg', 'image/png'];
-
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $detected_mime = finfo_file($finfo, $file_tmp);
-            finfo_close($finfo);
-
-            if (!in_array($file_ext, $allowed_ext, true) || !in_array($detected_mime, $allowed_mimes, true)) {
-                $message = "Format file tidak didukung atau isi file tidak valid. Gunakan berkas asli JPG, PNG, atau PDF.";
-                $message_type = "error";
-            } elseif ($file_size > 10 * 1024 * 1024) {
-                $message = "Ukuran file lampiran melebihi batas maksimal 10MB.";
-                $message_type = "error";
+            $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+            $uploadRes = saveSecureUpload(
+                $_FILES['attachment_file'],
+                'letters',
+                $allowed,
+                [],
+                10 * 1024 * 1024,
+                "surat_{$user_id}"
+            );
+            if ($uploadRes['success']) {
+                $attachment_url = $uploadRes['path'];
             } else {
-                $new_filename = 'surat_' . $user_id . '_' . time() . '.' . $file_ext;
-                $destination  = $upload_letter_dir . '/' . $new_filename;
-                if (move_uploaded_file($file_tmp, $destination)) {
-                    $attachment_url = '../../uploads/letters/' . $new_filename;
-                }
+                $message = $uploadRes['error'];
+                $message_type = "error";
             }
         }
 
@@ -670,7 +661,7 @@ require_once __DIR__ . "/../includes/header.php";
                                 <?php endif; ?>
                                 <?php if (!empty($r['attachment_url'])): ?>
                                     <div class="pl-9 mt-1">
-                                        <a href="<?= htmlspecialchars($r['attachment_url']) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:underline">
+                                        <a href="<?= htmlspecialchars(resolveAssetUrl($r['attachment_url'], '../../')) ?>" target="_blank" class="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:underline">
                                             <i class="fa-solid fa-paperclip"></i> Lampiran Berkas <i class="fa-solid fa-arrow-up-right-from-square text-[9px] ml-0.5"></i>
                                         </a>
                                     </div>

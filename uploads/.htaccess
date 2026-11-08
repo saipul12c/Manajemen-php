@@ -19,3 +19,15 @@ SetHandler default-handler
 # Matikan eksekusi CGI dan directory listing
 Options -ExecCGI -Indexes
 
+# Blokir langsung akses ke file executable dan skrip server-side
+<FilesMatch "(?i)\.(php|phtml|php3|php4|php5|php7|php8|phps|phar|sh|bash|py|pl|cgi|asp|aspx|exe|dll|bat|cmd|hta)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Header keamanan untuk mencegah MIME-sniffing & eksekusi inline
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+</IfModule>
+

@@ -68,18 +68,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $message = "Judul dan isi pengumuman wajib diisi.";
             $message_type = "error";
         } else {
-            // Handle file upload
+            // Handle file upload dengan validasi keamanan terpusat & EXIF strip
             $attachment_url = null;
             if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
-                $allowed_ext = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar'];
-                $file_ext = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
-                if (in_array($file_ext, $allowed_ext, true) && $_FILES['attachment']['size'] <= 10 * 1024 * 1024) {
-                    $safe_name = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', basename($_FILES['attachment']['name']));
-                    if (move_uploaded_file($_FILES['attachment']['tmp_name'], $upload_dir . $safe_name)) {
-                        $attachment_url = $safe_name;
-                    }
+                $allowed = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar'];
+                $uploadRes = saveSecureUpload(
+                    $_FILES['attachment'],
+                    'announcements',
+                    $allowed,
+                    [],
+                    10 * 1024 * 1024,
+                    'ann'
+                );
+                if ($uploadRes['success']) {
+                    $attachment_url = $uploadRes['filename'];
                 } else {
-                    $message = "Format file tidak didukung atau ukuran melebihi 10MB.";
+                    $message = $uploadRes['error'];
                     $message_type = "error";
                 }
             }
@@ -171,21 +175,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $params = [$title, $content, $target_role, $class_id, $category, $is_pinned, $status, $expires_at];
 
             if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
-                $allowed_ext = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar'];
-                $file_ext = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
-                if (in_array($file_ext, $allowed_ext, true) && $_FILES['attachment']['size'] <= 10 * 1024 * 1024) {
-                    $safe_name = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', basename($_FILES['attachment']['name']));
-                    if (move_uploaded_file($_FILES['attachment']['tmp_name'], $upload_dir . $safe_name)) {
-                        // Hapus lampiran lama jika ada
-                        $old_att = $pdo->prepare("SELECT attachment_url FROM announcements WHERE id = ?");
-                        $old_att->execute([$edit_id]);
-                        $old_file = $old_att->fetchColumn();
-                        if ($old_file && file_exists($upload_dir . $old_file)) {
-                            @unlink($upload_dir . $old_file);
-                        }
-                        $attachment_sql = ', attachment_url = ?';
-                        $params[] = $safe_name;
+                $allowed = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar'];
+                $uploadRes = saveSecureUpload(
+                    $_FILES['attachment'],
+                    'announcements',
+                    $allowed,
+                    [],
+                    10 * 1024 * 1024,
+                    'ann'
+                );
+                if ($uploadRes['success']) {
+                    // Hapus lampiran lama jika ada
+                    $old_att = $pdo->prepare("SELECT attachment_url FROM announcements WHERE id = ?");
+                    $old_att->execute([$edit_id]);
+                    $old_file = $old_att->fetchColumn();
+                    if ($old_file && file_exists($upload_dir . basename($old_file))) {
+                        @unlink($upload_dir . basename($old_file));
                     }
+                    $attachment_sql = ', attachment_url = ?';
+                    $params[] = $uploadRes['filename'];
+                } else {
+                    $message = $uploadRes['error'];
+                    $message_type = "error";
                 }
             }
 
@@ -674,7 +685,7 @@ $pending_news_badge = getPendingNewsCount($pdo);
                                 <p class="text-xs font-semibold text-white truncate"><?= htmlspecialchars($a['attachment_url']) ?></p>
                                 <p class="text-[10px] text-slate-500">Lampiran berkas pendukung</p>
                             </div>
-                            <a href="../../uploads/announcements/<?= htmlspecialchars($a['attachment_url']) ?>" target="_blank" download
+                            <a href="<?= htmlspecialchars(resolveAssetUrl($a['attachment_url'], '../../')) ?>" target="_blank" download
                                class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-3 py-1.5 text-xs font-semibold text-blue-300 transition">
                                 <i class="fa-solid fa-download"></i> Unduh
                             </a>

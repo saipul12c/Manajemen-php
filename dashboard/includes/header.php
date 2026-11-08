@@ -30,6 +30,16 @@ if (in_array($user_role, ['administrator', 'staf'], true) && isset($pdo)) {
     } catch (Exception $e) {}
 }
 
+// Hitung pesan live chat baru (khusus admin & staf)
+$unread_live_chat_count = 0;
+if (in_array($user_role, ['administrator', 'staf'], true) && isset($pdo)) {
+    try {
+        $unread_live_chat_count = function_exists('getUnreadLiveChatCount') 
+            ? getUnreadLiveChatCount($pdo) 
+            : (int)$pdo->query("SELECT COUNT(*) FROM live_chat_messages WHERE is_read = 0 AND sender_type IN ('guest', 'user')")->fetchColumn();
+    } catch (Exception $e) {}
+}
+
 // Hitung berita pending yang butuh persetujuan (khusus admin & staf)
 $pending_news_nav_count = 0;
 if (in_array($user_role, ['administrator', 'staf'], true) && isset($pdo)) {
@@ -223,6 +233,7 @@ $module_titles = [
     'reservations.php' => 'Reservasi Buku',
     'ppdb.php' => 'PPDB Online Siswa Baru',
     'contact_messages.php' => 'Kotak Masuk Pesan Tamu',
+    'live_chat.php' => 'Layanan Live Chat Masuk',
     'gradebook.php' => 'Buku Nilai Guru',
     'gradebook_print.php' => 'Cetak Ledger Nilai',
     'report_card.php' => 'E-Rapor Digital',
@@ -254,7 +265,7 @@ if (in_array($current_page, ['timetable.php', 'attendance.php', 'attendance_repo
     $active_nav_group = 'exam';
 } elseif (in_array($current_page, ['payments.php', 'receipt.php', 'financial_report.php', 'expenses.php', 'payroll.php', 'payroll_slip.php', 'counseling.php', 'counseling_letter.php', 'requests.php', 'request_print.php', 'legalisir.php', 'legalisir_print.php', 'tracer_study.php', 'archives.php', 'books.php', 'loans.php', 'scan.php', 'visitors.php', 'print_labels.php', 'clearance.php', 'reservations.php', 'inventory.php'], true) || in_array($parent_folder, ['keuangan', 'surat', 'perpustakaan', 'sarpras', 'alumni', 'bk'], true)) {
     $active_nav_group = 'services';
-} elseif (in_array($current_page, ['ppdb.php', 'contact_messages.php', 'classes.php', 'promotion.php', 'users.php', 'wa_gateway.php', 'external_apis.php', 'backup.php', 'settings.php', 'audit_logs.php'], true) || $parent_folder === 'admin') {
+} elseif (in_array($current_page, ['ppdb.php', 'contact_messages.php', 'live_chat.php', 'classes.php', 'promotion.php', 'users.php', 'wa_gateway.php', 'external_apis.php', 'backup.php', 'settings.php', 'audit_logs.php'], true) || $parent_folder === 'admin') {
     $active_nav_group = 'admin';
 } elseif ($current_page === 'profile.php') {
     $active_nav_group = 'account';
@@ -922,6 +933,21 @@ if (!function_exists('isNavGroupOpen')) {
                                 <?php if ($unread_contact_count > 0): ?>
                                     <span class="inline-flex items-center justify-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-slate-950 shadow-sm shadow-amber-500/30">
                                         <?= $unread_contact_count ?>
+                                    </span>
+                                <?php endif; ?>
+                            </a>
+
+                            <a href="<?= $dash_url ?>admin/live_chat.php" data-menu-item="live chat pesan obrolan langsung tamu siswa bantuan online realtime" <?= $current_page === 'live_chat.php' ? 'aria-current="page"' : '' ?>
+                               class="group flex items-center justify-between rounded-xl px-3 py-2 transition-all <?= $current_page === 'live_chat.php' ? 'bg-blue-600/15 text-blue-400 font-semibold border-l-[3px] border-blue-500 shadow-sm shadow-blue-500/10' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border-l-[3px] border-transparent' ?>">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="flex h-7 w-7 items-center justify-center rounded-lg <?= $current_page === 'live_chat.php' ? 'bg-teal-500/20 text-teal-400' : 'bg-white/5 text-slate-400 group-hover:text-slate-200' ?>">
+                                        <i class="fa-solid fa-headset text-xs"></i>
+                                    </span>
+                                    <span>Live Chat Masuk</span>
+                                </div>
+                                <?php if ($unread_live_chat_count > 0): ?>
+                                    <span class="inline-flex items-center justify-center rounded-full bg-teal-500 px-2 py-0.5 text-[10px] font-bold text-slate-950 shadow-sm shadow-teal-500/30">
+                                        <?= $unread_live_chat_count ?>
                                     </span>
                                 <?php endif; ?>
                             </a>

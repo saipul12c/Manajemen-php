@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="https://img.shields.io/badge/Version-1.3.0-blue?style=for-the-badge" alt="Version 1.3.0">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/MySQL-8.0+-4479A1?style=for-the-badge&logo=mysql&logoColor=white" alt="MySQL 8.0+">
   <img src="https://img.shields.io/badge/TailwindCSS-4.x-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4">
@@ -22,6 +23,7 @@
   <a href="#-panduan-penggunaan">Panduan</a> •
   <a href="#-skema-database">Database</a> •
   <a href="#-keamanan">Keamanan</a> •
+  <a href="dokumentasi/RELEASE-github.MD">Catatan Rilis (v1.3.0)</a> •
   <a href="#-kontribusi">Kontribusi</a>
 </p>
 
@@ -49,12 +51,13 @@ Aplikasi ini mengimplementasikan **Role-Based Access Control (RBAC)** dengan 5 p
 | Layer          | Teknologi                                                                                 |
 | -------------- | ----------------------------------------------------------------------------------------- |
 | **Backend**    | PHP 8.0+ (Native, tanpa framework)                                                       |
-| **Database**   | MySQL 8.0+ dengan PDO (Prepared Statements, 56 tabel relasional)                          |
+| **Database**   | MySQL 8.0+ dengan PDO (Prepared Statements, 58 tabel relasional)                          |
 | **Frontend**   | Tailwind CSS v4 (CDN), Font Awesome 6.5, Plus Jakarta Sans                                |
+| **AI & NLP**   | Hybrid AI Engine (Kecerdasan Buatan Mandiri Lokal Tanpa API + Fallback Google Gemini / OpenAI LLM) |
 | **Mobile & PWA**| Service Worker PWA, Web App Manifests, Android Studio Native Wrapper (Java WebView Shell) |
-| **QR & Barcode**| html5-qrcode (scan kamera), qrcodejs (generate dynamic QR & barcode)                      |
-| **Web Server** | Apache (XAMPP / Laragon) dengan `.htaccess`                                               |
-| **Session**    | PHP Native Session dengan cookie `HttpOnly`, `SameSite=Lax`                               |
+| **QR & Barcode**| Standalone Vector SVG QR Engine (Offline Fallback), html5-qrcode, qrcodejs                |
+| **Web Server** | Apache (XAMPP / Laragon) dengan `.htaccess` (Larangan Eksekusi Skrip di `uploads/`)       |
+| **Session**    | PHP Native Session dengan cookie `HttpOnly`, `SameSite=Lax`, Flag `Secure` di HTTPS        |
 
 ### Struktur Direktori
 
@@ -107,7 +110,14 @@ manajemen-php/
 │   └── register.php             #   Dialihkan ke PPDB Online (satu pintu registrasi resmi)
 │
 ├── config/                      # Konfigurasi & Helper Sistem
-│   └── database.php             #   Koneksi PDO, auto-migration v14, CSRF, helper & scoring
+│   ├── database.php             #   Koneksi PDO, auto-migration, CSRF, helper & scoring, TTE engine
+│   ├── ai_chat_helper.php       #   Engine AI mandiri lokal, knowledge retrieval & connector Cloud LLM
+│   └── upload_helper.php        #   Pusat validasi unggahan aman terpusat (MIME inspector & SVG sanitizer)
+│
+├── api/                         # Endpoint API Eksternal & Integrasi Webhook
+│   ├── live_chat.php            #   API Real-time Live Chat & Asisten AI Cerdas Multi-Role / Tamu
+│   ├── payment_webhook.php      #   Webhook listener pembayaran payment gateway (QRIS & VA)
+│   └── rfid_attendance.php      #   REST API Gateway presensi perangkat fisik RFID gerbang sekolah
 │
 ├── dashboard/                   # Area Dashboard (terproteksi login & role-based)
 │   ├── index.php                #   Halaman utama dashboard (role-based widgets & feed)
@@ -120,7 +130,8 @@ manajemen-php/
 │   │   └── footer.php           #     Footer dashboard
 │   │
 │   ├── admin/                   #   Panel Administrasi & Pengaturan
-│   │   ├── users.php            #     CRUD manajemen pengguna & Impor Siswa Massal (CSV)
+│   │   ├── users.php            #     CRUD pengguna, NIP, gelar akademik, & kelola TTE digital guru
+│   │   ├── live_chat.php        #     Konsol pemantauan Live Chat real-time, Human Takeover & konfigurasi AI
 │   │   ├── student_profile_print.php # Cetak Lembar Buku Induk Siswa (Standar Kemendikbud)
 │   │   ├── student_360.php      #     Radar Profil Siswa 360 Derajat (akademik, disiplin, finansial, ekskul)
 │   │   ├── promotion.php        #     Wizard Kenaikan Kelas & Kelulusan Massal per rombel
@@ -128,7 +139,7 @@ manajemen-php/
 │   │   ├── classes.php          #     Manajemen kelas & rombel
 │   │   ├── ppdb.php             #     Verifikasi berkas, seleksi, & 1-klik aktivasi akun siswa
 │   │   ├── ppdb_attendance_print.php # Cetak lembar presensi & berita acara ruang ujian PPDB
-│   │   ├── settings.php         #     Pengaturan identitas sekolah, radius geofencing & kuota PPDB
+│   │   ├── settings.php         #     Pengaturan identitas sekolah, kop surat, stempel, TTD KS & kuota PPDB
 │   │   ├── wa_gateway.php       #     WhatsApp Gateway API, template pesan & audit log pengiriman
 │   │   ├── external_apis.php    #     Manajemen integrasi Multi-API Gateway (WA, Payment, SMTP, Maps, Cuaca)
 │   │   ├── audit_logs.php       #     Log aktivitas (audit trail)
@@ -189,10 +200,6 @@ manajemen-php/
 │   │   ├── financial_print.php  #     Cetak laporan keuangan
 │   │   └── financial_export.php #     Export data keuangan
 │   │
-│   ├── api/                     #   Endpoint API Eksternal & Integrasi Webhook
-│   │   ├── payment_webhook.php  #     Webhook listener pembayaran payment gateway (QRIS & VA)
-│   │   └── rfid_attendance.php  #     REST API Gateway presensi perangkat fisik RFID gerbang sekolah
-│   │
 │   ├── sarpras/                 #   Modul Sarana & Prasarana (Sarpras)
 │   │   └── inventory.php        #     Buku inventaris aset ruangan, kondisi barang, & sirkulasi pinjam
 │   │
@@ -244,13 +251,15 @@ manajemen-php/
 │   └── 503.php                  #   Service Unavailable
 │
 ├── sql/                         # Skema Database
-│   └── database.sql             #   File SQL lengkap (DDL + seed data 56 tabel)
+│   └── database.sql             #   File SQL lengkap (DDL + seed data 58 tabel)
 │
 └── uploads/                     # Direktori Berkas Upload Sistem
+    ├── .htaccess                #   Proteksi Apache: Larangan eksekusi skrip PHP/CGI di folder unggahan
     ├── announcements/           #   Lampiran dokumen edaran pengumuman
     ├── apps/                    #   File installer APK Android (CBT, Presensi, Perpustakaan)
     ├── assignments/             #   Lampiran soal tugas & berkas pengumpulan jawaban siswa
     ├── books/                   #   Gambar cover buku & file modul / e-book PDF
+    ├── chat_attachments/       #   Lampiran berkas obrolan live chat (gambar & dokumen tersanitasi)
     ├── exams/                   #   Gambar pendukung soal ujian online
     ├── expenses/                #   Scan berkas nota / kwitansi kas keluar BKU
     ├── legalisir/               #   Scan berkas ijazah/transkrip asli permohonan legalisir
@@ -326,6 +335,68 @@ Untuk panduan mendalam langkah-demi-langkah (SOP), alur kerja terperinci, dan ba
   - Alur pemulihan akun mandiri 2 langkah (identifikasi username/NISN/email + verifikasi nomor WA/Email)
   - Pengiriman token reset berbatas waktu (kedaluwarsa 1 jam) dengan enkripsi SHA-256
   - Tombol bantuan langsung ke Helpdesk WhatsApp sekolah untuk kendala akun gawat darurat
+- **🤖 Asisten Virtual AI Mandiri & Real-Time Live Chat (`api/live_chat.php`)**:
+  - Widget live chat interaktif untuk pengunjung publik (sebelum login) dan civitas sekolah (setelah login)
+  - Penjawab cerdas otomatis 24/7 seputar pendaftaran PPDB, kalender akademik, tagihan SPP, presensi, buku perpustakaan, konseling BK, dan kegiatan ekskul
+  - Mode alih respon (*Human Takeover*) langsung ke staf tata usaha atau admin, serta integrasi tombol kontak darurat WhatsApp Helpdesk
+
+### 🤖 Asisten Virtual AI Mandiri & Real-Time Live Chat System
+
+Inovasi layanan percakapan interaktif cerdas tanpa ketergantungan API pihak ketiga:
+
+- **Arsitektur Cerdas Hybrid (In-House Rule Engine + Cloud LLM)**:
+  - **Kecerdasan Buatan Mandiri Lokal**: 100% berjalan di server sekolah tanpa biaya token atau kuota API eksternal. Berbasis *Context-Aware Knowledge Base* yang membaca data sekolah secara langsung dan real-time dari database (profil, PPDB, agenda, koleksi perpustakaan, tagihan).
+  - **Integrasi Cloud LLM Opsional**: Kompatibel dengan model Google Gemini, OpenAI GPT, atau Self-Hosted Ollama/LocalAI dengan pendekatan RAG (*Retrieval-Augmented Generation*).
+  - **Pencegah Gangguan Otomatis (*Auto-Fallback*)**: Bila kuota API eksternal habis atau jaringan internet luar terputus, sistem secara mulus beralih ke engine AI mandiri internal tanpa membuat chat terputus.
+- **Pengalaman Pengguna Interaktif (Live Chat Experience)**:
+  - Tersedia di seluruh halaman publik untuk memandu calon wali murid dan tamu tanpa perlu membuat akun.
+  - Sesi otomatis terhubung untuk pengguna login (Guru, Siswa, Orang Tua, Staf) dengan identifikasi peran instan.
+  - Efek animasi pengetikan (*live typing indicator*) yang merefleksikan kecepatan respon manusiawi.
+  - Riwayat obrolan tersimpan otomatis dengan enkripsi sesi token UUIDv4.
+- **Konsol Dasbor Administrator & Staf (`dashboard/admin/live_chat.php`)**:
+  - Pemantauan seluruh sesi obrolan aktif secara real-time.
+  - **Fitur Human Takeover**: Petugas admin atau staf piket dapat mengambil alih percakapan bot dengan 1 klik untuk memberikan jawaban spesifik.
+  - **Pustaka Balasan Cepat (*Quick Reply Templates*)**: Koleksi template respon kilat untuk mempercepat penanganan pertanyaan yang sering diajukan (*FAQ*).
+  - **Live AI Test Bench**: Pengujian respons bot AI secara langsung di panel admin sebelum diterapkan ke publik.
+  - Filter sesi status dinamis (`Aktif`, `Selesai / Ditutup`, `Diekskalasi ke Staf`).
+
+### 🛡️ Pusat Pengamanan Berkas & Media Terpusat Skala Enterprise
+
+Pengamanan menyeluruh terhadap seluruh aset berkas yang diunggah ke dalam sistem aplikasi:
+
+- **Engine Validasi Berkas Terpusat (`config/upload_helper.php`)**:
+  - Fungsi tunggal `handleSecureUpload()` untuk menangani seluruh proses validasi, pemeriksaan biner, sanitasi, dan penyimpanan berkas.
+  - **Inspeksi Tipe MIME Biner Asli**: Menggunakan PHP `finfo_file()` dan `exif_imagetype()` untuk memverifikasi *magic bytes* fisik berkas. Tidak mempercayai ekstensi atau header `Content-Type` yang dikirimkan peramban pengguna (*anti-MIME spoofing*).
+  - **Pengacakan Kriptografis Nama Berkas**: Seluruh berkas otomatis diubah namanya menggunakan hash acak 32 karakter heksadesimal (`bin2hex(random_bytes(16))`) guna mengeliminasi serangan *Direct Object Reference*, duplikasi nama, dan *Directory Climbing* (`../`).
+  - **Whitelist Ekstensi Ketat**: Ekstensi dikelompokkan secara spesifik per peruntukan:
+    - *Dokumen*: `.pdf`, `.docx`, `.doc`, `.xlsx`, `.xls`
+    - *Gambar*: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`
+    - *Tanda Tangan*: `.png`, `.svg`, `.jpg`, `.jpeg`
+  - **Sanitasi Total Berkas Vektor SVG dari Stored XSS**: Pembersihan XML/DOM parser otomatis yang melucuti tag `<script>`, atribut penanganan event JavaScript (`onload`, `onerror`, `onclick`), namespace eksternal, dan elemen berbahaya `<foreignObject>`.
+- **Proteksi Server Apache di Folder Unggahan (`uploads/.htaccess`)**:
+  - Menonaktifkan mesin eksekusi PHP (`php_flag engine off`).
+  - Menetapkan `SetHandler default-handler` untuk memperlakukan semua file hanya sebagai teks/biner statis.
+  - Memblokir langsung akses eksekusi ke ekstensi berbahaya: `.php`, `.php3`, `.php4`, `.php5`, `.phtml`, `.phar`, `.inc`, `.cgi`, `.sh`, `.asp`.
+- **Audit & Hardening 23 Titik Akses Unggahan**:
+  - Pasfoto Profil Pengguna, Logo Sekolah & Favicon, TTD Kepala Sekolah, Stempel Institusi, Scan TTD Guru, Bukti Transfer SPP, Berkas Pengumpulan Tugas, Bahan Ajar E-Learning, Modul Ajar Kurikulum Merdeka, Thumbnail Berita, Galeri Foto, Lampiran Kasus Konseling BK, Berkas PPDB (KK/Akta/Ijazah), Scan Ijazah Legalisir Alumni, Cover Buku Perpus, E-Book PDF Perpus, Piagam Prestasi Ekskul, Arsip Surat Masuk/Keluar, Lampiran Surat Keterangan, Gambar CBT Ujian, Foto Sarpras, Rekam Medis UKS, dan Berkas Backup Basis Data.
+
+### 🔏 Arsitektur Tanda Tangan Elektronik (TTE), Stempel Resmi Anti-Scraping & Kop Surat Presisi
+
+Standardisasi tata kelola pengesahan dokumen resmi digital dan cetak dinas:
+
+- **Mesin Render Pengesahan Terpadu (`renderOfficialSignatureHtml`)**:
+  - **Efek Tinta Basah Realistis (*Ink Blending*)**: Menggunakan teknik CSS `mix-blend-mode: multiply` yang menghasilkan efek transparan alami di mana stempel basah warna biru/ungu tampak bertumpuk di atas guratan tinta tanda tangan dan tekstur kertas dokumen.
+  - **Proteksi Anti-Scraping & Anti-Cloning Aset Resmi**: Elemen gambar tanda tangan dan cap stempel diproteksi dengan CSS interaktif tingkat tinggi (`pointer-events: none; -webkit-user-drag: none; user-select: none; -webkit-touch-callout: none;`) sehingga tidak dapat diunduh lewat klik kanan, diseret, maupun diekstrak secara ilegal untuk pemalsuan dokumen di luar sistem.
+  - **Preservasi Warna Cetak Presisi (*Print Fidelity*)**: Menerapkan deklarasi CSS `@media print` dengan `-webkit-print-color-adjust: exact; print-color-adjust: exact;` sehingga warna stempel, garis kop surat, dan badge status tidak pudar saat dicetak atau diekspor ke PDF.
+  - **Generator Kode QR Vektor Offline Fallback (Air-Gapped Ready)**: Mesin pembubuh QR Code verifikasi dokumen kini dilengkapi generator internal vektor SVG mandiri murni (*inline vector*). Sistem tetap dapat merender kode QR verifikasi valid beresolusi tinggi tanpa menghasilkan gambar rusak (*broken image*) meskipun server berada dalam jaringan intranet lokal tanpa internet publik.
+- **Standarisasi Kop Surat pada 21 Berkas Template Resmi**:
+  - Menggunakan helper `resolveAssetUrl()` untuk menyelesaikan path logo dan aset dinas secara adaptif di seluruh level folder (root maupun subdirektori).
+  - Diterapkan secara seragam pada 21 template cetak resmi: Buku Rapor Merdeka, Rapor P5, Kuitansi SPP, Slip Gaji Guru, Kartu Peserta CBT, Berita Acara Ujian, Legalisir Ijazah, Surat Panggilan BK, Surat Bebas Pustaka, Surat Keterangan Siswa, Biodata Buku Induk Dapodik, dsb.
+- **Panel Pengelolaan Kredensial & TTE Guru oleh Administrator (`dashboard/admin/users.php`)**:
+  - Administrator dapat menetapkan NIP / NUPTK resmi dan gelar akademik guru (`title_degree`, misal: `S.Pd., M.M.`).
+  - Meninjau pratinjau langsung scan tanda tangan digital guru di modal edit pengguna.
+  - Mengunggah berkas scan tanda tangan baru dengan pembersihan latar belakang otomatis.
+  - Opsi 1-klik untuk mereset tanda tangan ke generator SVG resmi berbasis kaligrafi nama digital.
 
 ### 🎓 PPDB Online (Penerimaan Peserta Didik Baru Terpadu)
 
@@ -562,11 +633,17 @@ Sistem perpustakaan sekolah modern yang terintegrasi penuh antara **katalog publ
 
 ### 🛠️ Panel Administrasi & Kesiswaan
 
-- **Manajemen Pengguna & Kesiswaan**:
+- **Manajemen Pengguna & Kredensial Pendidik (`dashboard/admin/users.php`)**:
   - CRUD pengguna (5 role) dengan proteksi hak akses hirarkis (Staf TU khusus mengelola siswa & wali murid)
+  - **Manajemen Kredensial & TTE Guru**: Penetapan NIP/NUPTK, gelar akademik (`title_degree`), pratinjau scan tanda tangan digital guru, unggah scan baru, atau reset ke generator SVG otomatis
   - **Impor Siswa Massal via CSV** — Unggah banyak data siswa sekaligus dari Excel/CSV lengkap dengan pemetaan kelas otomatis dan pembuatan password default
   - **Unduh Template CSV** contoh resmi langsung dari dashboard
   - **Cetak Lembar Buku Induk Siswa (`student_profile_print.php`)** — Lembar buku induk standar Kemendikbud memuat Bagian A–D (Data Diri, Alamat, Asal Sekolah, Orang Tua/Wali), kotak Pas Foto 3x4 cm, dan tanda tangan pengesahan Kepala Sekolah & Staf TU
+- **🤖 Konsol Live Chat & Pusat Kendali AI Real-Time (`dashboard/admin/live_chat.php`)**:
+  - Pemantauan seluruh sesi obrolan pengunjung publik dan civitas sekolah secara real-time
+  - Fitur pengalihan instan dari bot ke petugas staf/admin (*Human Takeover*)
+  - Pustaka *Quick Reply Templates* untuk menjawab pertanyaan berulang dengan 1 klik
+  - Konfigurasi engine AI (Model, System Prompt, Endpoint, Ground-truth context) dan live testing simulator
 - **🎯 Radar Profil Siswa 360 Derajat (`dashboard/admin/student_360.php`)**:
   - Tampilan profil analitik holistik siswa dalam satu layar terpadu: biodata lengkap Dapodik, grafik radar nilai capaian belajar, rasio presensi kehadiran, akumulasi rekam jejak kedisiplinan & prestasi BK, riwayat tagihan SPP keuangan, keanggotaan klub ekskul, dan catatan rapor semester
   - Aksesibilitas multi-role: Administrator, Staf TU, Guru/Wali Kelas, serta Siswa & Orang Tua (monitoring mandiri)
@@ -586,7 +663,7 @@ Sistem perpustakaan sekolah modern yang terintegrasi penuh antara **katalog publ
   - Indikator badge pesan tamu belum dibaca pada sidebar navigasi
 - **Manajemen Kelas** — Buat dan kelola rombongan belajar (rombel) serta penugasan wali kelas
 - **Verifikasi PPDB** — Review, verifikasi dokumen, dan seleksi calon peserta didik baru
-- **Pengaturan Sekolah** — Identitas sekolah (nama, NPSN, alamat, telepon, email, website, kepala sekolah, NIP, tahun ajaran, logo, koordinat GPS geofencing presensi)
+- **Pengaturan Sekolah & Identitas Kedinasan (`dashboard/admin/settings.php`)** — Identitas sekolah (nama, NPSN, alamat, telepon, email, website, kepala sekolah, NIP, tahun ajaran), koordinat GPS geofencing presensi, serta unggah logo instansi, cap stempel resmi dinas, dan scan tanda tangan pimpinan yang disinkronisasi ke 21 berkas template cetak
 - **Audit Log** — Pencatatan seluruh aktivitas penting dalam sistem (login, update, delete, penerbitan surat, transaksi kas) dengan IP address
 - **Backup & Restore Database** — Export dan import skema + data database secara aman
 
@@ -638,7 +715,7 @@ Sistem mengusung konsep **1 Terpusat Database, Multi-Aplikasi Mandiri** yang mem
 
 ## 🗄️ Skema Database
 
-Sistem menggunakan database `website_login` dengan **56 tabel** yang saling berelasi:
+Sistem menggunakan database `website_login` dengan **58 tabel** yang saling berelasi:
 
 | #  | Tabel                     | Deskripsi                                                    |
 |----|---------------------------|--------------------------------------------------------------|
@@ -698,6 +775,8 @@ Sistem menggunakan database `website_login` dengan **56 tabel** yang saling bere
 | 54 | `p5_project_dimensions`   | Pemetaan dimensi, elemen, sub-elemen & target capaian fase projek P5 |
 | 55 | `p5_student_assessments`  | Nilai perkembangan projek siswa per sub-elemen (MB, SB, BSH, SAB) |
 | 56 | `p5_student_notes`        | Catatan proses, deskripsi capaian, & refleksi fasilitator rapor P5 |
+| 57 | `live_chat_sessions`      | Sesi obrolan pengunjung publik & civitas sekolah, status AI, dan eskalasi staf |
+| 58 | `live_chat_messages`      | Histori pesan obrolan, balasan cerdas bot AI, admin, dan berkas lampiran |
 
 > 💡 **Catatan Modul:** Fitur Surat Bebas Perpustakaan beroperasi secara dinamis memeriksa status tanggungan pinjaman aktif dan denda keterlambatan langsung dari tabel `library_loans` tanpa memerlukan tabel terpisah.
 >
@@ -945,7 +1024,12 @@ Manajemen-PHP mengimplementasikan berbagai lapisan keamanan:
 | **Password Hashing**           | `password_hash()` dengan `PASSWORD_DEFAULT` (bcrypt) & `password_verify()`                        |
 | **Rate Limiting**              | Maks. 5 percobaan login per 15 menit per session                                                  |
 | **Role Enforcement**           | `requireRole()` & `requireLogin()` di setiap halaman terproteksi                                  |
-| **File Upload Validation**     | Whitelist ekstensi (pdf, jpg, jpeg, png), maks. 5 MB, rename dengan `random_bytes()`              |
+| **File Upload Validation**     | Validasi biner tipe MIME (`finfo`/`exif_imagetype`), whitelist ekstensi ketat, maks. 5 MB, rename dengan `random_bytes()` |
+| **Arbitrary Upload & RCE Guard** | Pustaka `handleSecureUpload()` di 23 titik unggahan & penguncian `uploads/.htaccess` (`php_flag engine off`, pemblokiran eksekusi skrip PHP/CGI) |
+| **SVG Stored XSS Sanitizer**   | Pembersihan XML/DOM parser otomatis melucuti `<script>`, event listener JavaScript, dan `<foreignObject>` pada berkas vektor TTD |
+| **Anti-Scraping Official Assets** | Proteksi CSS & antarmuka (`pointer-events: none; -webkit-user-drag: none; user-select: none;`) pencegah pencurian stempel & tanda tangan |
+| **Offline Vector QR Fallback** | Generator SVG QR Code mandiri internal (tanpa API luar) untuk pencetakan dokumen resmi di jaringan tertutup / *air-gapped* |
+| **Live Chat Security & Anti-Flood** | Pembatasan frekuensi pesan per IP/sesi (*rate limiting*), token sesi UUIDv4, dan sanitasi input pesan XSS |
 | **Security Headers**           | `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, `CSP`         |
 | **Directory Listing**          | Dinonaktifkan via `.htaccess` (`Options -Indexes`)                                                |
 | **Audit Trail**                | Pencatatan aktivitas penting dengan IP address                                                     |
@@ -971,9 +1055,9 @@ Manajemen-PHP mengimplementasikan berbagai lapisan keamanan:
 
 ---
 
-## 🚀 Roadmap Transformasi Digital (Fase 1 s.d. Fase 8 - 100% Terimplementasi)
+## 🚀 Roadmap Transformasi Digital (Fase 1 s.d. Fase 9 - 100% Terimplementasi)
 
-Sistem Manajemen Sekolah telah ditingkatkan secara menyeluruh melalui implementasi 8 fase transformasi teknologi modern:
+Sistem Manajemen Sekolah telah ditingkatkan secara menyeluruh melalui implementasi 9 fase transformasi teknologi modern:
 
 ### 📱 Fase 1: WhatsApp Gateway Integration Engine
 * **Engine Notifikasi Terpadu (`dashboard/admin/wa_gateway.php`)**:
@@ -1049,6 +1133,24 @@ Sistem Manajemen Sekolah telah ditingkatkan secara menyeluruh melalui implementa
   * Kuesioner penelusuran karir lulusan (studi lanjut, kerja, wirausaha) lengkap dengan visualisasi persentase serapan dan ekspor berkas akreditasi BAN-SM (.CSV).
 * **Layanan Legalisir Ijazah Digital Ber-QR TTE (`dashboard/alumni/legalisir.php` & `legalisir_print.php`)**:
   * Alur pengajuan mandiri alumni, verifikasi scan ijazah asli oleh Staf TU, penerbitan lembar pengesahan legalisir berstempel dinas, dan validasi keaslian dokumen via `verify_document.php`.
+
+### 🤖 Fase 9: Asisten AI Real-Time, Hardening Berkas Skala Enterprise & Ekosistem TTE Kedinasan (v1.3.0)
+* **Asisten Virtual AI Mandiri & Real-Time Live Chat (`api/live_chat.php` & `dashboard/admin/live_chat.php`)**:
+  * Arsitektur cerdas hybrid: AI lokal mandiri berbasis basis pengetahuan sekolah (*zero API cost / offline ready*) dengan fallback integrasi Google Gemini / OpenAI LLM.
+  * Widget live chat pengunjung publik dan pengguna terdaftar (multi-role) dengan animasi *typing indicator* dan auto-response topik sekolah (PPDB, SPP, Kalender, dsb.).
+  * Konsol Admin & Staf untuk pemantauan obrolan aktif secara real-time, pengalihan obrolan bot ke petugas (*human takeover*), dan template balasan kilat (*quick replies*).
+* **Hardening Keamanan Unggahan Terpusat Skala Enterprise (`config/upload_helper.php` & `uploads/.htaccess`)**:
+  * Pustaka pengaman terpusat `handleSecureUpload()` yang diimplementasikan di 23 titik unggahan berkas.
+  * Validasi tipe MIME biner nyata via `finfo_file()` dan `exif_imagetype()` (anti-spoofing ekstensi).
+  * Pengacakan nama berkas kriptografis SHA-256 (`random_bytes(16)`) anti-enumerasi dan *path traversal*.
+  * Pembersih mutlak berkas vektor SVG dari ancaman *Stored Cross-Site Scripting* (XSS).
+  * Penguncian Apache web server di `uploads/.htaccess` (`php_flag engine off` & penonaktifan eksekusi PHP/skrip).
+* **Arsitektur Tanda Tangan Elektronik (TTE) & Stempel Resmi Anti-Scraping**:
+  * Efek visual percampuran tinta realistis (`mix-blend-mode: multiply`) dan preservasi warna cetak (`print-color-adjust: exact`).
+  * Proteksi aset legalitas dari pencurian/ekstraksi ilegal (*anti-scraping*, pelarangan klik kanan, seleksi, dan drag-and-drop).
+  * Generator Kode QR Vektor Mandiri (*Standalone SVG Fallback*) untuk pencetakan dokumen resmi dalam jaringan tertutup / *air-gapped*.
+  * Standardisasi Kop Surat, logo resmi, dan penanggalan pada 21 berkas template cetak kedinasan dengan resolusi path dinamis `resolveAssetUrl()`.
+  * Panel kontrol Administrator untuk konfigurasi NIP, gelar akademik guru (`title_degree`), pratinjau scan TTE, unggah scan baru, dan reset ke generator SVG.
 
 ---
 

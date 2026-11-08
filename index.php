@@ -124,14 +124,14 @@ try {
                 </div>
 
                 <h1 class="text-3xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.15] text-white">
-                    Pusat Informasi & Administrasi Digital
+                    <?= htmlspecialchars($school_info['hero_title'] ?? 'Pusat Informasi & Administrasi Digital') ?>
                     <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-sky-300 to-indigo-400">
                         <?= htmlspecialchars($school_info['school_name'] ?? 'Sekolah Unggulan') ?>
                     </span>
                 </h1>
 
                 <p class="mt-5 max-w-xl text-sm sm:text-base leading-relaxed text-slate-400">
-                    Platform cerdas operasional sekolah yang mengintegrasikan <strong class="text-slate-200">Papan Pengumuman Resmi</strong>, <strong class="text-slate-200">Katalog Perpustakaan & E-Book</strong>, <strong class="text-slate-200">PPDB Online</strong>, hingga portal akademik terpadu untuk 5 role pengguna.
+                    <?= nl2br(htmlspecialchars($school_info['hero_description'] ?? 'Platform cerdas operasional sekolah yang mengintegrasikan Papan Pengumuman Resmi, Katalog Perpustakaan & E-Book, PPDB Online, hingga portal akademik terpadu untuk 5 role pengguna.')) ?>
                 </p>
 
                 <!-- Tombol Aksi Cepat -->

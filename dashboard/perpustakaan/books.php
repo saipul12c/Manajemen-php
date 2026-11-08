@@ -45,17 +45,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $message_type = "error";
         } else {
             try {
-                // Upload Sampul Buku jika ada
+                // Upload Sampul Buku jika ada dengan validasi keamanan terpusat & strip EXIF
                 $cover_image = null;
                 if (isset($_FILES['cover_file']) && $_FILES['cover_file']['error'] === UPLOAD_ERR_OK) {
-                    $up_dir = __DIR__ . '/../../uploads/books';
-                    if (!is_dir($up_dir)) { mkdir($up_dir, 0755, true); }
-                    $ext = strtolower(pathinfo($_FILES['cover_file']['name'], PATHINFO_EXTENSION));
-                    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) && $_FILES['cover_file']['size'] <= 2 * 1024 * 1024) {
-                        $cover_name = 'book_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $ext;
-                        if (move_uploaded_file($_FILES['cover_file']['tmp_name'], $up_dir . '/' . $cover_name)) {
-                            $cover_image = 'uploads/books/' . $cover_name;
-                        }
+                    $uploadRes = saveSecureUpload(
+                        $_FILES['cover_file'],
+                        'books',
+                        ['jpg', 'jpeg', 'png', 'webp'],
+                        [],
+                        3 * 1024 * 1024,
+                        'book'
+                    );
+                    if ($uploadRes['success']) {
+                        $cover_image = $uploadRes['path'];
+                    } else {
+                        $message = $uploadRes['error'];
+                        $message_type = "error";
                     }
                 }
 
@@ -124,6 +129,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $code, $isbn, $title, $author, $publisher, $year, $category,
                     $stock_total, $new_available, $shelf_location, $ebook_file, $description, $book_id
                 ]);
+
+                // Upload update sampul buku jika ada
+                if (isset($_FILES['cover_file']) && $_FILES['cover_file']['error'] === UPLOAD_ERR_OK) {
+                    $uploadRes = saveSecureUpload(
+                        $_FILES['cover_file'],
+                        'books',
+                        ['jpg', 'jpeg', 'png', 'webp'],
+                        [],
+                        3 * 1024 * 1024,
+                        'book'
+                    );
+                    if ($uploadRes['success']) {
+                        $pdo->prepare("UPDATE library_books SET cover_image = ? WHERE id = ?")->execute([$uploadRes['path'], $book_id]);
+                    }
+                }
 
                 logActivity($pdo, 'UPDATE_BOOK', "Memperbarui buku ID $book_id: $title");
                 $message = "Informasi buku '$title' berhasil diperbarui!";
@@ -334,6 +354,12 @@ include __DIR__ . "/../includes/header.php";
                             </span>
                         </div>
 
+                        <?php if (!empty($b['cover_image'])): ?>
+                            <div class="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-slate-950 aspect-[16/9] max-h-36 flex items-center justify-center">
+                                <img src="<?= htmlspecialchars(resolveAssetUrl($b['cover_image'], '../../')) ?>" alt="<?= htmlspecialchars($b['title']) ?>" class="w-full h-full object-cover">
+                            </div>
+                        <?php endif; ?>
+
                         <!-- Book Title & Author -->
                         <h3 class="text-base font-bold text-white group-hover:text-teal-300 transition line-clamp-2">
                             <?= htmlspecialchars($b['title']) ?>
@@ -519,6 +545,12 @@ include __DIR__ . "/../includes/header.php";
                 </div>
 
                 <div class="sm:col-span-2">
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Sampul Buku / Cover (JPG, PNG, WEBP - Maks. 3MB)</label>
+                    <input type="file" name="cover_file" accept="image/jpeg,image/png,image/webp"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-1.5 text-xs text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-600 file:text-white hover:file:bg-teal-500">
+                </div>
+
+                <div class="sm:col-span-2">
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Deskripsi Singkat / Sinopsis</label>
                     <textarea id="createDescription" name="description" rows="2.5" placeholder="Rangkuman ringkas isi buku..."
                               class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition"></textarea>
@@ -547,7 +579,7 @@ include __DIR__ . "/../includes/header.php";
             </button>
         </div>
 
-        <form method="POST" action="books.php" class="space-y-4">
+        <form method="POST" action="books.php" enctype="multipart/form-data" class="space-y-4">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="update_book">
             <input type="hidden" name="book_id" id="editBookId">
@@ -620,6 +652,12 @@ include __DIR__ . "/../includes/header.php";
                     <label class="block text-xs font-semibold text-slate-300 mb-1">Tautan E-Book (Opsional)</label>
                     <input type="url" name="ebook_file" id="editEbook" placeholder="https://..."
                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white focus:border-teal-500 focus:outline-none transition">
+                </div>
+
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Ganti Sampul Buku / Cover (Opsional)</label>
+                    <input type="file" name="cover_file" accept="image/jpeg,image/png,image/webp"
+                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-1.5 text-xs text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500">
                 </div>
 
                 <div class="sm:col-span-2">

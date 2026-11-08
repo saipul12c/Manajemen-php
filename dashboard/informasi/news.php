@@ -68,18 +68,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $message = "Judul berita dan isi konten wajib diisi.";
             $message_type = "error";
         } else {
-            // Upload Foto Sampul / Cover
+            // Upload Foto Sampul / Cover dengan validasi keamanan terpusat & EXIF strip
             $thumbnail_url = null;
             if (isset($_FILES['thumbnail']) && $_FILES['thumbnail']['error'] === UPLOAD_ERR_OK) {
-                $allowed_ext = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-                $file_ext = strtolower(pathinfo($_FILES['thumbnail']['name'], PATHINFO_EXTENSION));
-                if (in_array($file_ext, $allowed_ext, true) && $_FILES['thumbnail']['size'] <= 5 * 1024 * 1024) {
-                    $safe_name = 'news_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
-                    if (move_uploaded_file($_FILES['thumbnail']['tmp_name'], $upload_dir . $safe_name)) {
-                        $thumbnail_url = $safe_name;
-                    }
+                $uploadRes = saveSecureUpload(
+                    $_FILES['thumbnail'],
+                    'news',
+                    ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+                    [],
+                    5 * 1024 * 1024,
+                    'news'
+                );
+                if ($uploadRes['success']) {
+                    $thumbnail_url = $uploadRes['filename'];
                 } else {
-                    $message = "Format gambar tidak didukung atau ukuran melebihi 5MB.";
+                    $message = $uploadRes['error'];
                     $message_type = "error";
                 }
             }
@@ -206,18 +209,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $params_upd = [];
 
                 if (isset($_FILES['thumbnail']) && $_FILES['thumbnail']['error'] === UPLOAD_ERR_OK) {
-                    $allowed_ext = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-                    $file_ext = strtolower(pathinfo($_FILES['thumbnail']['name'], PATHINFO_EXTENSION));
-                    if (in_array($file_ext, $allowed_ext, true) && $_FILES['thumbnail']['size'] <= 5 * 1024 * 1024) {
-                        $safe_name = 'news_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
-                        if (move_uploaded_file($_FILES['thumbnail']['tmp_name'], $upload_dir . $safe_name)) {
-                            // Hapus file lama jika ada
-                            if (!empty($existing['thumbnail']) && file_exists($upload_dir . $existing['thumbnail'])) {
-                                @unlink($upload_dir . $existing['thumbnail']);
+                    $uploadRes = saveSecureUpload(
+                        $_FILES['thumbnail'],
+                        'news',
+                        ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+                        [],
+                        5 * 1024 * 1024,
+                        'news'
+                    );
+                    if ($uploadRes['success']) {
+                        // Hapus file lama jika ada
+                        if (!empty($existing['thumbnail'])) {
+                            $oldFile = basename($existing['thumbnail']);
+                            if (file_exists($upload_dir . $oldFile)) {
+                                @unlink($upload_dir . $oldFile);
                             }
-                            $thumbnail_sql = ", thumbnail = ?";
-                            $params_upd[] = $safe_name;
                         }
+                        $thumbnail_sql = ", thumbnail = ?";
+                        $params_upd[] = $uploadRes['filename'];
+                    } else {
+                        $message = $uploadRes['error'];
+                        $message_type = "error";
                     }
                 }
 
@@ -873,7 +885,7 @@ require_once __DIR__ . "/../includes/header.php";
                     $can_delete = $can_manage_all || $is_author;
                     $cat_info = NEWS_CATEGORIES[$item['category']] ?? ['label' => ucfirst($item['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
                     $status_info = NEWS_STATUSES[$item['status']] ?? ['label' => ucfirst($item['status']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
-                    $thumb_src = !empty($item['thumbnail']) ? '../../uploads/news/' . htmlspecialchars($item['thumbnail']) : null;
+                    $thumb_src = !empty($item['thumbnail']) ? resolveAssetUrl($item['thumbnail'], '../../') : null;
                 ?>
                 <div class="bg-slate-900/85 backdrop-blur-xl rounded-3xl border <?= $item['status'] === 'pending' ? 'border-amber-500/40 shadow-lg shadow-amber-500/10' : ($item['is_featured'] ? 'border-indigo-500/40' : 'border-white/10') ?> overflow-hidden flex flex-col justify-between hover:border-blue-500/40 transition duration-300 group">
                     
@@ -1576,7 +1588,7 @@ function openEditNewsModal(item) {
     const curBox = document.getElementById('currentThumbnailBox');
     const curImg = document.getElementById('currentThumbnailImg');
     if (item.thumbnail) {
-        curImg.src = '../../uploads/news/' + item.thumbnail;
+        curImg.src = item.thumbnail.startsWith('http') ? item.thumbnail : (item.thumbnail.startsWith('uploads/') ? '../../' + item.thumbnail : '../../uploads/news/' + item.thumbnail);
         curBox.classList.remove('hidden');
     } else {
         curBox.classList.add('hidden');
@@ -1625,7 +1637,7 @@ function previewNews(item) {
     const coverWrap = document.getElementById('previewCoverWrapper');
     const coverImg = document.getElementById('previewCoverImg');
     if (item.thumbnail) {
-        coverImg.src = '../../uploads/news/' + item.thumbnail;
+        coverImg.src = item.thumbnail.startsWith('http') ? item.thumbnail : (item.thumbnail.startsWith('uploads/') ? '../../' + item.thumbnail : '../../uploads/news/' + item.thumbnail);
         coverWrap.classList.remove('hidden');
     } else {
         coverWrap.classList.add('hidden');

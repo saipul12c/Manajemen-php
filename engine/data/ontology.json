@@ -1,0 +1,572 @@
+{
+    "fotosintesis": {
+        "name": "Fotosintesis Tumbuhan Hijau",
+        "domain": "Biokimia & Fisiologi Tanaman",
+        "keywords": [
+            "fotosintesis",
+            "tumbuhan",
+            "tanaman",
+            "klorofil",
+            "daun hijau",
+            "pohon"
+        ],
+        "tags": [
+            "fotosintesis",
+            "tumbuhan",
+            "klorofil",
+            "glukosa",
+            "oksigen",
+            "daun",
+            "tanaman"
+        ],
+        "requirements": [
+            {
+                "dimension": "carbon_source",
+                "description": "karbon dioksida (CO2) sebagai bahan dasar fiksasi karbon siklus Calvin",
+                "polarity": "co2_available"
+            },
+            {
+                "dimension": "water_solvent",
+                "description": "air dalam wujud cair (H2O cair) sebagai pelarut sitoplasma dan donor elektron fotosistem II",
+                "polarity": "liquid_water"
+            },
+            {
+                "dimension": "light_radiation",
+                "description": "foton cahaya matahari spektrum PAR (Photosynthetically Active Radiation, 400-700 nm)",
+                "polarity": "par_spectrum"
+            },
+            {
+                "dimension": "temperature",
+                "description": "suhu lingkungan hangat moderat (15°C hingga 35°C) untuk kinetika enzim klorofil dan RuBisCO",
+                "polarity": "warm_temperature"
+            }
+        ],
+        "vulnerabilities": [
+            {
+                "dimension": "temperature",
+                "description": "suhu beku ekstrem yang membekukan sitoplasma seluler dan mendenaturasi enzim klorofil",
+                "severity": "fatal"
+            },
+            {
+                "dimension": "water_solvent",
+                "description": "ketiadaan air cair di mana air hanya berupa es padat atau gas sublimasi",
+                "severity": "fatal"
+            },
+            {
+                "dimension": "radiation",
+                "description": "radiasi sinar ultraviolet (UV-B dan UV-C) serta partikel ion kosmik tinggi yang menghancurkan membran tilakoid",
+                "severity": "critical"
+            }
+        ],
+        "outputs": [
+            "glukosa (C6H12O6)",
+            "gas oksigen (O2)"
+        ],
+        "adaptations": [
+            "kubah rumah kaca (biodome) bertekanan dengan pemanas ruangan termal terkontrol",
+            "suplai irigasi air cair terkontrol dengan siklus pemurnian dan daur ulang tertutup",
+            "lapisan polimer pelindung anti-radiasi ultraviolet pada kaca kubah"
+        ],
+        "epistemic_assumptions": [
+            "Efisiensi fotosintesis diasumsikan menggunakan model tanaman C3/C4 terestrial standar.",
+            "Ketersediaan nutrisi makro/mikro tanah (nitrogen, fosfor, kalium) diasumsikan disuplai via sistem hidroponik buatan."
+        ]
+    },
+    "dna_genetika": {
+        "name": "Materi Genetik DNA & Sintesis Protein",
+        "domain": "Biologi Molekuler & Genetika",
+        "keywords": [
+            "dna",
+            "genetika",
+            "kromosom",
+            "gen",
+            "rekayasa genetika",
+            "mutasi"
+        ],
+        "tags": [
+            "dna",
+            "rna",
+            "genetika",
+            "nukleotida",
+            "kromosom",
+            "mutasi"
+        ],
+        "requirements": [
+            {
+                "dimension": "molecular_integrity",
+                "description": "integritas ikatan hidrogen basa nukleotida (Adenin-Timin, Guanin-Sitosin)",
+                "polarity": "stable_bonds"
+            },
+            {
+                "dimension": "temperature",
+                "description": "stabilitas termal seluler agar rantai ganda tidak terdenaturasi",
+                "polarity": "stable_temp"
+            },
+            {
+                "dimension": "computation_analysis",
+                "description": "pemetaan sekuens genom skala besar untuk mengenali varian kodon dan mutasi fungsional",
+                "polarity": "pattern_matching"
+            }
+        ],
+        "vulnerabilities": [
+            {
+                "dimension": "radiation",
+                "description": "radiasi kosmik dan sinar gamma berenergi tinggi yang memutus untai ganda DNA (double-strand break)",
+                "severity": "fatal"
+            }
+        ],
+        "outputs": [
+            "transkripsi RNA",
+            "translasi protein fungsional",
+            "pewarisan informasi genetik"
+        ],
+        "synergies": [
+            "Machine learning mampu mendeteksi korelasi pola genetik multi-lokus dan memprediksi struktur lipatan protein 3D",
+            "Analisis genom berskala gigabyte dapat dipercepat ribuan kali menggunakan model jaringan saraf tiruan"
+        ],
+        "adaptations": [
+            "perisai radiasi material tebal berbahan polietilena dengan kerapatan atom hidrogen tinggi",
+            "penyisipan gen enzim perbaikan DNA dari organisme ekstremofil (seperti Deinococcus radiodurans)"
+        ],
+        "epistemic_assumptions": [
+            "Kestabilan konformasi heliks ganda DNA sangat dipengaruhi oleh tingkat radiasi latar dan agen radikal bebas seluler."
+        ]
+    },
+    "organisme_ekstremofil": {
+        "name": "Organisme Ekstremofil",
+        "domain": "Astrobiologi",
+        "keywords": [
+            "ekstremofil",
+            "tardigrada",
+            "bakteri ekstrem",
+            "tahan radiasi",
+            "deinococcus"
+        ],
+        "tags": [
+            "ekstremofil",
+            "tardigrada",
+            "bakteri",
+            "radiasi",
+            "suhu_ekstrem"
+        ],
+        "requirements": [
+            {
+                "dimension": "energy_source",
+                "description": "substrat anorganik atau senyawa kimia untuk jalur kemosintesis metabolik",
+                "polarity": "chemical_energy"
+            }
+        ],
+        "properties": [
+            {
+                "dimension": "radiation",
+                "description": "daya tahan terhadap radiasi hingga ribuan Gray dan perbaikan DNA cepat",
+                "polarity": "radiation_resistant"
+            },
+            {
+                "dimension": "temperature",
+                "description": "toleransi suhu dari mendekati nol mutlak hingga di atas 100°C via fase kriptobiosis",
+                "polarity": "temperature_resistant"
+            }
+        ],
+        "outputs": [
+            "kelangsungan hidup pada tekanan vakum, radiasi tinggi, dan suhu ekstrem"
+        ],
+        "vulnerabilities": [
+            {
+                "dimension": "energy_source",
+                "description": "ketiadaan sumber energi dan senyawa pendonor elektron dalam kurun waktu ribuan tahun",
+                "severity": "moderate"
+            }
+        ],
+        "adaptations": [
+            "memasuki fase kriptobiosis (anhidrobiosis) untuk menonaktifkan aktivitas metabolisme sementara"
+        ],
+        "epistemic_assumptions": [
+            "Mekanisme kriptobiosis menghentikan metabolisme namun tidak menjamin regenerasi jika struktur seluler mengalami kerusakan radiasi kumulatif berlebih."
+        ]
+    },
+    "planet_mars": {
+        "name": "Kondisi Lingkungan Planet Mars",
+        "domain": "Astrofisika & Ilmu Keplanetan",
+        "keywords": [
+            "mars",
+            "planet mars",
+            "planet merah",
+            "atmosfer mars",
+            "tanah mars"
+        ],
+        "tags": [
+            "mars",
+            "planet",
+            "atmosfer",
+            "co2",
+            "dingin",
+            "astronomi",
+            "luar_angkasa"
+        ],
+        "properties": [
+            {
+                "dimension": "carbon_source",
+                "description": "atmosfer kaya karbon dioksida CO2 mencapai 95%",
+                "polarity": "co2_available"
+            },
+            {
+                "dimension": "temperature",
+                "description": "suhu rata-rata sangat dingin sekitar -60°C hingga -125°C",
+                "polarity": "extreme_cold"
+            },
+            {
+                "dimension": "pressure",
+                "description": "tekanan atmosfer sangat tipis hanya 0.6% dari Bumi (sekitar 610 Pascal)",
+                "polarity": "extreme_low_pressure"
+            },
+            {
+                "dimension": "water_solvent",
+                "description": "ketiadaan air cair di permukaan terbuka di mana air hanya ada sebagai es padat atau uap",
+                "polarity": "no_liquid_water"
+            },
+            {
+                "dimension": "radiation",
+                "description": "radiasi ultraviolet UV dan partikel kosmik tinggi karena ketiadaan medan magnet global dan ozon",
+                "polarity": "extreme_radiation"
+            }
+        ],
+        "limitations": [
+            "lingkungan terbuka bersifat fatal bagi organisme terestrial Bumi tanpa pelindung buatan"
+        ],
+        "epistemic_assumptions": [
+            "Data atmosfer Mars mengacu pada pembacaan rover dan satelit orbit (tekanan permukaan ~610 Pa, gas CO2 95.3%)."
+        ]
+    },
+    "gravitasi_nol_mikrogravitasi": {
+        "name": "Lingkungan Gravitasi Nol (Mikrogravitasi)",
+        "domain": "Fisika Antariksa & Dirgantara",
+        "keywords": [
+            "gravitasi nol",
+            "mikrogravitasi",
+            "tanpa gravitasi",
+            "luar angkasa",
+            "stasiun luar angkasa",
+            "iss"
+        ],
+        "tags": [
+            "gravitasi",
+            "mikrogravitasi",
+            "antariksa",
+            "orbit",
+            "apung"
+        ],
+        "properties": [
+            {
+                "dimension": "gravity_convection",
+                "description": "hilangnya gaya apung konveksi termal alami pada fluida (cairan dan gas)",
+                "polarity": "zero_buoyancy_no_natural_convection"
+            },
+            {
+                "dimension": "fluid_mechanics",
+                "description": "cairan membentuk tetesan bola sempurna akibat dominasi gaya tegangan permukaan",
+                "polarity": "surface_tension_dominance"
+            },
+            {
+                "dimension": "pressure",
+                "description": "hilangnya gradien tekanan hidrostatik pada kolom fluida",
+                "polarity": "no_hydrostatic_pressure"
+            },
+            {
+                "dimension": "radiation",
+                "description": "paparan radiasi partikel ion kosmik sekunder di lingkungan orbit",
+                "polarity": "moderate_to_high_radiation"
+            }
+        ],
+        "limitations": [
+            "kalor tidak dapat bergerak naik secara konvektif alami, memerlukan sirkulasi fluida paksa mekanis"
+        ],
+        "epistemic_assumptions": [
+            "Kondisi mikrogravitasi diasumsikan berada pada orbit rendah Bumi (LEO) dengan percepatan gravitasi efektif ~10^-6 g."
+        ]
+    },
+    "lubang_hitam": {
+        "name": "Lubang Hitam (Black Hole) & Singularitas",
+        "domain": "Relativitas Umum & Astrofisika Teoretis",
+        "keywords": [
+            "lubang hitam",
+            "black hole",
+            "singularitas",
+            "cakrawala peristiwa",
+            "event horizon"
+        ],
+        "tags": [
+            "black",
+            "hole",
+            "lubang",
+            "hitam",
+            "singularitas",
+            "gravitasi",
+            "relativitas"
+        ],
+        "properties": [
+            {
+                "dimension": "spacetime_curvature",
+                "description": "kelengkungan ruang dan waktu tak terhingga di titik singularitas pusat",
+                "polarity": "infinite_curvature"
+            },
+            {
+                "dimension": "gravity_escape",
+                "description": "kecepatan lepas melampaui kecepatan cahaya di dalam batas horizon peristiwa",
+                "polarity": "light_trapped"
+            },
+            {
+                "dimension": "time_dilation",
+                "description": "dilatasi waktu gravitasi ekstrem di mana waktu melambat tak hingga bagi pengamat luar",
+                "polarity": "extreme_time_dilation"
+            },
+            {
+                "dimension": "tidal_force",
+                "description": "gradien gaya pasang surut gravitasi ekstrem yang menimbulkan efek spagetifikasi partikel",
+                "polarity": "extreme_spaghettification"
+            }
+        ],
+        "limitations": [
+            "hukum fisika deterministik klasik runtuh di dalam cakrawala peristiwa"
+        ],
+        "epistemic_assumptions": [
+            "Metrik ruang waktu diasumsikan mengikuti solusi Schwarzschild untuk lubang hitam statis tak bermuatan."
+        ]
+    },
+    "hardware_cpu_ram": {
+        "name": "Arsitektur Komputer CPU & Disipasi Termal",
+        "domain": "Teknik Komputer & Perangkat Keras",
+        "keywords": [
+            "cpu",
+            "prosesor",
+            "ram",
+            "hardware",
+            "pendingin cpu",
+            "komputer",
+            "heatsink"
+        ],
+        "tags": [
+            "cpu",
+            "prosesor",
+            "hardware",
+            "pendingin",
+            "termal",
+            "panas",
+            "komputer"
+        ],
+        "requirements": [
+            {
+                "dimension": "power_supply",
+                "description": "suplai daya listrik DC stabil dengan regulasi voltase ketat",
+                "polarity": "stable_dc"
+            },
+            {
+                "dimension": "gravity_convection",
+                "description": "sistem pembuangan kalor termal (TDP) untuk mencegah overheating dan thermal throttling",
+                "polarity": "heat_dissipation_required"
+            },
+            {
+                "dimension": "radiation",
+                "description": "perlindungan dari interferensi gelombang elektromagnetik dan radiasi partikel ion",
+                "polarity": "low_radiation"
+            }
+        ],
+        "vulnerabilities": [
+            {
+                "dimension": "gravity_convection",
+                "description": "kegagalan disipasi termal jika aliran konveksi fluida terhenti menyebabkan thermal throttling drastis",
+                "severity": "fatal"
+            },
+            {
+                "dimension": "radiation",
+                "description": "radiasi partikel berenergi tinggi yang memicu single-event upset (bit-flip acak pada memori RAM)",
+                "severity": "critical"
+            }
+        ],
+        "adaptations": [
+            "sistem pendingin cair tertutup (closed-loop liquid cooling) dengan pompa mekanis aktif bertekanan positif",
+            "penerapan modul memori ECC (Error-Correcting Code) dan silikon kelas antariksa (radiation-hardened)"
+        ],
+        "epistemic_assumptions": [
+            "Disipasi termal CPU mengacu pada TDP mikroprosesor modern (~65W - 250W) pada batas junction temperature 100°C."
+        ]
+    },
+    "machine_learning_ai": {
+        "name": "Machine Learning & Kecerdasan Buatan",
+        "domain": "Ilmu Komputer & AI",
+        "keywords": [
+            "machine learning",
+            "artificial intelligence",
+            "kecerdasan buatan",
+            "deep learning",
+            "neural network",
+            "model ai"
+        ],
+        "tags": [
+            "ai",
+            "machine",
+            "learning",
+            "neural",
+            "network",
+            "algoritma",
+            "model"
+        ],
+        "requirements": [
+            {
+                "dimension": "computation_data",
+                "description": "ketersediaan data masukan representatif atau lingkungan simulasi parameter",
+                "polarity": "rich_data"
+            },
+            {
+                "dimension": "compute_infrastructure",
+                "description": "akselerator pemrosesan paralel matematis (GPU/TPU) dan matriks bobot stabil",
+                "polarity": "parallel_hardware"
+            }
+        ],
+        "properties": [
+            {
+                "dimension": "computation_analysis",
+                "description": "generalisasi pola multi-dimensi non-linear dan pencarian representasi di ruang laten",
+                "polarity": "pattern_matching"
+            }
+        ],
+        "outputs": [
+            "generalisasi pola multi-dimensi",
+            "inferensi prediktif",
+            "desain molekuler de novo"
+        ],
+        "synergies": [
+            "Machine learning mampu mengekstraksi keteraturan sekuens DNA miliaran pasang basa secara paralel",
+            "Mampu merancang struktur target molekul obat dan memprediksi afinitas ikatan reseptor seluler"
+        ],
+        "adaptations": [
+            "penggunaan kompresi kuantisasi bobot model (INT8/FP16) untuk efisiensi daya komputasi"
+        ],
+        "epistemic_assumptions": [
+            "Model AI diasumsikan telah dilatih pada representasi data biologis/fisika yang tidak mengalami pergeseran distribusi (covariate shift)."
+        ]
+    },
+    "termodinamika_kalor": {
+        "name": "Hukum Termodinamika & Kalor",
+        "domain": "Fisika Termal",
+        "keywords": [
+            "termodinamika",
+            "kalor",
+            "panas",
+            "suhu",
+            "konveksi",
+            "konduksi",
+            "entropi"
+        ],
+        "tags": [
+            "termodinamika",
+            "kalor",
+            "panas",
+            "suhu",
+            "konveksi",
+            "konduksi",
+            "entropi"
+        ],
+        "properties": [
+            {
+                "dimension": "heat_flow",
+                "description": "kalor mengalir spontan dari entitas bersuhu lebih tinggi ke lebih rendah",
+                "polarity": "thermal_gradient"
+            },
+            {
+                "dimension": "gravity_convection",
+                "description": "ketiadaan gravitasi meniadakan konveksi alami karena fluida panas kehilangan gaya apung pembeda massa jenis",
+                "polarity": "zero_buoyancy_no_natural_convection"
+            }
+        ],
+        "limitations": [
+            "efisiensi perpindahan kalor dibatasi oleh batas Carnot dan resistansi termal antarmuka material"
+        ],
+        "epistemic_assumptions": [
+            "Perhitungan konduksi mengacu pada hukum Fourier dan radiasi termal mengacu pada hukum Stefan-Boltzmann."
+        ]
+    },
+    "air_h2o": {
+        "name": "Senyawa Air (H2O) & Transisi Fase",
+        "domain": "Kimia Fisika",
+        "keywords": [
+            "air",
+            "h2o",
+            "air cair",
+            "es",
+            "titik beku",
+            "uap air"
+        ],
+        "tags": [
+            "air",
+            "h2o",
+            "cair",
+            "es",
+            "beku",
+            "titik_didih",
+            "senyawa"
+        ],
+        "properties": [
+            {
+                "dimension": "water_solvent",
+                "description": "berperan sebagai pelarut universal dipolar dan donor proton/elektron biologis",
+                "polarity": "liquid_water"
+            },
+            {
+                "dimension": "pressure_phase",
+                "description": "memiliki titik tripel pada 0.01°C dan tekanan 611.65 Pa; di bawah tekanan ini es langsung menyublim ke gas",
+                "polarity": "sublimation_boundary"
+            }
+        ],
+        "limitations": [
+            "memerlukan tekanan di atas 611 Pa dan suhu di atas 0°C untuk menjaga fase cair stabil"
+        ],
+        "epistemic_assumptions": [
+            "Karakteristik kesetimbangan fase air diasumsikan berada pada kondisi H2O murni tanpa salinitas tinggi."
+        ]
+    },
+    "reaktor_fusi_nuklir": {
+        "name": "Reaktor Fusi Nuklir Tokamak",
+        "domain": "Fisika Nuklir & Energi Tingkat Tinggi",
+        "keywords": [
+            "fusi nuklir",
+            "tokamak",
+            "reaktor fusi",
+            "plasma panas"
+        ],
+        "tags": [
+            "fusi",
+            "nuklir",
+            "plasma",
+            "tokamak",
+            "energi"
+        ],
+        "requirements": [
+            {
+                "dimension": "confinement_field",
+                "description": "medan magnet superkonduktor toroid untuk mengurung plasma 100 juta derajat Celsius",
+                "polarity": "magnetic_confinement"
+            }
+        ],
+        "properties": [
+            {
+                "dimension": "power_supply",
+                "description": "output energi listrik DC masif bersih tanpa emisi karbon",
+                "polarity": "stable_dc"
+            }
+        ],
+        "vulnerabilities": [
+            {
+                "dimension": "magnetic_stability",
+                "description": "instabilitas plasma magnetohidrodinamika yang memicu disrupsi dinding tokamak",
+                "severity": "critical"
+            }
+        ],
+        "adaptations": [
+            "sistem kumparan magnetik superkonduktor suhu tinggi (HTS)"
+        ],
+        "epistemic_assumptions": [
+            "Reaksi fusi diasumsikan menggunakan isotop Deuterium-Tritium (D-T) dengan rasio Q > 10."
+        ]
+    }
+}

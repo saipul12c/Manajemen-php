@@ -91,6 +91,10 @@ $qr_image_url = "https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
         .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; letter-spacing: 2px; }
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             .no-print { display: none !important; }
             body { background: white !important; color: black !important; padding: 0 !important; }
             .print-card { box-shadow: none !important; border: 1px solid #333 !important; border-radius: 0 !important; width: 100% !important; max-width: 100% !important; }
@@ -124,9 +128,17 @@ $qr_image_url = "https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin
         <!-- KOP Surat Resmi -->
         <div class="flex items-center justify-between border-b-2 border-slate-900 pb-5 mb-6">
             <div class="flex items-center gap-4">
-                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-700 text-white font-black text-2xl shadow-md">
-                    <i class="fa-solid fa-graduation-cap"></i>
-                </div>
+                <?php 
+                    $clean_ppdb_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../') : '';
+                    $ppdb_logo_exists = !empty($clean_ppdb_logo) && (strpos($clean_ppdb_logo, 'http') === 0 || file_exists(dirname(__DIR__) . '/' . resolveAssetUrl($school_info['school_logo'])));
+                ?>
+                <?php if ($ppdb_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_ppdb_logo) ?>" alt="Logo" class="h-16 w-16 object-contain shrink-0">
+                <?php else: ?>
+                    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-700 text-white font-black text-2xl shadow-md">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                <?php endif; ?>
                 <div>
                     <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">PANITIA PENERIMAAN PESERTA DIDIK BARU (PPDB)</h2>
                     <h3 class="text-base font-bold text-emerald-700 uppercase"><?= htmlspecialchars($school_info['school_name'] ?? 'SMA / SMK TERPADU INDONESIA') ?></h3>
@@ -338,16 +350,21 @@ $qr_image_url = "https://api.qrserver.com/v1/create-qr-code/?size=130x130&margin
         </div>
 
         <!-- Tanda Tangan Validasi -->
-        <div class="grid grid-cols-2 gap-8 text-center text-xs pt-4">
+        <div class="grid grid-cols-2 gap-8 text-center text-xs pt-4 items-end">
             <div>
                 <p class="text-slate-500 mb-16">Calon Peserta Didik Baru,</p>
                 <p class="font-bold text-slate-900 underline"><?= htmlspecialchars($student['full_name']) ?></p>
                 <p class="text-[10px] text-slate-400">NISN. <?= htmlspecialchars($student['nisn']) ?></p>
             </div>
             <div>
-                <p class="text-slate-500 mb-16">Panitia PPDB 2026/2027,</p>
-                <p class="font-bold text-slate-900 underline"><?= htmlspecialchars($school_info['headmaster_name'] ?? 'Dr. H. Bambang Sudirman, M.Pd') ?></p>
-                <p class="text-[10px] text-slate-400">NIP. <?= htmlspecialchars($school_info['headmaster_nip'] ?? '19750812 199903 1 002') ?></p>
+                <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
+                    'custom_title' => 'Panitia PPDB 2026/2027',
+                    'doc_type' => 'KARTU_PPDB',
+                    'doc_num' => $student['registration_no'],
+                    'student_name' => $student['full_name'],
+                    'show_city_date' => true,
+                    'align' => 'center'
+                ]) ?>
             </div>
         </div>
 

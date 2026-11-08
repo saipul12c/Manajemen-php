@@ -81,6 +81,10 @@ function terbilangRupiah($angka) {
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             .no-print { display: none !important; }
             body { background: white !important; color: black !important; padding: 0 !important; }
             .print-card { border: none !important; box-shadow: none !important; width: 100% !important; max-width: 100% !important; }
@@ -110,9 +114,17 @@ function terbilangRupiah($angka) {
         <!-- Header / School Kop -->
         <div class="border-b-2 border-slate-800 pb-5 mb-6 flex items-start justify-between">
             <div class="flex items-center gap-4">
-                <div class="h-16 w-16 rounded-2xl bg-slate-900 text-white flex items-center justify-center text-2xl font-black">
-                    <i class="fa-solid fa-graduation-cap text-blue-400"></i>
-                </div>
+                <?php 
+                    $clean_pay_logo = !empty($school['school_logo']) ? resolveAssetUrl($school['school_logo'], '../../') : '';
+                    $pay_logo_exists = !empty($clean_pay_logo) && (strpos($clean_pay_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school['school_logo'])));
+                ?>
+                <?php if ($pay_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_pay_logo) ?>" alt="Logo" class="h-16 w-16 object-contain shrink-0">
+                <?php else: ?>
+                    <div class="h-16 w-16 rounded-2xl bg-slate-900 text-white flex items-center justify-center text-2xl font-black shrink-0">
+                        <i class="fa-solid fa-graduation-cap text-blue-400"></i>
+                    </div>
+                <?php endif; ?>
                 <div>
                     <h1 class="text-xl font-black uppercase tracking-tight text-slate-900"><?= htmlspecialchars($school['school_name'] ?? 'Bina Bangsa Education') ?></h1>
                     <p class="text-xs text-slate-600"><?= htmlspecialchars($school['school_address'] ?? 'Jl. Pendidikan No. 45, Jakarta') ?></p>

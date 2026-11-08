@@ -40,31 +40,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $message = "Nama pemohon, nomor dokumen, dan keperluan wajib diisi.";
             $message_type = "error";
         } else {
-            // Upload Dokumen Scan Asli
+            // Upload Dokumen Scan Asli dengan validasi keamanan terpusat & EXIF strip
             if (isset($_FILES['document_file']) && $_FILES['document_file']['error'] === UPLOAD_ERR_OK) {
-                $file_tmp  = $_FILES['document_file']['tmp_name'];
-                $file_name = $_FILES['document_file']['name'];
-                $file_size = $_FILES['document_file']['size'];
-                $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                $allowed_ext   = ['pdf', 'jpg', 'jpeg', 'png'];
-                $allowed_mimes = ['application/pdf', 'image/jpeg', 'image/png'];
-
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $detected_mime = finfo_file($finfo, $file_tmp);
-                finfo_close($finfo);
-
-                if (!in_array($file_ext, $allowed_ext, true) || !in_array($detected_mime, $allowed_mimes, true)) {
-                    $message = "Format berkas tidak valid. Harap unggah berkas scan JPG, PNG, atau PDF asli.";
-                    $message_type = "error";
-                } elseif ($file_size > 12 * 1024 * 1024) {
-                    $message = "Ukuran file berkas melebihi batas maksimal 12MB.";
-                    $message_type = "error";
+                $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+                $uploadRes = saveSecureUpload(
+                    $_FILES['document_file'],
+                    'legalisir',
+                    $allowed,
+                    [],
+                    12 * 1024 * 1024,
+                    'leg'
+                );
+                if ($uploadRes['success']) {
+                    $file_original = $uploadRes['path'];
                 } else {
-                    $new_filename = 'leg_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
-                    $dest_path = $upload_legalisir_dir . '/' . $new_filename;
-                    if (move_uploaded_file($file_tmp, $dest_path)) {
-                        $file_original = 'uploads/legalisir/' . $new_filename;
-                    }
+                    $message = $uploadRes['error'];
+                    $message_type = "error";
                 }
             }
 
@@ -466,7 +457,7 @@ require_once __DIR__ . "/../includes/header.php";
                                 <td class="py-3.5 px-4 text-right whitespace-nowrap space-x-1">
                                     <!-- Lihat Berkas Asli Scan -->
                                     <?php if (!empty($row['file_original'])): ?>
-                                        <a href="../../<?= htmlspecialchars($row['file_original']) ?>" target="_blank" class="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition" title="Lihat Berkas Scan Asli">
+                                        <a href="<?= htmlspecialchars(resolveAssetUrl($row['file_original'], '../../')) ?>" target="_blank" class="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition" title="Lihat Berkas Scan Asli">
                                             <i class="fa-solid fa-file-lines text-xs"></i>
                                         </a>
                                     <?php endif; ?>

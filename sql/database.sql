@@ -1057,7 +1057,7 @@ ALTER TABLE `student_bills` ADD COLUMN IF NOT EXISTS `paid_at` DATETIME DEFAULT 
 ALTER TABLE `ppdb_registrations` ADD COLUMN IF NOT EXISTS `achievement_cert_doc` VARCHAR(255) DEFAULT NULL AFTER `photo_doc`;
 ALTER TABLE `ppdb_registrations` ADD COLUMN IF NOT EXISTS `achievements_json` LONGTEXT DEFAULT NULL AFTER `achievement_cert_doc`;
 
--- Seed Konfigurasi Tambahan Fase 1-5
+-- Seed Konfigurasi Tambahan Fase 1-5 & Identitas Lembaga
 INSERT IGNORE INTO `school_settings` (`setting_key`, `setting_value`) VALUES
 ('wa_gateway_provider', 'Fonnte (Simulated)'),
 ('wa_gateway_token', 'fonnte_demo_token_2026'),
@@ -1070,7 +1070,23 @@ INSERT IGNORE INTO `school_settings` (`setting_key`, `setting_value`) VALUES
 ('cbt_strict_mode', '1'),
 ('payroll_teaching_rate_hour', '50000'),
 ('payroll_homeroom_allowance', '500000'),
-('payroll_base_salary_default', '3000000');
+('payroll_base_salary_default', '3000000'),
+('school_npsn', '20108921'),
+('school_accreditation', 'Akreditasi A (Unggul)'),
+('school_curriculum', 'Kurikulum Merdeka'),
+('school_history', 'Didirikan dengan komitmen tinggi terhadap kualitas pembelajaran, kami memadukan kurikulum nasional berbasis kompetensi dengan pembelajaran digital modern. Sistem ini dirancang untuk memfasilitasi setiap aspek akademik, administratif, dan komunikasi antar stakeholder sekolah secara instan dan tanpa sekat birokrasi konvensional.'),
+('school_vision', 'Menjadi lembaga pendidikan terdepan yang menghasilkan insan berkarakter mulia, cerdas berteknologi, berwawasan lingkungan, serta unggul dalam persaingan global pada tahun 2030.'),
+('school_mission', 'Menyelenggarakan proses pembelajaran aktif, kreatif, dan berbasis teknologi mutakhir.\nMenanamkan nilai-nilai religiusitas, kejujuran, dan toleransi dalam kehidupan bersosial.\nMenerapkan tata kelola digital terpadu yang transparan, akuntabel, dan bebas kertas (paperless).\nMempererat sinergi aktif antara guru, orang tua, dan masyarakat demi perkembangan siswa.'),
+('school_work_hours_weekday', 'Senin – Jumat: 07.30 – 15.30 WIB'),
+('school_work_hours_weekend', 'Sabtu: 08.00 – 12.00 WIB (Terbatas)'),
+('social_instagram', 'https://instagram.com/binabangsa'),
+('social_youtube', 'https://youtube.com/@binabangsa'),
+('social_facebook', 'https://facebook.com/binabangsa'),
+('social_tiktok', 'https://tiktok.com/@binabangsa'),
+('maps_embed_url', ''),
+('ppdb_available_majors', 'MIPA (Matematika & IPA)\nIPS (Ilmu Pengetahuan Sosial)\nBahasa & Budaya\nTeknologi Informasi & Jaringan'),
+('hero_title', 'Pusat Informasi & Administrasi Digital'),
+('hero_description', 'Platform cerdas operasional sekolah yang mengintegrasikan Papan Pengumuman Resmi, Katalog Perpustakaan & E-Book, PPDB Online, hingga portal akademik terpadu untuk 5 role pengguna.');
 
 -- Sample Log Notifikasi WA
 INSERT INTO `wa_notification_logs` (`recipient_phone`, `recipient_name`, `message`, `category`, `status`, `gateway_provider`) VALUES
@@ -1279,4 +1295,44 @@ CREATE TABLE IF NOT EXISTS `extracurricular_achievements` (
     INDEX (`extracurricular_id`),
     INDEX (`level`),
     INDEX (`verification_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =========================================================
+-- TABEL MODUL LIVE CHAT (SEBELUM & SESUDAH LOGIN)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `live_chat_sessions` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_token` VARCHAR(64) NOT NULL UNIQUE,
+    `user_id` INT DEFAULT NULL,
+    `guest_name` VARCHAR(150) DEFAULT NULL,
+    `guest_email` VARCHAR(150) DEFAULT NULL,
+    `guest_phone` VARCHAR(50) DEFAULT NULL,
+    `role_label` VARCHAR(50) NOT NULL DEFAULT 'Tamu',
+    `department` VARCHAR(50) NOT NULL DEFAULT 'Umum',
+    `status` ENUM('active', 'closed') NOT NULL DEFAULT 'active',
+    `ip_address` VARCHAR(45) DEFAULT NULL,
+    `user_agent` TEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_lcs_token` (`session_token`),
+    INDEX `idx_lcs_user` (`user_id`),
+    INDEX `idx_lcs_status` (`status`),
+    INDEX `idx_lcs_updated` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `live_chat_messages` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_id` INT NOT NULL,
+    `sender_type` ENUM('guest', 'user', 'admin', 'bot') NOT NULL DEFAULT 'guest',
+    `sender_id` INT DEFAULT NULL,
+    `sender_name` VARCHAR(150) NOT NULL,
+    `message` TEXT NOT NULL,
+    `attachment_url` VARCHAR(255) DEFAULT NULL,
+    `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_lcm_session` (`session_id`),
+    INDEX `idx_lcm_read` (`is_read`),
+    INDEX `idx_lcm_created` (`created_at`),
+    CONSTRAINT `fk_lcm_session` FOREIGN KEY (`session_id`) REFERENCES `live_chat_sessions` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

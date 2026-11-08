@@ -1217,7 +1217,7 @@ try {
         <?php foreach ($dash_latest_news as $ln): ?>
             <?php 
                 $ln_cat = NEWS_CATEGORIES[$ln['category']] ?? ['label' => ucfirst($ln['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
-                $ln_thumb = !empty($ln['thumbnail']) ? '../uploads/news/' . htmlspecialchars($ln['thumbnail']) : null;
+                $ln_thumb = !empty($ln['thumbnail']) ? resolveAssetUrl($ln['thumbnail'], '../') : null;
             ?>
             <a href="../berita.php?id=<?= $ln['id'] ?>" class="group rounded-2xl border border-white/10 bg-slate-900/70 overflow-hidden hover:border-sky-500/40 hover:bg-slate-900/95 transition duration-300 flex flex-col justify-between shadow-lg">
                 <div>
@@ -1392,34 +1392,94 @@ try {
 <?php if ($user_role === 'administrator'): ?>
 
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-            <span class="text-xs text-slate-400 font-medium">Total Pengguna</span>
-            <p class="text-3xl font-extrabold text-white mt-2"><?= $total_users ?></p>
-            <a href="admin/users.php" class="text-xs text-blue-400 hover:underline mt-1 block">Kelola pengguna →</a>
+        <!-- 1. Total Pengguna -->
+        <div class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 sm:p-5 shadow-lg backdrop-blur hover:border-blue-500/40 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
+            <div class="flex items-center justify-between">
+                <span class="text-xs text-slate-400 font-medium">Total Akun</span>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400 group-hover:scale-110 transition">
+                    <i class="fa-solid fa-users text-sm"></i>
+                </span>
+            </div>
+            <p class="text-2xl sm:text-3xl font-extrabold text-white mt-3"><?= number_format($total_users) ?></p>
+            <div class="mt-2 pt-2 border-t border-white/5">
+                <a href="admin/users.php" class="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center justify-between">
+                    <span>Kelola Pengguna</span>
+                    <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                </a>
+            </div>
         </div>
 
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-            <span class="text-xs text-slate-400 font-medium">Surat Diproses</span>
-            <p class="text-3xl font-extrabold text-amber-300 mt-2"><?= $total_requests_pending ?></p>
-            <a href="surat/requests.php" class="text-xs text-amber-400 hover:underline mt-1 block">Lihat permohonan →</a>
+        <!-- 2. Surat Diproses -->
+        <div class="rounded-2xl border <?= $total_requests_pending > 0 ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/10 bg-slate-900/60' ?> p-4 sm:p-5 shadow-lg backdrop-blur hover:border-amber-500/50 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
+            <div class="flex items-center justify-between">
+                <span class="text-xs text-slate-400 font-medium">Surat Masuk</span>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 group-hover:scale-110 transition">
+                    <i class="fa-solid fa-file-lines text-sm"></i>
+                </span>
+            </div>
+            <div class="flex items-baseline gap-2 mt-3">
+                <p class="text-2xl sm:text-3xl font-extrabold text-amber-300"><?= $total_requests_pending ?></p>
+                <?php if ($total_requests_pending > 0): ?>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">Antrean</span>
+                <?php endif; ?>
+            </div>
+            <div class="mt-2 pt-2 border-t border-white/5">
+                <a href="surat/requests.php" class="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center justify-between">
+                    <span>Lihat Permohonan</span>
+                    <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                </a>
+            </div>
         </div>
 
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-            <span class="text-xs text-slate-400 font-medium">Tugas Belajar</span>
-            <p class="text-3xl font-extrabold text-emerald-300 mt-2"><?= $total_assignments ?></p>
-            <a href="akademik/assignments.php" class="text-xs text-emerald-400 hover:underline mt-1 block">Daftar tugas →</a>
+        <!-- 3. Tugas Belajar -->
+        <div class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 sm:p-5 shadow-lg backdrop-blur hover:border-emerald-500/40 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
+            <div class="flex items-center justify-between">
+                <span class="text-xs text-slate-400 font-medium">Tugas Aktif</span>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 group-hover:scale-110 transition">
+                    <i class="fa-solid fa-book-open text-sm"></i>
+                </span>
+            </div>
+            <p class="text-2xl sm:text-3xl font-extrabold text-emerald-300 mt-3"><?= number_format($total_assignments) ?></p>
+            <div class="mt-2 pt-2 border-t border-white/5">
+                <a href="akademik/assignments.php" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold flex items-center justify-between">
+                    <span>Daftar Tugas</span>
+                    <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                </a>
+            </div>
         </div>
 
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-            <span class="text-xs text-slate-400 font-medium">Ujian & Latihan</span>
-            <p class="text-3xl font-extrabold text-purple-300 mt-2"><?= $total_exams ?></p>
-            <a href="Modul-ujian/exams.php" class="text-xs text-purple-400 hover:underline mt-1 block">Kelola asesmen →</a>
+        <!-- 4. Ujian & Asesmen CBT -->
+        <div class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 sm:p-5 shadow-lg backdrop-blur hover:border-purple-500/40 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between group">
+            <div class="flex items-center justify-between">
+                <span class="text-xs text-slate-400 font-medium">Ujian CBT</span>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-500/15 text-purple-400 group-hover:scale-110 transition">
+                    <i class="fa-solid fa-file-pen text-sm"></i>
+                </span>
+            </div>
+            <p class="text-2xl sm:text-3xl font-extrabold text-purple-300 mt-3"><?= number_format($total_exams) ?></p>
+            <div class="mt-2 pt-2 border-t border-white/5">
+                <a href="Modul-ujian/exams.php" class="text-[11px] text-purple-400 hover:text-purple-300 font-semibold flex items-center justify-between">
+                    <span>Kelola Asesmen</span>
+                    <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                </a>
+            </div>
         </div>
 
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-5 col-span-2 sm:col-span-1">
-            <span class="text-xs text-slate-400 font-medium">Pengumuman Terbit</span>
-            <p class="text-3xl font-extrabold text-blue-300 mt-2"><?= count($latest_announcements) ?></p>
-            <a href="informasi/announcements.php" class="text-xs text-blue-400 hover:underline mt-1 block">Buka pengumuman →</a>
+        <!-- 5. Pengumuman Sekolah -->
+        <div class="rounded-2xl border border-white/10 bg-slate-900/60 p-4 sm:p-5 shadow-lg backdrop-blur hover:border-cyan-500/40 hover:-translate-y-0.5 transition duration-200 flex flex-col justify-between col-span-2 sm:col-span-1 group">
+            <div class="flex items-center justify-between">
+                <span class="text-xs text-slate-400 font-medium">Pengumuman</span>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-400 group-hover:scale-110 transition">
+                    <i class="fa-solid fa-bullhorn text-sm"></i>
+                </span>
+            </div>
+            <p class="text-2xl sm:text-3xl font-extrabold text-cyan-300 mt-3"><?= count($latest_announcements) ?></p>
+            <div class="mt-2 pt-2 border-t border-white/5">
+                <a href="informasi/announcements.php" class="text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold flex items-center justify-between">
+                    <span>Buka Informasi</span>
+                    <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                </a>
+            </div>
         </div>
     </div>
 
@@ -1566,67 +1626,104 @@ try {
 <?php elseif ($user_role === 'guru'): ?>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Tugas yang Sedang Dibagikan -->
-        <div class="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-6">
-            <div class="flex items-center justify-between mb-4">
+        <!-- Ruang Kerja KBM & Pembelajaran Guru (Sistem Tab Cerdas) -->
+        <div class="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl backdrop-blur">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-white/5">
                 <div>
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <i class="fa-solid fa-book-open text-emerald-400"></i> Tugas Pembelajaran yang Anda Buat
+                        <i class="fa-solid fa-layer-group text-blue-400"></i> Ruang Kerja KBM Guru
                     </h3>
-                    <p class="text-xs text-slate-400 mt-0.5">Daftar tugas yang sedang aktif dan dikerjakan oleh siswa.</p>
+                    <p class="text-xs text-slate-400 mt-0.5">Kelola penugasan, paket ujian CBT, dan jadwal mengajar hari ini.</p>
                 </div>
-                <a href="akademik/assignments.php" class="text-xs font-semibold text-emerald-400 hover:text-emerald-300">
-                    Kelola Tugas →
-                </a>
+                
+                <!-- Tab Navigation Pills -->
+                <div class="inline-flex p-1 rounded-2xl bg-slate-950/80 border border-white/10 text-xs font-semibold self-start sm:self-auto overflow-x-auto max-w-full">
+                    <button type="button" onclick="switchDashboardTab('guru_kbm', 'tab_guru_tugas', this)" 
+                            class="tab-btn-guru_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 bg-blue-600 text-white shadow-md shadow-blue-500/20 cursor-pointer" 
+                            data-tab-group="guru_kbm" data-tab-target="tab_guru_tugas">
+                        <i class="fa-solid fa-book-open"></i>
+                        <span>Tugas</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/20 text-white"><?= count($my_assignments) ?></span>
+                    </button>
+                    <button type="button" onclick="switchDashboardTab('guru_kbm', 'tab_guru_ujian', this)" 
+                            class="tab-btn-guru_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer" 
+                            data-tab-group="guru_kbm" data-tab-target="tab_guru_ujian">
+                        <i class="fa-solid fa-file-pen"></i>
+                        <span>Ujian CBT</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/10 text-slate-300"><?= count($my_exams) ?></span>
+                    </button>
+                    <button type="button" onclick="switchDashboardTab('guru_kbm', 'tab_guru_jadwal', this)" 
+                            class="tab-btn-guru_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer" 
+                            data-tab-group="guru_kbm" data-tab-target="tab_guru_jadwal">
+                        <i class="fa-solid fa-calendar-day"></i>
+                        <span>Jadwal Hari Ini</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/10 text-slate-300"><?= count($dash_today_schedules) ?></span>
+                    </button>
+                </div>
             </div>
 
-            <?php if (empty($my_assignments)): ?>
-                <div class="p-8 text-center text-slate-400 text-xs">
-                    Anda belum membuat tugas pelajaran. Klik tombol "Buat Tugas Baru" untuk menambahkan tugas.
+            <!-- TAB 1: TUGAS PEMBELAJARAN GURU -->
+            <div id="tab_guru_tugas" class="tab-panel-guru_kbm space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Daftar tugas yang sedang aktif dan dikerjakan siswa:</span>
+                    <a href="akademik/assignments.php" class="font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <span>Kelola Tugas</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                    </a>
                 </div>
-            <?php else: ?>
-                <div class="space-y-3">
-                    <?php foreach ($my_assignments as $asg): ?>
-                        <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex items-center justify-between gap-4">
-                            <div>
-                                <span class="rounded px-2 py-0.5 text-[10px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 mb-1 inline-block">
-                                    <?= htmlspecialchars($asg['subject']) ?>
-                                </span>
-                                <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($asg['title']) ?></h4>
-                                <p class="text-xs text-slate-400">Batas Waktu: <?= date('d M Y', strtotime($asg['due_date'])) ?></p>
-                            </div>
-                            <a href="akademik/assignments.php" class="text-xs text-blue-400 hover:underline">
-                                Detail →
-                            </a>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
 
-            <!-- Modul Ujian & Latihan yang Anda Kelola -->
-            <div class="mt-6 border-t border-white/10 pt-6">
-                <div class="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 class="text-base font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-file-pen text-blue-400"></i> Paket Ujian & Latihan yang Anda Buat
-                        </h3>
-                        <p class="text-xs text-slate-400 mt-0.5">Asesmen UTS, UKK, Ujian Harian Fleksibel, & Latihan Siswa.</p>
+                <?php if (empty($my_assignments)): ?>
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-clipboard-check text-2xl text-slate-600 mb-1"></i>
+                        <span>Anda belum membuat tugas pelajaran aktif.</span>
+                        <a href="akademik/assignments.php" class="mt-2 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition text-xs">
+                            <i class="fa-solid fa-plus mr-1"></i> Buat Tugas Baru
+                        </a>
                     </div>
-                    <a href="Modul-ujian/exams.php" class="text-xs font-semibold text-blue-400 hover:text-blue-300">
-                        Buka Semua (<?= count($my_exams) ?>) →
+                <?php else: ?>
+                    <div class="space-y-3">
+                        <?php foreach ($my_assignments as $asg): ?>
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex items-center justify-between gap-4">
+                                <div>
+                                    <span class="rounded px-2 py-0.5 text-[10px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 mb-1 inline-block">
+                                        <?= htmlspecialchars($asg['subject']) ?>
+                                    </span>
+                                    <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($asg['title']) ?></h4>
+                                    <p class="text-xs text-slate-400 mt-0.5">Batas Pengumpulan: <strong class="text-amber-300"><?= date('d M Y', strtotime($asg['due_date'])) ?></strong></p>
+                                </div>
+                                <a href="akademik/assignments.php" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-blue-400 hover:text-blue-300 transition shrink-0">
+                                    Detail & Nilai →
+                                </a>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- TAB 2: PAKET UJIAN CBT GURU -->
+            <div id="tab_guru_ujian" class="tab-panel-guru_kbm hidden space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Asesmen UTS, UKK, Ujian Harian, & Latihan Siswa:</span>
+                    <a href="Modul-ujian/exams.php" class="font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <span>Buka Semua (<?= count($my_exams) ?>)</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </a>
                 </div>
 
                 <?php if (empty($my_exams)): ?>
-                    <div class="p-6 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5">
-                        Anda belum membuat paket ujian atau latihan. Klik tombol di samping untuk membuat.
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-circle-plus text-2xl text-slate-600 mb-1"></i>
+                        <span>Anda belum membuat paket ujian atau latihan CBT.</span>
+                        <a href="Modul-ujian/exams.php" class="mt-2 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition text-xs">
+                            <i class="fa-solid fa-plus mr-1"></i> Buat Ujian / Latihan
+                        </a>
                     </div>
                 <?php else: ?>
                     <div class="space-y-3">
                         <?php foreach ($my_exams as $ex): 
                             $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
                         ?>
-                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div>
                                     <div class="flex items-center gap-2 mb-1">
                                         <span class="rounded px-2 py-0.5 text-[10px] font-bold border <?= $c_info['badge'] ?>">
@@ -1640,12 +1737,63 @@ try {
                                         Peserta: <strong class="text-emerald-400"><?= $ex['sub_count'] ?></strong> siswa • KKM: <?= $ex['passing_grade'] ?>
                                     </p>
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <a href="Modul-ujian/exam_questions.php?id=<?= $ex['id'] ?>" class="rounded-lg bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-semibold text-white transition">
-                                        Soal (<?= $ex['q_count'] ?>)
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <a href="Modul-ujian/exam_questions.php?id=<?= $ex['id'] ?>" class="rounded-xl bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-semibold text-white transition">
+                                        <i class="fa-solid fa-list-ol mr-1"></i> Soal (<?= $ex['q_count'] ?>)
                                     </a>
-                                    <a href="Modul-ujian/exam_results.php?id=<?= $ex['id'] ?>" class="rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-3 py-1.5 text-xs font-semibold text-blue-300 transition">
-                                        Nilai (<?= $ex['sub_count'] ?>)
+                                    <a href="Modul-ujian/exam_results.php?id=<?= $ex['id'] ?>" class="rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-3 py-1.5 text-xs font-semibold text-blue-300 transition">
+                                        <i class="fa-solid fa-chart-simple mr-1"></i> Nilai (<?= $ex['sub_count'] ?>)
+                                    </a>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- TAB 3: JADWAL MENGAJAR HARI INI GURU -->
+            <div id="tab_guru_jadwal" class="tab-panel-guru_kbm hidden space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Jadwal mengajar kelas pada hari <strong><?= $today_id_name ?></strong>:</span>
+                    <a href="akademik/timetable.php" class="font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <span>Lihat Jadwal Lengkap</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                    </a>
+                </div>
+
+                <?php if (empty($dash_today_schedules)): ?>
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-mug-hot text-2xl text-slate-600 mb-1"></i>
+                        <span>Tidak ada jadwal mengajar pada hari <strong><?= $today_id_name ?></strong>.</span>
+                        <p class="text-[11px] text-slate-500">Anda dapat memanfaatkan waktu untuk menyusun RPP atau memeriksa tugas siswa.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="space-y-3">
+                        <?php foreach ($dash_today_schedules as $sch): ?>
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div class="flex items-center gap-3.5">
+                                    <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400 shrink-0 text-base">
+                                        <i class="fa-solid fa-chalkboard-user"></i>
+                                    </span>
+                                    <div>
+                                        <div class="flex items-center gap-2 mb-0.5">
+                                            <span class="text-xs font-bold px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                                <?= htmlspecialchars($sch['class_name'] ?? 'Kelas') ?>
+                                            </span>
+                                            <h4 class="text-sm font-bold text-white"><?= htmlspecialchars($sch['subject'] ?? 'Pelajaran') ?></h4>
+                                        </div>
+                                        <p class="text-xs text-slate-400">
+                                            <i class="fa-solid fa-clock text-slate-500 mr-1"></i>
+                                            <?= substr($sch['start_time'], 0, 5) ?> - <?= substr($sch['end_time'], 0, 5) ?> WIB
+                                            <?php if (!empty($sch['room'])): ?>
+                                                • <i class="fa-solid fa-location-dot text-slate-500 mr-1"></i> Ruang: <?= htmlspecialchars($sch['room']) ?>
+                                            <?php endif; ?>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="shrink-0 flex items-center gap-2">
+                                    <a href="akademik/journal.php?class_id=<?= $sch['class_id'] ?>" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20">
+                                        <i class="fa-solid fa-pen-to-square"></i> Isi Jurnal
                                     </a>
                                 </div>
                             </div>
@@ -1926,72 +2074,158 @@ try {
     <?php endif; ?>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Pantauan Tugas Anak -->
-        <div class="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-6">
-            <div class="flex items-center justify-between mb-4">
+        <!-- Ruang Pemantauan Belajar Anak (Sistem Tab Cerdas) -->
+        <div class="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl backdrop-blur">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-white/5">
                 <div>
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <i class="fa-solid fa-book-open text-purple-400"></i> Pemantauan Tugas Pembelajaran Anak
+                        <i class="fa-solid fa-shield-cat text-purple-400"></i> Pemantauan Pembelajaran Ananda
                     </h3>
-                    <p class="text-xs text-slate-400 mt-0.5">Daftar tugas pelajaran aktif dari guru untuk siswa.</p>
+                    <p class="text-xs text-slate-400 mt-0.5">Pantau tugas, rekap nilai ujian, dan jadwal pelajaran harian anak.</p>
                 </div>
-                <a href="akademik/assignments.php" class="text-xs font-semibold text-purple-400 hover:text-purple-300">
-                    Buka Semua →
-                </a>
+                
+                <!-- Tab Navigation Pills -->
+                <div class="inline-flex p-1 rounded-2xl bg-slate-950/80 border border-white/10 text-xs font-semibold self-start sm:self-auto overflow-x-auto max-w-full">
+                    <button type="button" onclick="switchDashboardTab('parent_kbm', 'tab_parent_tugas', this)" 
+                            class="tab-btn-parent_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 bg-blue-600 text-white shadow-md shadow-blue-500/20 cursor-pointer" 
+                            data-tab-group="parent_kbm" data-tab-target="tab_parent_tugas">
+                        <i class="fa-solid fa-book-open"></i>
+                        <span>Tugas Anak</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/20 text-white"><?= count($active_assignments) ?></span>
+                    </button>
+                    <button type="button" onclick="switchDashboardTab('parent_kbm', 'tab_parent_ujian', this)" 
+                            class="tab-btn-parent_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer" 
+                            data-tab-group="parent_kbm" data-tab-target="tab_parent_ujian">
+                        <i class="fa-solid fa-file-pen"></i>
+                        <span>Ujian & Evaluasi</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/10 text-slate-300"><?= count($active_exams) ?></span>
+                    </button>
+                    <button type="button" onclick="switchDashboardTab('parent_kbm', 'tab_parent_jadwal', this)" 
+                            class="tab-btn-parent_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer" 
+                            data-tab-group="parent_kbm" data-tab-target="tab_parent_jadwal">
+                        <i class="fa-solid fa-calendar-day"></i>
+                        <span>Jadwal Pelajaran</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/10 text-slate-300"><?= count($dash_today_schedules) ?></span>
+                    </button>
+                </div>
             </div>
 
-            <div class="space-y-3">
-                <?php foreach ($active_assignments as $asg): ?>
-                    <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex items-center justify-between gap-4">
-                        <div>
-                            <span class="rounded px-2 py-0.5 text-[10px] font-semibold border border-purple-500/30 bg-purple-500/10 text-purple-300 mb-1 inline-block">
-                                <?= htmlspecialchars($asg['subject']) ?>
-                            </span>
-                            <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($asg['title']) ?></h4>
-                            <p class="text-xs text-slate-400">Guru Pengampu: <?= htmlspecialchars($asg['teacher_name']) ?></p>
-                        </div>
-                        <span class="text-xs text-amber-300 font-medium">
-                            Deadline: <?= date('d M Y', strtotime($asg['due_date'])) ?>
-                        </span>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-
-            <!-- Pantauan Ujian & Latihan Anak -->
-            <div class="mt-6 border-t border-white/10 pt-6">
-                <div class="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 class="text-base font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-file-pen text-purple-400"></i> Pemantauan Ujian & Latihan Anak
-                        </h3>
-                        <p class="text-xs text-slate-400 mt-0.5">Jadwal UTS, UKK, Ujian Harian, dan Latihan Rutin.</p>
-                    </div>
-                    <a href="Modul-ujian/exams.php" class="text-xs font-semibold text-purple-400 hover:text-purple-300">
-                        Buka Semua (<?= count($active_exams) ?>) →
+            <!-- TAB 1: PANTAUAN TUGAS ANAK -->
+            <div id="tab_parent_tugas" class="tab-panel-parent_kbm space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Daftar tugas pelajaran aktif dari guru untuk ananda:</span>
+                    <a href="akademik/assignments.php" class="font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1">
+                        <span>Buka Modul Tugas</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </a>
                 </div>
 
-                <div class="space-y-3">
-                    <?php foreach ($active_exams as $ex): 
-                        $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
-                    ?>
-                        <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div>
-                                <div class="flex items-center gap-2 mb-1">
-                                    <span class="rounded px-2 py-0.5 text-[10px] font-bold border <?= $c_info['badge'] ?>">
-                                        <?= $c_info['icon'] ?> <?= htmlspecialchars($c_info['label']) ?>
+                <?php if (empty($active_assignments)): ?>
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-circle-check text-2xl text-emerald-400 mb-1"></i>
+                        <span class="text-white font-semibold">Tidak ada tugas aktif untuk ananda saat ini.</span>
+                        <p class="text-[11px] text-slate-400">Semua tugas telah diserahkan atau belum ada tugas baru.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="space-y-3">
+                        <?php foreach ($active_assignments as $asg): ?>
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex items-center justify-between gap-4">
+                                <div>
+                                    <span class="rounded px-2 py-0.5 text-[10px] font-semibold border border-purple-500/30 bg-purple-500/10 text-purple-300 mb-1 inline-block">
+                                        <?= htmlspecialchars($asg['subject']) ?>
                                     </span>
-                                    <span class="text-xs font-semibold text-blue-400"><?= htmlspecialchars($ex['subject']) ?></span>
+                                    <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($asg['title']) ?></h4>
+                                    <p class="text-xs text-slate-400 mt-0.5">Guru Pengampu: <?= htmlspecialchars($asg['teacher_name']) ?></p>
                                 </div>
-                                <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($ex['title']) ?></h4>
-                                <p class="text-xs text-slate-400 mt-0.5">Guru: <?= htmlspecialchars($ex['teacher_name']) ?> • KKM: <strong class="text-white"><?= $ex['passing_grade'] ?></strong></p>
+                                <span class="text-xs text-amber-300 font-semibold shrink-0">
+                                    Deadline: <?= date('d M Y', strtotime($asg['due_date'])) ?>
+                                </span>
                             </div>
-                            <a href="Modul-ujian/exams.php" class="rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 px-3.5 py-1.5 text-xs font-semibold text-purple-300 transition text-center">
-                                Pantau Nilai →
-                            </a>
-                        </div>
-                    <?php endforeach; ?>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- TAB 2: PANTAUAN UJIAN & REMEDIAL ANAK -->
+            <div id="tab_parent_ujian" class="tab-panel-parent_kbm hidden space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Jadwal UTS, UKK, Ujian Harian, dan Latihan Rutin:</span>
+                    <a href="Modul-ujian/exams.php" class="font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1">
+                        <span>Buka Semua (<?= count($active_exams) ?>)</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                    </a>
                 </div>
+
+                <?php if (empty($active_exams)): ?>
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-shield text-2xl text-slate-600 mb-1"></i>
+                        <span class="text-white font-semibold">Tidak ada ujian atau latihan yang sedang berlangsung.</span>
+                        <p class="text-[11px] text-slate-400">Pantau pengumuman sekolah saat periode ujian semester.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="space-y-3">
+                        <?php foreach ($active_exams as $ex): 
+                            $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
+                        ?>
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="rounded px-2 py-0.5 text-[10px] font-bold border <?= $c_info['badge'] ?>">
+                                            <?= $c_info['icon'] ?> <?= htmlspecialchars($c_info['label']) ?>
+                                        </span>
+                                        <span class="text-xs font-semibold text-blue-400"><?= htmlspecialchars($ex['subject']) ?></span>
+                                    </div>
+                                    <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($ex['title']) ?></h4>
+                                    <p class="text-xs text-slate-400 mt-0.5">Guru: <?= htmlspecialchars($ex['teacher_name']) ?> • KKM: <strong class="text-white"><?= $ex['passing_grade'] ?></strong></p>
+                                </div>
+                                <a href="Modul-ujian/exams.php" class="rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 px-3.5 py-1.5 text-xs font-semibold text-purple-300 transition text-center shrink-0">
+                                    Pantau Nilai →
+                                </a>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- TAB 3: JADWAL PELAJARAN ANAK -->
+            <div id="tab_parent_jadwal" class="tab-panel-parent_kbm hidden space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Jadwal KBM kelas ananda pada hari <strong><?= $today_id_name ?></strong>:</span>
+                    <a href="akademik/timetable.php" class="font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1">
+                        <span>Jadwal Lengkap</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                    </a>
+                </div>
+
+                <?php if (empty($dash_today_schedules)): ?>
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-mug-hot text-2xl text-slate-600 mb-1"></i>
+                        <span class="text-white font-semibold">Tidak ada jadwal KBM ananda pada hari <strong><?= $today_id_name ?></strong>.</span>
+                    </div>
+                <?php else: ?>
+                    <div class="space-y-3">
+                        <?php foreach ($dash_today_schedules as $sch): ?>
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div class="flex items-center gap-3.5">
+                                    <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-500/15 text-purple-400 shrink-0 text-base">
+                                        <i class="fa-solid fa-book"></i>
+                                    </span>
+                                    <div>
+                                        <h4 class="text-sm font-bold text-white"><?= htmlspecialchars($sch['subject'] ?? 'Pelajaran') ?></h4>
+                                        <p class="text-xs text-slate-400 mt-0.5">
+                                            <i class="fa-solid fa-clock text-slate-500 mr-1"></i>
+                                            <?= substr($sch['start_time'], 0, 5) ?> - <?= substr($sch['end_time'], 0, 5) ?> WIB
+                                            • <i class="fa-solid fa-chalkboard-user text-slate-500 mr-1"></i> <?= htmlspecialchars($sch['teacher_name'] ?? 'Guru Pengampu') ?>
+                                            <?php if (!empty($sch['room'])): ?>
+                                                • <i class="fa-solid fa-location-dot text-slate-500 mr-1"></i> R. <?= htmlspecialchars($sch['room']) ?>
+                                            <?php endif; ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -2244,107 +2478,193 @@ try {
     <?php endif; ?>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Checklist Tugas Siswa -->
-        <div class="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-6">
-            <div class="flex items-center justify-between mb-4">
+        <!-- Ruang Belajar & Asesmen Siswa (Sistem Tab Cerdas) -->
+        <div class="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl backdrop-blur">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-white/5">
                 <div>
                     <h3 class="text-base font-bold text-white flex items-center gap-2">
-                        <i class="fa-solid fa-book-open-reader text-blue-400"></i> Tugas Belajar Aktif Anda
+                        <i class="fa-solid fa-graduation-cap text-blue-400"></i> Ruang Belajar & Evaluasi Siswa
                     </h3>
-                    <p class="text-xs text-slate-400 mt-0.5">Kerjakan dan tandai tugas yang sudah Anda selesaikan.</p>
+                    <p class="text-xs text-slate-400 mt-0.5">Pantau tugas mandiri, ikuti ujian CBT, dan cek jadwal KBM hari ini.</p>
                 </div>
-                <a href="akademik/assignments.php" class="text-xs font-semibold text-blue-400 hover:text-blue-300">
-                    Lihat Semua Tugas →
-                </a>
+                
+                <!-- Tab Navigation Pills -->
+                <div class="inline-flex p-1 rounded-2xl bg-slate-950/80 border border-white/10 text-xs font-semibold self-start sm:self-auto overflow-x-auto max-w-full">
+                    <button type="button" onclick="switchDashboardTab('siswa_kbm', 'tab_siswa_tugas', this)" 
+                            class="tab-btn-siswa_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 bg-blue-600 text-white shadow-md shadow-blue-500/20 cursor-pointer" 
+                            data-tab-group="siswa_kbm" data-tab-target="tab_siswa_tugas">
+                        <i class="fa-solid fa-book-open-reader"></i>
+                        <span>Tugas Aktif</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/20 text-white"><?= count($active_assignments) ?></span>
+                    </button>
+                    <button type="button" onclick="switchDashboardTab('siswa_kbm', 'tab_siswa_ujian', this)" 
+                            class="tab-btn-siswa_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer" 
+                            data-tab-group="siswa_kbm" data-tab-target="tab_siswa_ujian">
+                        <i class="fa-solid fa-file-pen"></i>
+                        <span>Ujian & Latihan</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/10 text-slate-300"><?= count($active_exams) ?></span>
+                    </button>
+                    <button type="button" onclick="switchDashboardTab('siswa_kbm', 'tab_siswa_jadwal', this)" 
+                            class="tab-btn-siswa_kbm px-3.5 py-1.5 rounded-xl transition flex items-center gap-2 text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer" 
+                            data-tab-group="siswa_kbm" data-tab-target="tab_siswa_jadwal">
+                        <i class="fa-solid fa-calendar-day"></i>
+                        <span>Jadwal Hari Ini</span>
+                        <span class="tab-badge px-1.5 py-0.5 rounded-full text-[10px] bg-white/10 text-slate-300"><?= count($dash_today_schedules) ?></span>
+                    </button>
+                </div>
             </div>
 
-            <?php if (empty($active_assignments)): ?>
-                <div class="p-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-circle-check text-emerald-400"></i> Tidak ada tugas aktif saat ini.
-                </div>
-            <?php else: ?>
-                <div class="space-y-3">
-                    <?php foreach ($active_assignments as $asg): 
-                        $is_done = (($my_submissions[$asg['id']] ?? '') === 'selesai');
-                    ?>
-                        <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div>
-                                <span class="rounded px-2 py-0.5 text-[10px] font-semibold border border-blue-500/30 bg-blue-500/10 text-blue-300 mb-1 inline-block">
-                                    <?= htmlspecialchars($asg['subject']) ?>
-                                </span>
-                                <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($asg['title']) ?></h4>
-                                <p class="text-xs text-slate-400">Guru: <?= htmlspecialchars($asg['teacher_name']) ?> • Deadline: <span class="text-amber-300"><?= date('d M Y', strtotime($asg['due_date'])) ?></span></p>
-                            </div>
-                            <div>
-                                <a href="akademik/assignments.php?toggle_id=<?= $asg['id'] ?>" 
-                                   class="inline-flex items-center justify-center gap-1.5 py-1.5 px-3.5 rounded-xl text-xs font-semibold transition <?= $is_done ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white' ?>">
-                                    <i class="fa-solid fa-check text-xs"></i> <?= $is_done ? 'Selesai' : 'Tandai Selesai' ?>
-                                </a>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- Modul Ujian & Latihan Siswa -->
-            <div class="mt-6 border-t border-white/10 pt-6">
-                <div class="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 class="text-base font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-file-pen text-blue-400"></i> Ujian & Latihan Belajar Anda
-                        </h3>
-                        <p class="text-xs text-slate-400 mt-0.5">Penilaian UTS, UKK, Ujian Harian, serta Latihan Harian/Mingguan/Bulanan.</p>
-                    </div>
-                    <a href="Modul-ujian/exams.php" class="text-xs font-semibold text-blue-400 hover:text-blue-300">
-                        Buka Semua (<?= count($active_exams) ?>) →
+            <!-- TAB 1: TUGAS BELAJAR SISWA -->
+            <div id="tab_siswa_tugas" class="tab-panel-siswa_kbm space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Kerjakan dan tandai tugas yang sudah Anda selesaikan:</span>
+                    <a href="akademik/assignments.php" class="font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <span>Lihat Semua Tugas</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </a>
                 </div>
 
-                <div class="space-y-3">
-                    <?php foreach ($active_exams as $ex): 
-                        $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
-                        $sub_info = $my_exam_subs[$ex['id']] ?? null;
-                        $already_done = ($sub_info !== null);
-                        $my_score = $already_done ? (float) $sub_info['score'] : 0;
-                        $remedial_ready = $already_done && !empty($sub_info['remedial_granted']);
-                    ?>
-                        <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div>
-                                <div class="flex flex-wrap items-center gap-2 mb-1">
-                                    <span class="rounded px-2 py-0.5 text-[10px] font-bold border <?= $c_info['badge'] ?>">
-                                        <?= $c_info['icon'] ?> <?= htmlspecialchars($c_info['label']) ?>
+                <?php if (empty($active_assignments)): ?>
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-circle-check text-2xl text-emerald-400 mb-1"></i>
+                        <span class="text-white font-semibold">Tidak ada tugas aktif saat ini.</span>
+                        <p class="text-[11px] text-slate-400">Semua tugas telah diselesaikan atau belum ada penugasan baru dari guru.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="space-y-3">
+                        <?php foreach ($active_assignments as $asg): 
+                            $is_done = (($my_submissions[$asg['id']] ?? '') === 'selesai');
+                        ?>
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                    <span class="rounded px-2 py-0.5 text-[10px] font-semibold border border-blue-500/30 bg-blue-500/10 text-blue-300 mb-1 inline-block">
+                                        <?= htmlspecialchars($asg['subject']) ?>
                                     </span>
-                                    <span class="text-xs font-semibold text-blue-400"><?= htmlspecialchars($ex['subject']) ?></span>
-                                    <?php if ($ex['duration_minutes'] == 0): ?>
-                                        <span class="text-[10px] text-emerald-400 font-semibold"><i class="fa-solid fa-bolt mr-1"></i>Fleksibel</span>
+                                    <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($asg['title']) ?></h4>
+                                    <p class="text-xs text-slate-400 mt-0.5">Guru: <?= htmlspecialchars($asg['teacher_name']) ?> • Deadline: <span class="text-amber-300 font-semibold"><?= date('d M Y', strtotime($asg['due_date'])) ?></span></p>
+                                </div>
+                                <div class="shrink-0">
+                                    <a href="akademik/assignments.php?toggle_id=<?= $asg['id'] ?>" 
+                                       class="inline-flex items-center justify-center gap-1.5 py-1.5 px-3.5 rounded-xl text-xs font-semibold transition <?= $is_done ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-500/20' ?>">
+                                        <i class="fa-solid fa-check text-xs"></i> <?= $is_done ? 'Selesai' : 'Tandai Selesai' ?>
+                                    </a>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- TAB 2: UJIAN CBT & LATIHAN SISWA -->
+            <div id="tab_siswa_ujian" class="tab-panel-siswa_kbm hidden space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Penilaian UTS, UKK, Ujian Harian, serta Latihan Rutin:</span>
+                    <a href="Modul-ujian/exams.php" class="font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <span>Buka Semua (<?= count($active_exams) ?>)</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                    </a>
+                </div>
+
+                <?php if (empty($active_exams)): ?>
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-mug-hot text-2xl text-slate-600 mb-1"></i>
+                        <span class="text-white font-semibold">Tidak ada ujian atau latihan yang sedang aktif.</span>
+                        <p class="text-[11px] text-slate-400">Pantau pengumuman guru untuk jadwal asesmen mendatang.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="space-y-3">
+                        <?php foreach ($active_exams as $ex): 
+                            $c_info = EXAM_CATEGORIES[$ex['category']] ?? ['label' => $ex['category'], 'badge' => 'border-slate-500 bg-slate-500/10 text-slate-300', 'icon' => '<i class="fa-solid fa-file-pen"></i>'];
+                            $sub_info = $my_exam_subs[$ex['id']] ?? null;
+                            $already_done = ($sub_info !== null);
+                            $my_score = $already_done ? (float) $sub_info['score'] : 0;
+                            $remedial_ready = $already_done && !empty($sub_info['remedial_granted']);
+                        ?>
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                                        <span class="rounded px-2 py-0.5 text-[10px] font-bold border <?= $c_info['badge'] ?>">
+                                            <?= $c_info['icon'] ?> <?= htmlspecialchars($c_info['label']) ?>
+                                        </span>
+                                        <span class="text-xs font-semibold text-blue-400"><?= htmlspecialchars($ex['subject']) ?></span>
+                                        <?php if ($ex['duration_minutes'] == 0): ?>
+                                            <span class="text-[10px] text-emerald-400 font-semibold"><i class="fa-solid fa-bolt mr-1"></i>Fleksibel</span>
+                                        <?php else: ?>
+                                            <span class="text-[10px] text-amber-400 font-semibold"><i class="fa-solid fa-stopwatch mr-1"></i><?= $ex['duration_minutes'] ?> Menit</span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($ex['token'])): ?>
+                                            <span class="text-[10px] text-amber-300 font-mono font-bold bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded"><i class="fa-solid fa-lock text-[9px] mr-1"></i>Token</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($ex['title']) ?></h4>
+                                    <p class="text-xs text-slate-400 mt-0.5">Guru: <?= htmlspecialchars($ex['teacher_name']) ?> • KKM: <?= $ex['passing_grade'] ?></p>
+                                </div>
+                                <div class="shrink-0">
+                                    <?php if ($remedial_ready): ?>
+                                        <a href="Modul-ujian/exam_take.php?id=<?= $ex['id'] ?>&remedial=1" class="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3.5 py-1.5 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/25 transition">
+                                            <i class="fa-solid fa-rotate mr-1"></i> Kerjakan Remedial
+                                        </a>
+                                    <?php elseif ($already_done): ?>
+                                        <a href="Modul-ujian/exam_results.php?id=<?= $ex['id'] ?>" class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 transition">
+                                            <span>Nilai: <?= number_format($my_score, 0) ?></span> <i class="fa-solid fa-arrow-right text-xs"></i>
+                                        </a>
                                     <?php else: ?>
-                                        <span class="text-[10px] text-amber-400 font-semibold"><i class="fa-solid fa-stopwatch mr-1"></i><?= $ex['duration_minutes'] ?> Menit</span>
-                                    <?php endif; ?>
-                                    <?php if (!empty($ex['token'])): ?>
-                                        <span class="text-[10px] text-amber-300 font-mono font-bold bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded"><i class="fa-solid fa-lock text-[9px] mr-1"></i>Token</span>
+                                        <a href="Modul-ujian/exam_take.php?id=<?= $ex['id'] ?>" class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition">
+                                            <i class="fa-solid fa-pen mr-1"></i> Kerjakan
+                                        </a>
                                     <?php endif; ?>
                                 </div>
-                                <h4 class="text-sm font-semibold text-white"><?= htmlspecialchars($ex['title']) ?></h4>
-                                <p class="text-xs text-slate-400 mt-0.5">Guru: <?= htmlspecialchars($ex['teacher_name']) ?> • KKM: <?= $ex['passing_grade'] ?></p>
                             </div>
-                            <div>
-                                <?php if ($remedial_ready): ?>
-                                    <a href="Modul-ujian/exam_take.php?id=<?= $ex['id'] ?>&remedial=1" class="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3.5 py-1.5 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/25 transition">
-                                        <i class="fa-solid fa-rotate mr-1"></i> Kerjakan Remedial
-                                    </a>
-                                <?php elseif ($already_done): ?>
-                                    <a href="Modul-ujian/exam_results.php?id=<?= $ex['id'] ?>" class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 transition">
-                                        <span>Nilai: <?= number_format($my_score, 0) ?></span> <i class="fa-solid fa-arrow-right text-xs"></i>
-                                    </a>
-                                <?php else: ?>
-                                    <a href="Modul-ujian/exam_take.php?id=<?= $ex['id'] ?>" class="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition">
-                                        <i class="fa-solid fa-pen mr-1"></i> Kerjakan
-                                    </a>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- TAB 3: JADWAL PELAJARAN HARI INI SISWA -->
+            <div id="tab_siswa_jadwal" class="tab-panel-siswa_kbm hidden space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span>Jadwal KBM kelas Anda pada hari <strong><?= $today_id_name ?></strong>:</span>
+                    <a href="akademik/timetable.php" class="font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <span>Lihat Kalender Lengkap</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                    </a>
                 </div>
+
+                <?php if (empty($dash_today_schedules)): ?>
+                    <div class="p-8 text-center text-slate-400 text-xs rounded-2xl bg-slate-900/40 border border-white/5 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-mug-hot text-2xl text-slate-600 mb-1"></i>
+                        <span class="text-white font-semibold">Tidak ada jadwal KBM pada hari <strong><?= $today_id_name ?></strong>.</span>
+                        <p class="text-[11px] text-slate-500">Gunakan hari ini untuk mengulang materi atau istirahat bersama keluarga.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="space-y-3">
+                        <?php foreach ($dash_today_schedules as $sch): ?>
+                            <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div class="flex items-center gap-3.5">
+                                    <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400 shrink-0 text-base">
+                                        <i class="fa-solid fa-book"></i>
+                                    </span>
+                                    <div>
+                                        <h4 class="text-sm font-bold text-white"><?= htmlspecialchars($sch['subject'] ?? 'Pelajaran') ?></h4>
+                                        <p class="text-xs text-slate-400 mt-0.5">
+                                            <i class="fa-solid fa-clock text-slate-500 mr-1"></i>
+                                            <?= substr($sch['start_time'], 0, 5) ?> - <?= substr($sch['end_time'], 0, 5) ?> WIB
+                                            • <i class="fa-solid fa-chalkboard-user text-slate-500 mr-1"></i> <?= htmlspecialchars($sch['teacher_name'] ?? 'Guru Pengampu') ?>
+                                            <?php if (!empty($sch['room'])): ?>
+                                                • <i class="fa-solid fa-location-dot text-slate-500 mr-1"></i> R. <?= htmlspecialchars($sch['room']) ?>
+                                            <?php endif; ?>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="shrink-0">
+                                    <a href="akademik/materials.php" class="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-book-open"></i> Bahan Ajar
+                                    </a>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -2458,6 +2778,65 @@ try {
     </div>
 
 <?php endif; ?>
+
+<!-- Script Tab Switcher Dashboard Multi-Role (KBM Guru, Siswa, & Orang Tua) -->
+<script>
+function switchDashboardTab(group, targetId, btnEl) {
+    if (!group || !targetId) return;
+
+    // 1. Sembunyikan semua panel dalam grup ini
+    const panels = document.querySelectorAll('.tab-panel-' + group);
+    panels.forEach(p => p.classList.add('hidden'));
+
+    // 2. Tampilkan panel yang dipilih
+    const target = document.getElementById(targetId);
+    if (target) {
+        target.classList.remove('hidden');
+    }
+
+    // 3. Update styling tombol tab dalam grup tombol
+    if (btnEl && btnEl.parentElement) {
+        const allBtns = btnEl.parentElement.querySelectorAll('.tab-btn-' + group);
+        allBtns.forEach(b => {
+            b.classList.remove('bg-blue-600', 'text-white', 'shadow-md', 'shadow-blue-500/20');
+            b.classList.add('text-slate-400', 'hover:text-white', 'hover:bg-white/5');
+            const bBadge = b.querySelector('.tab-badge');
+            if (bBadge) {
+                bBadge.classList.remove('bg-white/20', 'text-white');
+                bBadge.classList.add('bg-white/10', 'text-slate-300');
+            }
+        });
+
+        btnEl.classList.remove('text-slate-400', 'hover:text-white', 'hover:bg-white/5');
+        btnEl.classList.add('bg-blue-600', 'text-white', 'shadow-md', 'shadow-blue-500/20');
+        const activeBadge = btnEl.querySelector('.tab-badge');
+        if (activeBadge) {
+            activeBadge.classList.remove('bg-white/10', 'text-slate-300');
+            activeBadge.classList.add('bg-white/20', 'text-white');
+        }
+    }
+
+    // 4. Simpan preferensi tab aktif di LocalStorage agar bertahan saat refresh
+    try {
+        localStorage.setItem('dash_active_tab_' + group, targetId);
+    } catch(e) {}
+}
+
+// Pulihkan tab terakhir yang dibuka saat halaman dimuat
+document.addEventListener('DOMContentLoaded', () => {
+    ['guru_kbm', 'siswa_kbm', 'parent_kbm'].forEach(group => {
+        try {
+            const savedTab = localStorage.getItem('dash_active_tab_' + group);
+            if (savedTab) {
+                const btn = document.querySelector(`[data-tab-group="${group}"][data-tab-target="${savedTab}"]`);
+                if (btn) {
+                    btn.click();
+                }
+            }
+        } catch(e) {}
+    });
+});
+</script>
 
 <?php if ($dash_weather_active): ?>
 <script>

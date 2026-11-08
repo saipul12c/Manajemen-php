@@ -63,48 +63,25 @@ $error_msg = null;
 $search_result = null;
 
 /**
- * Helper Validasi & Upload Berkas PPDB Terproteksi
+ * Helper Validasi & Upload Berkas PPDB Terproteksi Terpusat (Strip EXIF & Decompression Bomb Protection)
  */
 function handlePpdbUpload(array $file, string $field_key, string $upload_dir): ?string {
     if (!isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
         return null;
     }
-    if ($file['size'] > 5 * 1024 * 1024) { // Max 5MB
-        return null;
-    }
+    
     $allowed_exts = ['pdf', 'jpg', 'jpeg', 'png'];
-    $allowed_mimes = ['application/pdf', 'image/jpeg', 'image/pjpeg', 'image/png'];
+    $res = saveSecureUpload(
+        $file,
+        'ppdb',
+        $allowed_exts,
+        [],
+        5 * 1024 * 1024,
+        $field_key
+    );
     
-    $file_ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($file_ext, $allowed_exts, true)) {
-        return null;
-    }
-    
-    // Verifikasi MIME Type Asli via finfo atau mime_content_type
-    $file_mime = '';
-    if (function_exists('finfo_open')) {
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        if ($finfo) {
-            $file_mime = finfo_file($finfo, $file['tmp_name']);
-            finfo_close($finfo);
-        }
-    } elseif (function_exists('mime_content_type')) {
-        $file_mime = mime_content_type($file['tmp_name']);
-    }
-    
-    if ($file_mime && !in_array(strtolower($file_mime), $allowed_mimes, true)) {
-        return null;
-    }
-    
-    if (!is_dir($upload_dir)) {
-        mkdir($upload_dir, 0755, true);
-    }
-    
-    $new_filename = $field_key . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $file_ext;
-    $target_path = rtrim($upload_dir, '/\\') . '/' . $new_filename;
-    
-    if (move_uploaded_file($file['tmp_name'], $target_path)) {
-        return 'uploads/ppdb/' . $new_filename;
+    if ($res['success']) {
+        return $res['path'];
     }
     return null;
 }
@@ -467,6 +444,10 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
 
     <main class="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
 
+        <?php
+        $percent_quota = $ppdb_quota > 0 ? min(100, round(($total_registrants / $ppdb_quota) * 100, 1)) : 0;
+        $remaining_quota = max(0, $ppdb_quota - $total_registrants);
+        ?>
         <!-- Hero Banner -->
         <div class="relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 p-6 sm:p-10 mb-8 backdrop-blur shadow-2xl">
             <div class="relative z-10 max-w-3xl">
@@ -481,7 +462,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
 
                     <div class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-mono text-slate-300">
                         <i class="fa-solid fa-users text-slate-400 text-[11px]"></i>
-                        <span>Kuota: <strong class="text-white"><?= $total_registrants ?></strong> / <?= $ppdb_quota ?> Pendaftar</span>
+                        <span>Kuota: <strong class="text-white"><?= $total_registrants ?></strong> / <?= $ppdb_quota ?> Kursi</span>
                     </div>
                 </div>
 
@@ -491,6 +472,21 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                 <p class="mt-3 text-sm sm:text-base text-slate-300 leading-relaxed">
                     Sistem pendaftaran calon siswa terpadu. Pilih jalur masuk (Reguler, Zonasi, Prestasi, Afirmasi), input nilai rapor, unggah berkas administrasi secara digital, dan pantau status seleksi Anda langsung dari halaman ini.
                 </p>
+
+                <!-- Quota Capacity Live Progress Bar -->
+                <div class="mt-6 pt-5 border-t border-white/10 max-w-xl">
+                    <div class="flex items-center justify-between text-xs mb-2">
+                        <span class="text-slate-300 flex items-center gap-1.5 font-medium">
+                            <i class="fa-solid fa-chart-pie text-emerald-400"></i> Kapasitas Kuota Penerimaan:
+                        </span>
+                        <span class="font-mono font-bold text-white">
+                            <?= $percent_quota ?>% Terisi <span class="text-slate-400 font-normal">(Sisa <?= $remaining_quota ?> Kursi)</span>
+                        </span>
+                    </div>
+                    <div class="w-full bg-slate-950/80 rounded-full h-2.5 overflow-hidden border border-white/5 p-0.5">
+                        <div class="h-full rounded-full bg-gradient-to-r <?= $percent_quota >= 90 ? 'from-amber-500 to-rose-500' : 'from-emerald-500 to-teal-400' ?> transition-all duration-1000 shadow-sm" style="width: <?= $percent_quota ?>%;"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -780,314 +776,618 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
 
                 </div>
             <?php else: ?>
-                <!-- FORM PENDAFTARAN -->
-                <form action="ppdb.php?tab=daftar" method="POST" enctype="multipart/form-data" class="space-y-8">
+                <!-- FORM PENDAFTARAN WIZARD MULTI-STEP -->
+                <form action="ppdb.php?tab=daftar" method="POST" enctype="multipart/form-data" id="ppdbRegistrationForm" class="space-y-6">
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="register_ppdb">
 
-                    <!-- 1. Biodata Calon Siswa -->
-                    <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl">
-                        <div class="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
-                            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-lg text-blue-400">
-                                <i class="fa-solid fa-user"></i>
-                            </span>
-                            <div>
-                                <h3 class="text-lg font-bold text-white">1. Biodata Calon Siswa</h3>
-                                <p class="text-xs text-slate-400">Informasi identitas pribadi calon peserta didik baru</p>
+                    <!-- Stepper Progress Header -->
+                    <div class="rounded-3xl border border-white/10 bg-slate-900/60 p-4 sm:p-6 backdrop-blur shadow-xl">
+                        <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/5">
+                            <div class="flex items-center gap-2.5">
+                                <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 text-sm">
+                                    <i class="fa-solid fa-list-check"></i>
+                                </span>
+                                <div>
+                                    <h4 class="text-xs sm:text-sm font-bold text-white">Alur Pendaftaran Calon Siswa Baru</h4>
+                                    <p class="text-[11px] text-slate-400">Lengkapi 5 tahapan pengisian data di bawah ini secara bertahap</p>
+                                </div>
                             </div>
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono font-bold text-emerald-400" id="stepPillBadge">
+                                Tahap 1 dari 5
+                            </span>
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
-                            <div class="sm:col-span-2">
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Nama Lengkap Siswa *</label>
-                                <input type="text" name="full_name" required placeholder="Contoh: Rian Pratama"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                        <!-- Stepper Grid Buttons -->
+                        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3" id="wizardStepper">
+                            <!-- Step 1 -->
+                            <button type="button" class="step-nav-btn active flex items-center gap-2.5 rounded-2xl p-2.5 sm:p-3 text-left transition border border-emerald-500/40 bg-emerald-500/10 text-emerald-300" data-step="1">
+                                <span class="step-badge flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow">1</span>
+                                <div class="truncate">
+                                    <span class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Tahap 1</span>
+                                    <strong class="block text-xs truncate">Biodata Diri</strong>
+                                </div>
+                            </button>
+                            <!-- Step 2 -->
+                            <button type="button" class="step-nav-btn flex items-center gap-2.5 rounded-2xl p-2.5 sm:p-3 text-left transition border border-white/5 bg-slate-950/40 text-slate-400 hover:text-slate-200" data-step="2">
+                                <span class="step-badge flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white/10 text-slate-300 font-bold text-xs">2</span>
+                                <div class="truncate">
+                                    <span class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Tahap 2</span>
+                                    <strong class="block text-xs truncate">Sekolah & Jalur</strong>
+                                </div>
+                            </button>
+                            <!-- Step 3 -->
+                            <button type="button" class="step-nav-btn flex items-center gap-2.5 rounded-2xl p-2.5 sm:p-3 text-left transition border border-white/5 bg-slate-950/40 text-slate-400 hover:text-slate-200" data-step="3">
+                                <span class="step-badge flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white/10 text-slate-300 font-bold text-xs">3</span>
+                                <div class="truncate">
+                                    <span class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Tahap 3</span>
+                                    <strong class="block text-xs truncate">Orang Tua</strong>
+                                </div>
+                            </button>
+                            <!-- Step 4 -->
+                            <button type="button" class="step-nav-btn flex items-center gap-2.5 rounded-2xl p-2.5 sm:p-3 text-left transition border border-white/5 bg-slate-950/40 text-slate-400 hover:text-slate-200" data-step="4">
+                                <span class="step-badge flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white/10 text-slate-300 font-bold text-xs">4</span>
+                                <div class="truncate">
+                                    <span class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Tahap 4</span>
+                                    <strong class="block text-xs truncate">Upload Berkas</strong>
+                                </div>
+                            </button>
+                            <!-- Step 5 -->
+                            <button type="button" class="step-nav-btn col-span-2 sm:col-span-1 flex items-center gap-2.5 rounded-2xl p-2.5 sm:p-3 text-left transition border border-white/5 bg-slate-950/40 text-slate-400 hover:text-slate-200" data-step="5">
+                                <span class="step-badge flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white/10 text-slate-300 font-bold text-xs">5</span>
+                                <div class="truncate">
+                                    <span class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Tahap 5</span>
+                                    <strong class="block text-xs truncate">Konfirmasi Data</strong>
+                                </div>
+                            </button>
+                        </div>
+
+                        <!-- Stepper Percentage Bar -->
+                        <div class="mt-4 w-full bg-slate-950/80 rounded-full h-1.5 overflow-hidden border border-white/5">
+                            <div id="stepProgressBar" class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300" style="width: 20%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- TAHAP 1: BIODATA CALON SISWA                    -->
+                    <!-- ============================================== -->
+                    <div class="step-card" id="stepSection1">
+                        <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl">
+                            <div class="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
+                                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/10 text-lg text-blue-400 shadow-inner">
+                                    <i class="fa-solid fa-user"></i>
+                                </span>
+                                <div>
+                                    <h3 class="text-lg font-bold text-white">1. Biodata Calon Siswa Baru</h3>
+                                    <p class="text-xs text-slate-400">Pastikan seluruh data identitas diisi sesuai dokumen kependudukan resmi (KK/Akta)</p>
+                                </div>
                             </div>
 
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">NISN (10 Digit Angka) *</label>
-                                <input type="text" name="nisn" required maxlength="10" pattern="[0-9]{10}" placeholder="Contoh: 0081234567"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition font-mono">
-                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                                <div class="sm:col-span-2">
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Nama Lengkap Siswa *</label>
+                                    <input type="text" name="full_name" id="inp_full_name" required placeholder="Contoh: Rian Pratama"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                </div>
 
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">NIK Siswa (Opsional)</label>
-                                <input type="text" name="nik" maxlength="16" placeholder="Contoh: 3201011203080001"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition font-mono">
-                            </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">NISN (10 Digit Angka) *</label>
+                                    <input type="text" name="nisn" id="inp_nisn" required maxlength="10" pattern="[0-9]{10}" placeholder="Contoh: 0081234567"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition font-mono">
+                                    <span class="text-[10px] text-slate-500 mt-1 block">Wajib 10 digit angka valid</span>
+                                </div>
 
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Jenis Kelamin *</label>
-                                <select name="gender" required
-                                        class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                                    <option value="L">Laki-Laki (L)</option>
-                                    <option value="P">Perempuan (P)</option>
-                                </select>
-                            </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">NIK Siswa (Opsional / Sesuai KK)</label>
+                                    <input type="text" name="nik" id="inp_nik" maxlength="16" placeholder="Contoh: 3201011203080001"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition font-mono">
+                                </div>
 
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Agama</label>
-                                <select name="religion"
-                                        class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                                    <option value="Islam">Islam</option>
-                                    <option value="Kristen">Kristen Protestan</option>
-                                    <option value="Katolik">Katolik</option>
-                                    <option value="Hindu">Hindu</option>
-                                    <option value="Buddha">Buddha</option>
-                                    <option value="Konghucu">Konghucu</option>
-                                </select>
-                            </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Jenis Kelamin *</label>
+                                    <select name="gender" id="inp_gender" required
+                                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                        <option value="L">Laki-Laki (L)</option>
+                                        <option value="P">Perempuan (P)</option>
+                                    </select>
+                                </div>
 
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Tempat Lahir *</label>
-                                <input type="text" name="birth_place" required placeholder="Contoh: Jakarta"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                            </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Agama</label>
+                                    <select name="religion" id="inp_religion"
+                                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                        <option value="Islam">Islam</option>
+                                        <option value="Kristen">Kristen Protestan</option>
+                                        <option value="Katolik">Katolik</option>
+                                        <option value="Hindu">Hindu</option>
+                                        <option value="Buddha">Buddha</option>
+                                        <option value="Konghucu">Konghucu</option>
+                                    </select>
+                                </div>
 
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Tanggal Lahir *</label>
-                                <input type="date" name="birth_date" required id="regBirthDate"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                            </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Tempat Lahir *</label>
+                                    <input type="text" name="birth_place" id="inp_birth_place" required placeholder="Contoh: Jakarta"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                </div>
 
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">No. HP / WhatsApp Siswa *</label>
-                                <input type="tel" name="phone" required placeholder="Contoh: 081234567890"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition font-mono">
-                            </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Tanggal Lahir *</label>
+                                    <input type="date" name="birth_date" id="regBirthDate" required
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                </div>
 
-                            <div class="sm:col-span-2">
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Alamat Email Aktif *</label>
-                                <input type="email" name="email" required placeholder="Contoh: siswa@gmail.com"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                                <span class="text-[11px] text-slate-500 mt-1 block">Email ini akan digunakan sebagai akun login portal saat diterima.</span>
-                            </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">No. HP / WhatsApp Siswa *</label>
+                                    <input type="tel" name="phone" id="inp_phone" required placeholder="Contoh: 081234567890"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition font-mono">
+                                </div>
 
-                            <div class="sm:col-span-3">
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Alamat Lengkap Tempat Tinggal *</label>
-                                <textarea name="address" required rows="2" placeholder="Nama Jalan, RT/RW, Kelurahan, Kecamatan, Kota/Kabupaten..."
-                                          class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition"></textarea>
+                                <div class="sm:col-span-2">
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Alamat Email Aktif *</label>
+                                    <input type="email" name="email" id="inp_email" required placeholder="Contoh: siswa@gmail.com"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                    <span class="text-[11px] text-slate-500 mt-1 block">Email ini akan digunakan sebagai akun login portal akademik setelah kelulusan.</span>
+                                </div>
+
+                                <div class="sm:col-span-3">
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Alamat Lengkap Domisili Siswa *</label>
+                                    <textarea name="address" id="inp_address" required rows="2" placeholder="Nama Jalan, RT/RW, Kelurahan, Kecamatan, Kota/Kabupaten..."
+                                              class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition"></textarea>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- 2. Asal Sekolah, Pilihan Jurusan & Jalur Pendaftaran -->
-                    <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl">
-                        <div class="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
-                            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-lg text-emerald-400">
-                                <i class="fa-solid fa-school"></i>
-                            </span>
-                            <div>
-                                <h3 class="text-lg font-bold text-white">2. Asal Sekolah, Peminatan & Jalur Masuk</h3>
-                                <p class="text-xs text-slate-400">Tentukan jurusan yang dituju serta jalur seleksi yang Anda ikuti</p>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Asal Sekolah (SMP / MTs) *</label>
-                                <input type="text" name="previous_school" required placeholder="Contoh: SMP Negeri 1 Jakarta"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                            </div>
-
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Pilihan Jurusan / Peminatan *</label>
-                                <select name="chosen_major" required
-                                        class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                                    <option value="MIPA (Matematika & IPA)">MIPA (Matematika & IPA)</option>
-                                    <option value="IPS (Ilmu Pengetahuan Sosial)">IPS (Ilmu Pengetahuan Sosial)</option>
-                                    <option value="Bahasa & Budaya">Bahasa & Budaya</option>
-                                    <option value="Teknologi Informasi & Jaringan">Teknologi Informasi & Jaringan</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Jalur Seleksi PPDB *</label>
-                                <select name="track_type" id="trackSelect" required onchange="toggleTrackInputs()"
-                                        class="w-full rounded-xl border border-emerald-500/30 bg-slate-950 px-4 py-2.5 text-sm text-emerald-400 font-bold focus:border-emerald-500 focus:outline-none transition">
-                                    <option value="reguler">Reguler / Tes Akademik</option>
-                                    <option value="zonasi">Zonasi Domisili (Radius KM)</option>
-                                    <option value="prestasi">Jalur Prestasi (Akademik / Lomba)</option>
-                                    <option value="afirmasi">Afirmasi / KIP / Bantuan Sosial</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Sub-Form Dinamis Berdasarkan Jalur -->
-                        <div id="zonasiBox" class="hidden mt-5 p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
-                            <label class="block text-xs font-bold text-emerald-400 mb-1.5"><i class="fa-solid fa-location-dot mr-1"></i> Jarak Domisili ke Sekolah (KM) *</label>
-                            <input type="number" step="0.01" min="0" max="50" name="distance_km" id="distanceKmInput" placeholder="Contoh: 1.5 (dalam Kilometer)"
-                                   class="w-full sm:w-80 rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
-                            <span class="text-[11px] text-slate-400 mt-1 block">Jarak di bawah 1 KM akan memperoleh prioritas poin zonasi maksimal.</span>
-                        </div>
-
-                        <!-- Dynamic Multi-Certificate Prestasi Builder (Maks. 10) -->
-                        <div id="prestasiBox" class="hidden mt-5 p-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 space-y-4">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/20 pb-3">
+                    <!-- ============================================== -->
+                    <!-- TAHAP 2: ASAL SEKOLAH, JURUSAN & JALUR MASUK    -->
+                    <!-- ============================================== -->
+                    <div class="step-card hidden" id="stepSection2">
+                        <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl">
+                            <div class="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
+                                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-lg text-emerald-400 shadow-inner">
+                                    <i class="fa-solid fa-school"></i>
+                                </span>
                                 <div>
-                                    <h4 class="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-2">
-                                        <i class="fa-solid fa-trophy text-amber-400"></i>
-                                        <span>Daftar Sertifikat & Piagam Prestasi</span>
-                                    </h4>
-                                    <p class="text-[11px] text-slate-400 mt-0.5">
-                                        Tambahkan prestasi lomba (maksimal 10). Skor akhir dihitung dari kejuaraan tertinggi.
-                                    </p>
-                                </div>
-                                <div class="shrink-0">
-                                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-xs font-mono font-bold text-amber-300">
-                                        <span id="certCounter">1</span> / 10 Sertifikat
-                                    </span>
+                                    <h3 class="text-lg font-bold text-white">2. Asal Sekolah, Peminatan Jurusan & Jalur Masuk</h3>
+                                    <p class="text-xs text-slate-400">Tentukan jurusan pilihan serta jalur seleksi yang akan Anda tempuh</p>
                                 </div>
                             </div>
 
-                            <div id="certItemsContainer" class="space-y-3">
-                                <!-- Item 1 (Default) -->
-                                <div class="cert-item rounded-xl border border-white/10 bg-slate-950/80 p-4 space-y-3" data-index="0">
-                                    <div class="flex items-center justify-between text-xs font-semibold text-slate-300">
-                                        <span class="cert-badge flex items-center gap-1.5 text-amber-400">
-                                            <i class="fa-solid fa-medal"></i> Sertifikat #1
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Asal Sekolah (SMP / MTs) *</label>
+                                    <input type="text" name="previous_school" id="inp_previous_school" required placeholder="Contoh: SMP Negeri 1 Jakarta"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Pilihan Jurusan / Peminatan *</label>
+                                    <select name="chosen_major" id="inp_chosen_major" required
+                                            class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                        <?php 
+                                        $ppdb_majors = function_exists('getSchoolMajors') ? getSchoolMajors($pdo) : ['MIPA (Matematika & IPA)', 'IPS (Ilmu Pengetahuan Sosial)', 'Bahasa & Budaya', 'Teknologi Informasi & Jaringan'];
+                                        foreach ($ppdb_majors as $m_item):
+                                        ?>
+                                            <option value="<?= htmlspecialchars($m_item) ?>" <?= (isset($draft['chosen_major']) && $draft['chosen_major'] === $m_item) ? 'selected' : '' ?>><?= htmlspecialchars($m_item) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Jalur Seleksi PPDB *</label>
+                                    <select name="track_type" id="trackSelect" required onchange="toggleTrackInputs()"
+                                            class="w-full rounded-xl border border-emerald-500/30 bg-slate-950 px-4 py-2.5 text-sm text-emerald-400 font-bold focus:border-emerald-500 focus:outline-none transition">
+                                        <option value="reguler">Reguler / Tes Akademik</option>
+                                        <option value="zonasi">Zonasi Domisili (Radius KM)</option>
+                                        <option value="prestasi">Jalur Prestasi (Akademik / Lomba)</option>
+                                        <option value="afirmasi">Afirmasi / KIP / Bantuan Sosial</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Sub-Form Dinamis Berdasarkan Jalur -->
+                            <div id="zonasiBox" class="hidden mt-5 p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
+                                <label class="block text-xs font-bold text-emerald-400 mb-1.5"><i class="fa-solid fa-location-dot mr-1"></i> Jarak Domisili ke Sekolah (KM) *</label>
+                                <input type="number" step="0.01" min="0" max="50" name="distance_km" id="distanceKmInput" placeholder="Contoh: 1.5 (dalam Kilometer)"
+                                       class="w-full sm:w-80 rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                                <span class="text-[11px] text-slate-400 mt-1 block">Jarak di bawah 1 KM akan memperoleh prioritas poin zonasi maksimal.</span>
+                            </div>
+
+                            <!-- Dynamic Multi-Certificate Prestasi Builder (Maks. 10) -->
+                            <div id="prestasiBox" class="hidden mt-5 p-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 space-y-4">
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/20 pb-3">
+                                    <div>
+                                        <h4 class="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-2">
+                                            <i class="fa-solid fa-trophy text-amber-400"></i>
+                                            <span>Daftar Sertifikat & Piagam Prestasi</span>
+                                        </h4>
+                                        <p class="text-[11px] text-slate-400 mt-0.5">
+                                            Tambahkan prestasi lomba (maksimal 10). Skor akhir dihitung dari kejuaraan tertinggi.
+                                        </p>
+                                    </div>
+                                    <div class="shrink-0">
+                                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-xs font-mono font-bold text-amber-300">
+                                            <span id="certCounter">1</span> / 10 Sertifikat
                                         </span>
-                                        <button type="button" onclick="removeCertItem(this)" class="btn-remove-cert hidden text-rose-400 hover:text-rose-300 text-xs font-semibold transition">
-                                            <i class="fa-solid fa-trash-can mr-1"></i> Hapus
+                                    </div>
+                                </div>
+
+                                <div id="certItemsContainer" class="space-y-3">
+                                    <!-- Item 1 (Default) -->
+                                    <div class="cert-item rounded-xl border border-white/10 bg-slate-950/80 p-4 space-y-3" data-index="0">
+                                        <div class="flex items-center justify-between text-xs font-semibold text-slate-300">
+                                            <span class="cert-badge flex items-center gap-1.5 text-amber-400">
+                                                <i class="fa-solid fa-medal"></i> Sertifikat #1
+                                            </span>
+                                            <button type="button" onclick="removeCertItem(this)" class="btn-remove-cert hidden text-rose-400 hover:text-rose-300 text-xs font-semibold transition">
+                                                <i class="fa-solid fa-trash-can mr-1"></i> Hapus
+                                            </button>
+                                        </div>
+
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                            <div>
+                                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Tingkat Kejuaraan *</label>
+                                                <select name="ach_level[]" class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none">
+                                                    <option value="sekolah">Tingkat Sekolah (+1.5 Poin)</option>
+                                                    <option value="kecamatan">Tingkat Kecamatan (+3.0 Poin)</option>
+                                                    <option value="kabupaten">Tingkat Kota / Kabupaten (+5.0 Poin)</option>
+                                                    <option value="provinsi">Tingkat Provinsi (+7.0 Poin)</option>
+                                                    <option value="nasional">Tingkat Nasional (+10.0 Poin)</option>
+                                                    <option value="internasional">Tingkat Internasional (+15.0 Poin)</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Nama Lomba / Prestasi *</label>
+                                                <input type="text" name="ach_desc[]" placeholder="Contoh: Juara 1 OSN Matematika..." 
+                                                       class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">File Bukti Sertifikat (PDF/JPG, Maks 5MB)</label>
+                                                <input type="file" name="ach_file[]" accept=".pdf,.jpg,.jpeg,.png"
+                                                       class="w-full text-[11px] text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="pt-2 flex items-center justify-between">
+                                    <button type="button" id="btnAddCert" onclick="addCertItem()" 
+                                            class="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-4 py-2 text-xs font-bold text-amber-300 transition cursor-pointer">
+                                        <i class="fa-solid fa-plus"></i>
+                                        <span>Tambah Sertifikat Lagi (Maks. 10)</span>
+                                    </button>
+                                    <span class="text-[11px] text-slate-400 italic">Maksimal 10 sertifikat</span>
+                                </div>
+                            </div>
+
+                            <div id="afirmasiBox" class="hidden mt-5 p-4 rounded-2xl border border-purple-500/20 bg-purple-500/5">
+                                <label class="block text-xs font-bold text-purple-400 mb-1.5"><i class="fa-solid fa-id-card-clip mr-1"></i> Nomor Kartu Indonesia Pintar (KIP) / PKH / SKTM *</label>
+                                <input type="text" name="affirmation_no" id="inp_affirmation_no" placeholder="Contoh: KIP-2025-99881122"
+                                       class="w-full sm:w-80 rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none font-mono">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- TAHAP 3: DATA ORANG TUA / WALI                  -->
+                    <!-- ============================================== -->
+                    <div class="step-card hidden" id="stepSection3">
+                        <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl">
+                            <div class="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
+                                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/10 text-lg text-purple-400 shadow-inner">
+                                    <i class="fa-solid fa-people-roof"></i>
+                                </span>
+                                <div>
+                                    <h3 class="text-lg font-bold text-white">3. Data Orang Tua / Wali Calon Siswa</h3>
+                                    <p class="text-xs text-slate-400">Kontak penanggung jawab keluarga calon siswa untuk konfirmasi pendaftaran</p>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Nama Orang Tua / Wali *</label>
+                                    <input type="text" name="parent_name" id="inp_parent_name" required placeholder="Contoh: Budi Santoso"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">No. HP / WhatsApp Orang Tua *</label>
+                                    <input type="tel" name="parent_phone" id="inp_parent_phone" required placeholder="Contoh: 081298765432"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition font-mono">
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-300 mb-2">Pekerjaan Orang Tua</label>
+                                    <input type="text" name="parent_job" id="inp_parent_job" placeholder="Contoh: Wiraswasta / PNS / Karyawan"
+                                           class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- TAHAP 4: UPLOAD BERKAS & LIVE PREVIEW           -->
+                    <!-- ============================================== -->
+                    <div class="step-card hidden" id="stepSection4">
+                        <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl">
+                            <div class="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
+                                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/10 text-lg text-amber-400 shadow-inner">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                                </span>
+                                <div>
+                                    <h3 class="text-lg font-bold text-white">4. Upload Dokumen Administrasi Siswa</h3>
+                                    <p class="text-xs text-slate-400">Seret berkas atau klik kotak untuk mengunggah dokumen (Format PDF, JPG, PNG - Maks 5MB per berkas)</p>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                                
+                                <!-- 1. Scan Rapor -->
+                                <div class="drop-zone-card rounded-2xl border border-white/10 bg-slate-950/60 p-4 transition-all hover:border-blue-500/50" data-field="report_card_doc">
+                                    <label class="block text-xs font-bold text-slate-200 mb-1 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-file-lines text-blue-400"></i> Scan Rapor SMP
+                                    </label>
+                                    <span class="text-[10px] text-slate-400 block mb-3">Semester 1 - 5 SMP</span>
+                                    
+                                    <div class="drop-area border-2 border-dashed border-white/15 hover:border-blue-500/60 rounded-xl p-3 text-center cursor-pointer transition bg-slate-900/40 min-h-[140px] flex flex-col justify-center items-center">
+                                        <div class="default-view space-y-1.5">
+                                            <div class="w-9 h-9 mx-auto rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+                                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                            </div>
+                                            <p class="text-[11px] font-semibold text-slate-300">Pilih / Seret File</p>
+                                            <span class="text-[9px] text-slate-500 block">PDF / JPG (Maks 5MB)</span>
+                                        </div>
+                                        <div class="preview-view hidden space-y-1.5 text-center w-full">
+                                            <div class="preview-thumbnail w-14 h-14 mx-auto rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center overflow-hidden"></div>
+                                            <p class="preview-filename text-[11px] font-semibold text-blue-400 truncate max-w-[130px] mx-auto"></p>
+                                            <span class="preview-filesize text-[9px] text-slate-400 font-mono block"></span>
+                                            <button type="button" class="btn-clear-file text-[10px] text-rose-400 hover:text-rose-300 underline font-semibold">Ganti File</button>
+                                        </div>
+                                    </div>
+                                    <input type="file" name="report_card_doc" id="file_report_card_doc" accept=".pdf,.jpg,.jpeg,.png" class="hidden file-input-target">
+                                </div>
+
+                                <!-- 2. Kartu Keluarga -->
+                                <div class="drop-zone-card rounded-2xl border border-white/10 bg-slate-950/60 p-4 transition-all hover:border-emerald-500/50" data-field="family_card_doc">
+                                    <label class="block text-xs font-bold text-slate-200 mb-1 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-id-card text-emerald-400"></i> Kartu Keluarga (KK)
+                                    </label>
+                                    <span class="text-[10px] text-slate-400 block mb-3">Foto / Scan Asli KK</span>
+                                    
+                                    <div class="drop-area border-2 border-dashed border-white/15 hover:border-emerald-500/60 rounded-xl p-3 text-center cursor-pointer transition bg-slate-900/40 min-h-[140px] flex flex-col justify-center items-center">
+                                        <div class="default-view space-y-1.5">
+                                            <div class="w-9 h-9 mx-auto rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                            </div>
+                                            <p class="text-[11px] font-semibold text-slate-300">Pilih / Seret File</p>
+                                            <span class="text-[9px] text-slate-500 block">PDF / JPG (Maks 5MB)</span>
+                                        </div>
+                                        <div class="preview-view hidden space-y-1.5 text-center w-full">
+                                            <div class="preview-thumbnail w-14 h-14 mx-auto rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center overflow-hidden"></div>
+                                            <p class="preview-filename text-[11px] font-semibold text-emerald-400 truncate max-w-[130px] mx-auto"></p>
+                                            <span class="preview-filesize text-[9px] text-slate-400 font-mono block"></span>
+                                            <button type="button" class="btn-clear-file text-[10px] text-rose-400 hover:text-rose-300 underline font-semibold">Ganti File</button>
+                                        </div>
+                                    </div>
+                                    <input type="file" name="family_card_doc" id="file_family_card_doc" accept=".pdf,.jpg,.jpeg,.png" class="hidden file-input-target">
+                                </div>
+
+                                <!-- 3. Akta Kelahiran -->
+                                <div class="drop-zone-card rounded-2xl border border-white/10 bg-slate-950/60 p-4 transition-all hover:border-emerald-500/50" data-field="birth_cert_doc">
+                                    <label class="block text-xs font-bold text-slate-200 mb-1 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-certificate text-emerald-400"></i> Akta Kelahiran
+                                    </label>
+                                    <span class="text-[10px] text-slate-400 block mb-3">Foto / Scan Asli Akta</span>
+                                    
+                                    <div class="drop-area border-2 border-dashed border-white/15 hover:border-emerald-500/60 rounded-xl p-3 text-center cursor-pointer transition bg-slate-900/40 min-h-[140px] flex flex-col justify-center items-center">
+                                        <div class="default-view space-y-1.5">
+                                            <div class="w-9 h-9 mx-auto rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                            </div>
+                                            <p class="text-[11px] font-semibold text-slate-300">Pilih / Seret File</p>
+                                            <span class="text-[9px] text-slate-500 block">PDF / JPG (Maks 5MB)</span>
+                                        </div>
+                                        <div class="preview-view hidden space-y-1.5 text-center w-full">
+                                            <div class="preview-thumbnail w-14 h-14 mx-auto rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center overflow-hidden"></div>
+                                            <p class="preview-filename text-[11px] font-semibold text-emerald-400 truncate max-w-[130px] mx-auto"></p>
+                                            <span class="preview-filesize text-[9px] text-slate-400 font-mono block"></span>
+                                            <button type="button" class="btn-clear-file text-[10px] text-rose-400 hover:text-rose-300 underline font-semibold">Ganti File</button>
+                                        </div>
+                                    </div>
+                                    <input type="file" name="birth_cert_doc" id="file_birth_cert_doc" accept=".pdf,.jpg,.jpeg,.png" class="hidden file-input-target">
+                                </div>
+
+                                <!-- 4. Pas Foto 3x4 -->
+                                <div class="drop-zone-card rounded-2xl border border-white/10 bg-slate-950/60 p-4 transition-all hover:border-purple-500/50" data-field="photo_doc">
+                                    <label class="block text-xs font-bold text-slate-200 mb-1 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-image text-purple-400"></i> Pas Foto 3x4
+                                    </label>
+                                    <span class="text-[10px] text-slate-400 block mb-3">Latar Belakang Merah/Biru</span>
+                                    
+                                    <div class="drop-area border-2 border-dashed border-white/15 hover:border-purple-500/60 rounded-xl p-3 text-center cursor-pointer transition bg-slate-900/40 min-h-[140px] flex flex-col justify-center items-center">
+                                        <div class="default-view space-y-1.5">
+                                            <div class="w-9 h-9 mx-auto rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                                                <i class="fa-solid fa-camera"></i>
+                                            </div>
+                                            <p class="text-[11px] font-semibold text-slate-300">Pilih Foto 3x4</p>
+                                            <span class="text-[9px] text-slate-500 block">JPG / PNG (Maks 5MB)</span>
+                                        </div>
+                                        <div class="preview-view hidden space-y-1.5 text-center w-full">
+                                            <div class="preview-thumbnail w-14 h-14 mx-auto rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center overflow-hidden"></div>
+                                            <p class="preview-filename text-[11px] font-semibold text-purple-400 truncate max-w-[130px] mx-auto"></p>
+                                            <span class="preview-filesize text-[9px] text-slate-400 font-mono block"></span>
+                                            <button type="button" class="btn-clear-file text-[10px] text-rose-400 hover:text-rose-300 underline font-semibold">Ganti Foto</button>
+                                        </div>
+                                    </div>
+                                    <input type="file" name="photo_doc" id="file_photo_doc" accept=".jpg,.jpeg,.png" class="hidden file-input-target">
+                                </div>
+
+                                <!-- 5. Sertifikat Prestasi -->
+                                <div id="uploadCertBox" class="drop-zone-card rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 transition-all hover:border-amber-500/60" data-field="achievement_cert_doc">
+                                    <label class="block text-xs font-bold text-amber-300 mb-1 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-trophy text-amber-400"></i> Sertifikat Prestasi
+                                    </label>
+                                    <span class="text-[10px] text-amber-300/70 block mb-3">Wajib jika Jalur Prestasi</span>
+                                    
+                                    <div class="drop-area border-2 border-dashed border-amber-500/30 hover:border-amber-500/70 rounded-xl p-3 text-center cursor-pointer transition bg-slate-900/40 min-h-[140px] flex flex-col justify-center items-center">
+                                        <div class="default-view space-y-1.5">
+                                            <div class="w-9 h-9 mx-auto rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                            </div>
+                                            <p class="text-[11px] font-semibold text-slate-300">Pilih Sertifikat</p>
+                                            <span class="text-[9px] text-slate-500 block">PDF / JPG (Maks 5MB)</span>
+                                        </div>
+                                        <div class="preview-view hidden space-y-1.5 text-center w-full">
+                                            <div class="preview-thumbnail w-14 h-14 mx-auto rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center overflow-hidden"></div>
+                                            <p class="preview-filename text-[11px] font-semibold text-amber-400 truncate max-w-[130px] mx-auto"></p>
+                                            <span class="preview-filesize text-[9px] text-slate-400 font-mono block"></span>
+                                            <button type="button" class="btn-clear-file text-[10px] text-rose-400 hover:text-rose-300 underline font-semibold">Ganti File</button>
+                                        </div>
+                                    </div>
+                                    <input type="file" name="achievement_cert_doc" id="achievementCertDocInput" accept=".pdf,.jpg,.jpeg,.png" class="hidden file-input-target">
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- TAHAP 5: RINGKASAN & KONFIRMASI DATA           -->
+                    <!-- ============================================== -->
+                    <div class="step-card hidden" id="stepSection5">
+                        <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl space-y-6">
+                            
+                            <div class="flex items-center gap-3 border-b border-white/10 pb-4">
+                                <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-teal-500/10 text-lg text-teal-400 shadow-inner">
+                                    <i class="fa-solid fa-clipboard-check"></i>
+                                </span>
+                                <div>
+                                    <h3 class="text-lg font-bold text-white">5. Ringkasan & Konfirmasi Pendaftaran</h3>
+                                    <p class="text-xs text-slate-400">Silakan periksa kembali seluruh isian formulir Anda sebelum dikirimkan ke panitia</p>
+                                </div>
+                            </div>
+
+                            <!-- Review Sections Grid -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                                
+                                <!-- Card A: Biodata -->
+                                <div class="rounded-2xl border border-white/5 bg-slate-950/70 p-4 space-y-2">
+                                    <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                                        <strong class="text-white flex items-center gap-1.5 text-xs">
+                                            <i class="fa-solid fa-user text-blue-400"></i> Biodata Calon Siswa
+                                        </strong>
+                                        <button type="button" onclick="goToStep(1)" class="text-blue-400 hover:text-blue-300 font-semibold cursor-pointer">
+                                            <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
                                         </button>
                                     </div>
-
-                                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                        <div>
-                                            <label class="block text-[11px] font-semibold text-slate-400 mb-1">Tingkat Kejuaraan *</label>
-                                            <select name="ach_level[]" class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none">
-                                                <option value="sekolah">Tingkat Sekolah (+1.5 Poin)</option>
-                                                <option value="kecamatan">Tingkat Kecamatan (+3.0 Poin)</option>
-                                                <option value="kabupaten">Tingkat Kota / Kabupaten (+5.0 Poin)</option>
-                                                <option value="provinsi">Tingkat Provinsi (+7.0 Poin)</option>
-                                                <option value="nasional">Tingkat Nasional (+10.0 Poin)</option>
-                                                <option value="internasional">Tingkat Internasional (+15.0 Poin)</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label class="block text-[11px] font-semibold text-slate-400 mb-1">Nama Lomba / Prestasi *</label>
-                                            <input type="text" name="ach_desc[]" placeholder="Contoh: Juara 1 OSN Matematika..." 
-                                                   class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none">
-                                        </div>
-                                        <div>
-                                            <label class="block text-[11px] font-semibold text-slate-400 mb-1">File Bukti Sertifikat (PDF/JPG, Maks 5MB)</label>
-                                            <input type="file" name="ach_file[]" accept=".pdf,.jpg,.jpeg,.png"
-                                                   class="w-full text-[11px] text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
-                                        </div>
+                                    <div class="space-y-1 text-slate-300" id="summaryBiodata">
+                                        <p><span class="text-slate-500">Nama:</span> <strong class="text-white" id="sum_name">-</strong></p>
+                                        <p><span class="text-slate-500">NISN / NIK:</span> <span class="font-mono text-white" id="sum_nisn">-</span> / <span class="font-mono" id="sum_nik">-</span></p>
+                                        <p><span class="text-slate-500">Jenis Kelamin / Agama:</span> <span id="sum_gender">-</span> / <span id="sum_religion">-</span></p>
+                                        <p><span class="text-slate-500">TTL:</span> <span id="sum_ttl">-</span></p>
+                                        <p><span class="text-slate-500">WhatsApp / Email:</span> <span class="font-mono" id="sum_contact">-</span></p>
+                                        <p><span class="text-slate-500">Alamat:</span> <span id="sum_address">-</span></p>
                                     </div>
                                 </div>
+
+                                <!-- Card B: Pilihan Sekolah & Jalur -->
+                                <div class="rounded-2xl border border-white/5 bg-slate-950/70 p-4 space-y-2">
+                                    <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                                        <strong class="text-white flex items-center gap-1.5 text-xs">
+                                            <i class="fa-solid fa-school text-emerald-400"></i> Peminatan & Jalur Seleksi
+                                        </strong>
+                                        <button type="button" onclick="goToStep(2)" class="text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer">
+                                            <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
+                                        </button>
+                                    </div>
+                                    <div class="space-y-1 text-slate-300" id="summaryPeminatan">
+                                        <p><span class="text-slate-500">Asal SMP:</span> <strong class="text-white" id="sum_school">-</strong></p>
+                                        <p><span class="text-slate-500">Peminatan Jurusan:</span> <strong class="text-emerald-400" id="sum_major">-</strong></p>
+                                        <p><span class="text-slate-500">Jalur Masuk:</span> <span class="font-bold text-white uppercase" id="sum_track">-</span></p>
+                                        <p id="sum_track_detail" class="text-[11px] text-slate-400"></p>
+                                    </div>
+                                </div>
+
+                                <!-- Card C: Data Orang Tua -->
+                                <div class="rounded-2xl border border-white/5 bg-slate-950/70 p-4 space-y-2">
+                                    <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                                        <strong class="text-white flex items-center gap-1.5 text-xs">
+                                            <i class="fa-solid fa-people-roof text-purple-400"></i> Orang Tua / Wali
+                                        </strong>
+                                        <button type="button" onclick="goToStep(3)" class="text-purple-400 hover:text-purple-300 font-semibold cursor-pointer">
+                                            <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
+                                        </button>
+                                    </div>
+                                    <div class="space-y-1 text-slate-300" id="summaryOrtu">
+                                        <p><span class="text-slate-500">Nama Wali:</span> <strong class="text-white" id="sum_parent_name">-</strong></p>
+                                        <p><span class="text-slate-500">WhatsApp Wali:</span> <span class="font-mono text-white" id="sum_parent_phone">-</span></p>
+                                        <p><span class="text-slate-500">Pekerjaan:</span> <span id="sum_parent_job">-</span></p>
+                                    </div>
+                                </div>
+
+                                <!-- Card D: Dokumen Terunggah -->
+                                <div class="rounded-2xl border border-white/5 bg-slate-950/70 p-4 space-y-2">
+                                    <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                                        <strong class="text-white flex items-center gap-1.5 text-xs">
+                                            <i class="fa-solid fa-paperclip text-amber-400"></i> Status Berkas Terunggah
+                                        </strong>
+                                        <button type="button" onclick="goToStep(4)" class="text-amber-400 hover:text-amber-300 font-semibold cursor-pointer">
+                                            <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
+                                        </button>
+                                    </div>
+                                    <ul class="space-y-1 text-slate-300 text-[11px]" id="summaryBerkas">
+                                        <!-- Injected by JS -->
+                                    </ul>
+                                </div>
+
                             </div>
 
-                            <div class="pt-2 flex items-center justify-between">
-                                <button type="button" id="btnAddCert" onclick="addCertItem()" 
-                                        class="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-4 py-2 text-xs font-bold text-amber-300 transition cursor-pointer">
-                                    <i class="fa-solid fa-plus"></i>
-                                    <span>Tambah Sertifikat Lagi (Maks. 10)</span>
-                                </button>
-                                <span class="text-[11px] text-slate-400 italic">Maksimal 10 sertifikat</span>
+                            <!-- Pernyataan Keabsahan Data Checkbox -->
+                            <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                                <label class="flex items-start gap-3 cursor-pointer select-none">
+                                    <input type="checkbox" id="agreementCheckbox" required
+                                           class="mt-1 h-4 w-4 rounded border-white/20 bg-slate-950 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900 cursor-pointer">
+                                    <span class="text-xs text-slate-300 leading-relaxed">
+                                        Dengan mencentang pernyataan ini, saya menyatakan dengan sesungguhnya bahwa seluruh data dan dokumen yang saya kirimkan adalah sah, benar, dan dapat dipertanggungjawabkan secara hukum. Apabila di kemudian hari ditemukan pemalsuan data, saya bersedia menerima sanksi pembatalan kelulusan seleksi PPDB.
+                                    </span>
+                                </label>
                             </div>
-                        </div>
 
-                        <div id="afirmasiBox" class="hidden mt-5 p-4 rounded-2xl border border-purple-500/20 bg-purple-500/5">
-                            <label class="block text-xs font-bold text-purple-400 mb-1.5"><i class="fa-solid fa-id-card-clip mr-1"></i> Nomor Kartu Indonesia Pintar (KIP) / PKH / SKTM *</label>
-                            <input type="text" name="affirmation_no" placeholder="Contoh: KIP-2025-99881122"
-                                   class="w-full sm:w-80 rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none font-mono">
                         </div>
                     </div>
 
-                    <!-- 3. Data Orang Tua / Wali -->
-                    <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl">
-                        <div class="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
-                            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/10 text-lg text-purple-400">
-                                <i class="fa-solid fa-people-roof"></i>
+                    <!-- ============================================== -->
+                    <!-- WIZARD STEPPER NAVIGATION CONTROLS             -->
+                    <!-- ============================================== -->
+                    <div class="rounded-3xl border border-white/10 bg-slate-900/60 p-4 sm:p-6 backdrop-blur shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div>
+                            <button type="button" id="btnPrevStep" onclick="navigateStep(-1)"
+                                    class="hidden inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-5 py-3 text-xs sm:text-sm font-bold text-slate-200 transition cursor-pointer">
+                                <i class="fa-solid fa-arrow-left"></i>
+                                <span>Langkah Sebelumnya</span>
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+                            <span class="text-xs text-slate-400 hidden sm:inline" id="stepIndicatorLabel">
+                                Langkah 1: Biodata Diri
                             </span>
-                            <div>
-                                <h3 class="text-lg font-bold text-white">3. Data Orang Tua / Wali</h3>
-                                <p class="text-xs text-slate-400">Kontak penanggung jawab calon siswa</p>
-                            </div>
-                        </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Nama Orang Tua / Wali *</label>
-                                <input type="text" name="parent_name" required placeholder="Contoh: Budi Santoso"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                            </div>
+                            <button type="button" id="btnNextStep" onclick="navigateStep(1)"
+                                    class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-7 py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition cursor-pointer">
+                                <span>Lanjutkan ke Tahap 2</span>
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </button>
 
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">No. HP / WhatsApp Orang Tua *</label>
-                                <input type="tel" name="parent_phone" required placeholder="Contoh: 081298765432"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition font-mono">
-                            </div>
-
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-300 mb-2">Pekerjaan Orang Tua</label>
-                                <input type="text" name="parent_job" placeholder="Contoh: Wiraswasta / PNS / Karyawan"
-                                       class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition">
-                            </div>
+                            <button type="submit" id="btnFinalSubmit"
+                                    class="hidden w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 px-8 py-3 text-xs sm:text-sm font-bold text-white shadow-xl shadow-emerald-600/25 transition cursor-pointer">
+                                <i class="fa-solid fa-paper-plane"></i>
+                                <span>Kirim Pendaftaran Siswa Baru</span>
+                            </button>
                         </div>
                     </div>
 
-                    <!-- 4. Upload Dokumen Persyaratan -->
-                    <div class="rounded-3xl border border-white/10 bg-slate-900/50 p-6 sm:p-8 backdrop-blur shadow-xl">
-                        <div class="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
-                            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-lg text-amber-400">
-                                <i class="fa-solid fa-paperclip"></i>
-                            </span>
-                            <div>
-                                <h3 class="text-lg font-bold text-white">4. Upload Berkas Dokumen (Format PDF, JPG, PNG - Maks 5MB)</h3>
-                                <p class="text-xs text-slate-400">Dokumen dapat dilengkapi sekarang atau disusulkan pada menu perbaikan berkas</p>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                            <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4">
-                                <label class="block text-xs font-bold text-slate-300 mb-1"><i class="fa-solid fa-file-lines mr-1.5 text-blue-400"></i> Scan Rapor</label>
-                                <span class="text-[11px] text-slate-400 block mb-3">Semester 1 - 5 SMP</span>
-                                <input type="file" name="report_card_doc" accept=".pdf,.jpg,.jpeg,.png"
-                                       class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
-                            </div>
-
-                            <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4">
-                                <label class="block text-xs font-bold text-slate-300 mb-1"><i class="fa-solid fa-id-card mr-1.5 text-emerald-400"></i> Kartu Keluarga (KK)</label>
-                                <span class="text-[11px] text-slate-400 block mb-3">Foto / Scan Asli</span>
-                                <input type="file" name="family_card_doc" accept=".pdf,.jpg,.jpeg,.png"
-                                       class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
-                            </div>
-
-                            <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4">
-                                <label class="block text-xs font-bold text-slate-300 mb-1"><i class="fa-solid fa-certificate mr-1.5 text-emerald-400"></i> Akta Kelahiran</label>
-                                <span class="text-[11px] text-slate-400 block mb-3">Foto / Scan Asli</span>
-                                <input type="file" name="birth_cert_doc" accept=".pdf,.jpg,.jpeg,.png"
-                                       class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
-                            </div>
-
-                            <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4">
-                                <label class="block text-xs font-bold text-slate-300 mb-1"><i class="fa-solid fa-image mr-1.5 text-purple-400"></i> Pas Foto 3x4</label>
-                                <span class="text-[11px] text-slate-400 block mb-3">Latar Belakang Merah/Biru</span>
-                                <input type="file" name="photo_doc" accept=".jpg,.jpeg,.png"
-                                       class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20">
-                            </div>
-
-                            <div id="uploadCertBox" class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 transition-all">
-                                <label class="block text-xs font-bold text-amber-300 mb-1"><i class="fa-solid fa-trophy mr-1.5 text-amber-400"></i> Sertifikat Prestasi</label>
-                                <span class="text-[11px] text-amber-200/70 block mb-3">Wajib jika Jalur Prestasi (Maks 5MB)</span>
-                                <input type="file" name="achievement_cert_doc" id="achievementCertDocInput" accept=".pdf,.jpg,.jpeg,.png"
-                                       class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-500/20 file:text-amber-200 hover:file:bg-amber-500/30">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4">
-                        <p class="text-xs text-slate-400">
-                            Dengan menekan tombol di bawah, saya menyatakan bahwa seluruh data yang diisi adalah benar, sah, dan dapat dipertanggungjawabkan.
-                        </p>
-                        <button type="submit"
-                                class="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 px-8 py-3.5 font-bold text-white shadow-xl shadow-emerald-600/25 transition cursor-pointer shrink-0">
-                            <i class="fa-solid fa-paper-plane"></i>
-                            <span>Kirim Pendaftaran Siswa Baru</span>
-                        </button>
-                    </div>
                 </form>
             <?php endif; ?>
 
@@ -1499,7 +1799,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
         } else if (track === 'prestasi') {
             if (prestasiBox) prestasiBox.classList.remove('hidden');
             if (uploadCertBox) {
-                uploadCertBox.classList.remove('border-white/5', 'bg-slate-950/60');
+                uploadCertBox.classList.remove('border-white/10', 'bg-slate-950/60');
                 uploadCertBox.classList.add('border-amber-500/50', 'bg-amber-500/10', 'ring-1', 'ring-amber-500/30');
             }
         } else if (track === 'afirmasi' && afirmasiBox) {
@@ -1508,7 +1808,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
 
         if (track !== 'prestasi' && uploadCertBox) {
             uploadCertBox.classList.remove('border-amber-500/50', 'bg-amber-500/10', 'ring-1', 'ring-amber-500/30');
-            uploadCertBox.classList.add('border-white/5', 'bg-slate-950/60');
+            uploadCertBox.classList.add('border-white/10', 'bg-slate-950/60');
         }
     }
 
@@ -1570,7 +1870,7 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
                 <span class="cert-badge flex items-center gap-1.5 text-amber-400">
                     <i class="fa-solid fa-medal"></i> Sertifikat #${newIndex + 1}
                 </span>
-                <button type="button" onclick="removeCertItem(this)" class="btn-remove-cert text-rose-400 hover:text-rose-300 text-xs font-semibold transition">
+                <button type="button" onclick="removeCertItem(this)" class="btn-remove-cert text-rose-400 hover:text-rose-300 text-xs font-semibold transition cursor-pointer">
                     <i class="fa-solid fa-trash-can mr-1"></i> Hapus
                 </button>
             </div>
@@ -1608,6 +1908,391 @@ if ($active_tab === 'cek' && isset($_GET['search'])) {
             item.remove();
             updateCertUI();
         }
+    }
+
+    // ==============================================================
+    // MULTI-STEP WIZARD CONTROLLER
+    // ==============================================================
+    let currentStep = 1;
+    const totalSteps = 5;
+    const stepTitles = [
+        "Biodata Diri",
+        "Sekolah & Jalur",
+        "Orang Tua / Wali",
+        "Upload Berkas",
+        "Konfirmasi Data"
+    ];
+
+    function goToStep(step) {
+        if (step < 1 || step > totalSteps) return;
+
+        // Jika melangkah maju, validasi langkah-langkah sebelumnya
+        if (step > currentStep) {
+            for (let s = currentStep; s < step; s++) {
+                if (!validateCurrentStep(s)) return;
+            }
+        }
+
+        currentStep = step;
+
+        // 1. Tampilkan section langkah aktif dan sembunyikan yang lain
+        for (let i = 1; i <= totalSteps; i++) {
+            const section = document.getElementById('stepSection' + i);
+            if (section) {
+                if (i === currentStep) {
+                    section.classList.remove('hidden');
+                } else {
+                    section.classList.add('hidden');
+                }
+            }
+        }
+
+        // 2. Perbarui tampilan tombol stepper header
+        const stepperBtns = document.querySelectorAll('#wizardStepper .step-nav-btn');
+        stepperBtns.forEach(btn => {
+            const s = parseInt(btn.getAttribute('data-step'));
+            const badge = btn.querySelector('.step-badge');
+            
+            if (s < currentStep) {
+                // Selesai (Completed)
+                btn.className = 'step-nav-btn flex items-center gap-2.5 rounded-2xl p-2.5 sm:p-3 text-left transition border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 cursor-pointer';
+                if (badge) {
+                    badge.className = 'step-badge flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-xs border border-emerald-500/30';
+                    badge.innerHTML = '<i class="fa-solid fa-check"></i>';
+                }
+            } else if (s === currentStep) {
+                // Aktif Saat Ini (Active)
+                btn.className = 'step-nav-btn active flex items-center gap-2.5 rounded-2xl p-2.5 sm:p-3 text-left transition border border-emerald-500/60 bg-emerald-500/20 text-emerald-200 shadow-lg shadow-emerald-500/10 cursor-pointer';
+                if (badge) {
+                    badge.className = 'step-badge flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow-md';
+                    badge.innerHTML = s;
+                }
+            } else {
+                // Belum (Pending)
+                btn.className = 'step-nav-btn flex items-center gap-2.5 rounded-2xl p-2.5 sm:p-3 text-left transition border border-white/5 bg-slate-950/40 text-slate-400 hover:text-slate-200 cursor-pointer';
+                if (badge) {
+                    badge.className = 'step-badge flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white/10 text-slate-400 font-bold text-xs';
+                    badge.innerHTML = s;
+                }
+            }
+        });
+
+        // 3. Perbarui ProgressBar & Label
+        const progressBar = document.getElementById('stepProgressBar');
+        if (progressBar) {
+            const pct = (currentStep / totalSteps) * 100;
+            progressBar.style.width = pct + '%';
+        }
+
+        const pillBadge = document.getElementById('stepPillBadge');
+        if (pillBadge) {
+            pillBadge.textContent = `Tahap ${currentStep} dari ${totalSteps}`;
+        }
+
+        const stepIndicatorLabel = document.getElementById('stepIndicatorLabel');
+        if (stepIndicatorLabel) {
+            stepIndicatorLabel.textContent = `Langkah ${currentStep}: ${stepTitles[currentStep - 1]}`;
+        }
+
+        // 4. Perbarui Tombol Navigasi Bawah
+        const btnPrev = document.getElementById('btnPrevStep');
+        const btnNext = document.getElementById('btnNextStep');
+        const btnSubmit = document.getElementById('btnFinalSubmit');
+
+        if (btnPrev) {
+            if (currentStep === 1) {
+                btnPrev.classList.add('hidden');
+            } else {
+                btnPrev.classList.remove('hidden');
+            }
+        }
+
+        if (btnNext && btnSubmit) {
+            if (currentStep < totalSteps) {
+                btnNext.classList.remove('hidden');
+                btnNext.innerHTML = `<span>Lanjutkan ke Tahap ${currentStep + 1}</span> <i class="fa-solid fa-arrow-right"></i>`;
+                btnSubmit.classList.add('hidden');
+            } else {
+                btnNext.classList.add('hidden');
+                btnSubmit.classList.remove('hidden');
+                populateConfirmationSummary();
+            }
+        }
+
+        // Scroll halus ke puncak form
+        const form = document.getElementById('ppdbRegistrationForm');
+        if (form && step > 1) {
+            form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    function navigateStep(direction) {
+        if (direction > 0) {
+            if (!validateCurrentStep(currentStep)) return;
+            goToStep(currentStep + 1);
+        } else {
+            goToStep(currentStep - 1);
+        }
+    }
+
+    function validateCurrentStep(stepNum) {
+        const section = document.getElementById('stepSection' + stepNum);
+        if (!section) return true;
+
+        const inputs = section.querySelectorAll('input, select, textarea');
+        for (let input of inputs) {
+            // Hanya periksa elemen yang terlihat (tidak di-hidden oleh style/sub-form)
+            if (input.offsetParent !== null && !input.checkValidity()) {
+                input.reportValidity();
+                input.focus();
+                return false;
+            }
+        }
+
+        // Validasi kustom tambahan untuk NISN 10 digit di Langkah 1
+        if (stepNum === 1) {
+            const nisnInput = document.getElementById('inp_nisn');
+            if (nisnInput && !/^[0-9]{10}$/.test(nisnInput.value.trim())) {
+                nisnInput.setCustomValidity('NISN wajib terdiri dari 10 digit angka numerik.');
+                nisnInput.reportValidity();
+                nisnInput.focus();
+                return false;
+            } else if (nisnInput) {
+                nisnInput.setCustomValidity('');
+            }
+        }
+
+        return true;
+    }
+
+    // Pasang listener pada tombol stepper di header
+    document.addEventListener('DOMContentLoaded', function() {
+        const stepperBtns = document.querySelectorAll('#wizardStepper .step-nav-btn');
+        stepperBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                const targetStep = parseInt(this.getAttribute('data-step'));
+                goToStep(targetStep);
+            });
+        });
+
+        setupDragAndDropZones();
+        toggleTrackInputs();
+    });
+
+    // ==============================================================
+    // POPULATE RINGKASAN DATA (TAHAP 5)
+    // ==============================================================
+    function populateConfirmationSummary() {
+        // 1. Biodata Siswa
+        const nameVal = document.getElementById('inp_full_name')?.value || '-';
+        const nisnVal = document.getElementById('inp_nisn')?.value || '-';
+        const nikVal = document.getElementById('inp_nik')?.value || '(Tidak diisi)';
+        const genderVal = document.getElementById('inp_gender')?.value === 'L' ? 'Laki-Laki (L)' : 'Perempuan (P)';
+        const religionVal = document.getElementById('inp_religion')?.value || '-';
+        const placeVal = document.getElementById('inp_birth_place')?.value || '-';
+        const dateVal = document.getElementById('regBirthDate')?.value || '-';
+        const phoneVal = document.getElementById('inp_phone')?.value || '-';
+        const emailVal = document.getElementById('inp_email')?.value || '-';
+        const addressVal = document.getElementById('inp_address')?.value || '-';
+
+        setText('sum_name', nameVal);
+        setText('sum_nisn', nisnVal);
+        setText('sum_nik', nikVal);
+        setText('sum_gender', genderVal);
+        setText('sum_religion', religionVal);
+        setText('sum_ttl', `${placeVal}, ${dateVal}`);
+        setText('sum_contact', `${phoneVal} / ${emailVal}`);
+        setText('sum_address', addressVal);
+
+        // 2. Sekolah & Jurusan
+        const schoolVal = document.getElementById('inp_previous_school')?.value || '-';
+        const majorVal = document.getElementById('inp_chosen_major')?.value || '-';
+        const trackSelect = document.getElementById('trackSelect');
+        const trackVal = trackSelect ? trackSelect.options[trackSelect.selectedIndex].text : '-';
+        const trackKey = trackSelect?.value || 'reguler';
+
+        setText('sum_school', schoolVal);
+        setText('sum_major', majorVal);
+        setText('sum_track', trackVal);
+
+        const trackDetailEl = document.getElementById('sum_track_detail');
+        if (trackDetailEl) {
+            if (trackKey === 'zonasi') {
+                const dist = document.getElementById('distanceKmInput')?.value || '0';
+                trackDetailEl.innerHTML = `<i class="fa-solid fa-location-dot text-emerald-400 mr-1"></i> Jarak Domisili: <strong>${dist} KM</strong>`;
+            } else if (trackKey === 'afirmasi') {
+                const kip = document.getElementById('inp_affirmation_no')?.value || '-';
+                trackDetailEl.innerHTML = `<i class="fa-solid fa-id-card-clip text-purple-400 mr-1"></i> No KIP/Bansos: <strong>${kip}</strong>`;
+            } else if (trackKey === 'prestasi') {
+                trackDetailEl.innerHTML = `<i class="fa-solid fa-trophy text-amber-400 mr-1"></i> Sertifikat prestasi telah dilampirkan`;
+            } else {
+                trackDetailEl.textContent = 'Seleksi nilai rapor 4 mapel semester 1-5';
+            }
+        }
+
+        // 3. Orang Tua
+        const parentName = document.getElementById('inp_parent_name')?.value || '-';
+        const parentPhone = document.getElementById('inp_parent_phone')?.value || '-';
+        const parentJob = document.getElementById('inp_parent_job')?.value || '(Tidak diisi)';
+
+        setText('sum_parent_name', parentName);
+        setText('sum_parent_phone', parentPhone);
+        setText('sum_parent_job', parentJob);
+
+        // 4. Status Berkas Dokumen
+        const berkasContainer = document.getElementById('summaryBerkas');
+        if (berkasContainer) {
+            berkasContainer.innerHTML = '';
+            const docList = [
+                { id: 'file_report_card_doc', label: 'Scan Rapor SMP' },
+                { id: 'file_family_card_doc', label: 'Kartu Keluarga (KK)' },
+                { id: 'file_birth_cert_doc', label: 'Akta Kelahiran' },
+                { id: 'file_photo_doc', label: 'Pas Foto 3x4' },
+                { id: 'achievementCertDocInput', label: 'Sertifikat Prestasi' }
+            ];
+
+            docList.forEach(item => {
+                const fileInput = document.getElementById(item.id);
+                const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+                const li = document.createElement('li');
+                li.className = 'flex items-center justify-between py-1 border-b border-white/5 last:border-0';
+                
+                if (hasFile) {
+                    const f = fileInput.files[0];
+                    const sizeKB = (f.size / 1024).toFixed(1);
+                    li.innerHTML = `
+                        <span class="text-emerald-300 font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-check text-emerald-400"></i> ${item.label}
+                        </span>
+                        <span class="font-mono text-slate-300 truncate max-w-[160px]" title="${f.name}">
+                            ${f.name} (${sizeKB} KB)
+                        </span>
+                    `;
+                } else {
+                    li.innerHTML = `
+                        <span class="text-slate-400 flex items-center gap-1.5">
+                            <i class="fa-regular fa-circle text-slate-500"></i> ${item.label}
+                        </span>
+                        <span class="text-slate-500 italic text-[10px]">Belum diunggah</span>
+                    `;
+                }
+                berkasContainer.appendChild(li);
+            });
+        }
+    }
+
+    function setText(id, text) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    }
+
+    // ==============================================================
+    // DRAG & DROP DAN LIVE PREVIEW UNTUK UPLOAD BERKAS
+    // ==============================================================
+    function setupDragAndDropZones() {
+        const dropZones = document.querySelectorAll('.drop-zone-card');
+
+        dropZones.forEach(card => {
+            const fileInput = card.querySelector('.file-input-target');
+            const dropArea = card.querySelector('.drop-area');
+            const defaultView = card.querySelector('.default-view');
+            const previewView = card.querySelector('.preview-view');
+            const previewThumb = card.querySelector('.preview-thumbnail');
+            const previewName = card.querySelector('.preview-filename');
+            const previewSize = card.querySelector('.preview-filesize');
+            const btnClear = card.querySelector('.btn-clear-file');
+
+            if (!fileInput || !dropArea) return;
+
+            // Klik area drop memicu input file
+            dropArea.addEventListener('click', function(e) {
+                if (e.target.closest('.btn-clear-file')) return;
+                fileInput.click();
+            });
+
+            // Tombol Ganti / Hapus File
+            if (btnClear) {
+                btnClear.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    fileInput.value = '';
+                    if (previewView) previewView.classList.add('hidden');
+                    if (defaultView) defaultView.classList.remove('hidden');
+                });
+            }
+
+            // Drag Over
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropArea.classList.add('border-emerald-400', 'bg-emerald-500/10');
+                });
+            });
+
+            // Drag Leave
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropArea.classList.remove('border-emerald-400', 'bg-emerald-500/10');
+                });
+            });
+
+            // Drop File Handler
+            dropArea.addEventListener('drop', function(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files && files.length > 0) {
+                    fileInput.files = files;
+                    renderFilePreview(files[0], defaultView, previewView, previewThumb, previewName, previewSize);
+                }
+            });
+
+            // File Input Change Handler
+            fileInput.addEventListener('change', function() {
+                if (this.files && this.files.length > 0) {
+                    renderFilePreview(this.files[0], defaultView, previewView, previewThumb, previewName, previewSize);
+                }
+            });
+        });
+    }
+
+    function renderFilePreview(file, defaultView, previewView, previewThumb, previewName, previewSize) {
+        if (!file) return;
+
+        // Validasi ukuran maksimal 5MB
+        if (file.size > 5 * 1024 * 1024) {
+            alert('Ukuran berkas ' + file.name + ' melebihi batas maksimal 5MB.');
+            return;
+        }
+
+        const sizeInKB = (file.size / 1024).toFixed(1);
+        const sizeFormatted = file.size > 1024 * 1024 
+            ? (file.size / (1024 * 1024)).toFixed(2) + ' MB' 
+            : sizeInKB + ' KB';
+
+        if (previewName) previewName.textContent = file.name;
+        if (previewSize) previewSize.textContent = sizeFormatted;
+
+        if (previewThumb) {
+            previewThumb.innerHTML = '';
+            if (file.type.startsWith('image/')) {
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                img.className = 'w-full h-full object-cover rounded-xl';
+                img.onload = function() {
+                    URL.revokeObjectURL(this.src); // Bersihkan memori blob
+                };
+                previewThumb.appendChild(img);
+            } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+                previewThumb.innerHTML = '<i class="fa-solid fa-file-pdf text-rose-500 text-2xl"></i>';
+            } else {
+                previewThumb.innerHTML = '<i class="fa-solid fa-file text-blue-400 text-2xl"></i>';
+            }
+        }
+
+        if (defaultView) defaultView.classList.add('hidden');
+        if (previewView) previewView.classList.remove('hidden');
     }
     </script>
 

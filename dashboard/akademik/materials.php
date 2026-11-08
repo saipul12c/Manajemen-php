@@ -43,22 +43,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $library_book_id = !empty($_POST['library_book_id']) ? (int)$_POST['library_book_id'] : null;
         $file_url = null;
 
-        // Handle File Upload jika ada
+        // Handle File Upload jika ada dengan validasi keamanan berkas terpusat
         if (isset($_FILES['material_file']) && $_FILES['material_file']['error'] === UPLOAD_ERR_OK) {
-            $file_tmp = $_FILES['material_file']['tmp_name'];
-            $file_name = $_FILES['material_file']['name'];
-            $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
             $allowed_exts = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'zip', 'mp4', 'png', 'jpg'];
-
-            if (!in_array($file_ext, $allowed_exts, true)) {
-                $message = "Format file tidak didukung. Gunakan PDF, Office, ZIP, atau MP4.";
-                $message_type = "error";
+            $uploadRes = saveSecureUpload(
+                $_FILES['material_file'],
+                'materials',
+                $allowed_exts,
+                [],
+                25 * 1024 * 1024,
+                'mat'
+            );
+            if ($uploadRes['success']) {
+                $file_url = $uploadRes['path'];
             } else {
-                $new_file_name = 'mat_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
-                $dest_path = $upload_dir . '/' . $new_file_name;
-                if (move_uploaded_file($file_tmp, $dest_path)) {
-                    $file_url = 'uploads/materials/' . $new_file_name;
-                }
+                $message = $uploadRes['error'];
+                $message_type = "error";
             }
         }
 
@@ -112,11 +112,9 @@ if (isset($_GET['download']) && is_numeric($_GET['download'])) {
 
     if ($target_m) {
         if (!empty($target_m['file_url'])) {
-            $full_path = __DIR__ . '/../../' . $target_m['file_url'];
-            if (file_exists($full_path)) {
-                header('Location: ../../' . $target_m['file_url']);
-                exit;
-            }
+            $resolved = resolveAssetUrl($target_m['file_url'], '../../');
+            header('Location: ' . $resolved);
+            exit;
         } elseif (!empty($target_m['link_url'])) {
             header('Location: ' . $target_m['link_url']);
             exit;

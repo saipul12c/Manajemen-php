@@ -1,0 +1,36 @@
+{
+    "target_attribute": "rekomendasi",
+    "features": [
+        "cuaca",
+        "suhu",
+        "kelembaban",
+        "angin"
+    ],
+    "tree": {
+        "type": "node",
+        "attribute": "cuaca",
+        "gain": 0.2467,
+        "children": {
+            "cerah": {
+                "type": "node",
+                "attribute": "kelembaban",
+                "gain": 0.971,
+                "children": {
+                    "tinggi": "Jangan Main",
+                    "normal": "Boleh Main"
+                }
+            },
+            "mendung": "Boleh Main",
+            "hujan": {
+                "type": "node",
+                "attribute": "angin",
+                "gain": 0.971,
+                "children": {
+                    "lemah": "Boleh Main",
+                    "kencang": "Jangan Main"
+                }
+            }
+        }
+    },
+    "saved_at": "2026-11-07 14:14:20"
+}

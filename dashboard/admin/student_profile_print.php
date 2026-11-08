@@ -78,6 +78,10 @@ $page_title = "Lembar Buku Induk Siswa - " . htmlspecialchars($student['name']);
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body { background: white !important; color: black !important; padding: 0 !important; }
             .no-print { display: none !important; }
             .print-paper { border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; margin: 0 !important; }
@@ -105,9 +109,17 @@ $page_title = "Lembar Buku Induk Siswa - " . htmlspecialchars($student['name']);
         <!-- KOP SURAT RESMI -->
         <div class="border-b-4 border-double border-slate-900 pb-4 mb-6">
             <div class="flex items-center justify-center gap-6">
-                <div class="h-20 w-20 flex items-center justify-center rounded-2xl border-2 border-slate-800 bg-slate-50 text-slate-800 shrink-0 shadow-sm">
-                    <i class="fa-solid fa-graduation-cap text-3xl"></i>
-                </div>
+                <?php 
+                    $clean_stu_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                    $stu_logo_exists = !empty($clean_stu_logo) && (strpos($clean_stu_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+                ?>
+                <?php if ($stu_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_stu_logo) ?>" alt="Logo" class="h-20 w-20 object-contain shrink-0">
+                <?php else: ?>
+                    <div class="h-20 w-20 flex items-center justify-center rounded-2xl border-2 border-slate-800 bg-slate-50 text-slate-800 shrink-0 shadow-sm">
+                        <i class="fa-solid fa-graduation-cap text-3xl"></i>
+                    </div>
+                <?php endif; ?>
                 <div class="text-center font-sans">
                     <h3 class="text-xs font-bold uppercase tracking-widest text-slate-600">PEMERINTAH DAERAH PROVINSI / KABUPATEN</h3>
                     <h4 class="text-xs font-bold uppercase tracking-widest text-slate-700">DINAS PENDIDIKAN DAN KEBUDAYAAN</h4>

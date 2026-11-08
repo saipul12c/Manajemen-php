@@ -241,6 +241,10 @@ $rate = $tot_billed > 0 ? round(($tot_collected / $tot_billed) * 100, 1) : 0.0;
         .sig-space { height: 70px; }
 
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body { background: #ffffff; padding: 0; }
             .page-container { box-shadow: none; padding: 0; max-width: 100%; }
             .toolbar { display: none !important; }
@@ -276,8 +280,16 @@ $rate = $tot_billed > 0 ? round(($tot_collected / $tot_billed) * 100, 1) : 0.0;
     <div class="page-container">
         <!-- Kop Surat -->
         <div class="kop-surat">
+            <?php 
+                $clean_fin_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                $fin_logo_exists = !empty($clean_fin_logo) && (strpos($clean_fin_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+            ?>
             <div class="kop-logo">
-                <i class="fa-solid fa-graduation-cap"></i>
+                <?php if ($fin_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_fin_logo) ?>" alt="Logo" style="max-height: 70px; max-width: 70px; object-fit: contain;">
+                <?php else: ?>
+                    <i class="fa-solid fa-graduation-cap"></i>
+                <?php endif; ?>
             </div>
             <div class="kop-text">
                 <h2>PEMERINTAH DAERAH PROVINSI / DINAS PENDIDIKAN</h2>

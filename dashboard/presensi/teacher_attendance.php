@@ -113,20 +113,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $leave_notes = trim($_POST['notes'] ?? '');
         $proof_doc = null;
 
-        // Support file upload surat keterangan
+        // Support file upload surat keterangan dengan validasi keamanan terpusat & EXIF stripping
         if (isset($_FILES['proof_file']) && $_FILES['proof_file']['error'] === UPLOAD_ERR_OK) {
             $allowed = ['jpg', 'jpeg', 'png', 'pdf'];
-            $file_name = $_FILES['proof_file']['name'];
-            $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-            if (in_array($ext, $allowed, true)) {
-                $upload_dir = __DIR__ . "/../../uploads/leave_docs/";
-                if (!is_dir($upload_dir)) {
-                    @mkdir($upload_dir, 0755, true);
-                }
-                $new_filename = "leave_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
-                if (move_uploaded_file($_FILES['proof_file']['tmp_name'], $upload_dir . $new_filename)) {
-                    $proof_doc = "uploads/leave_docs/" . $new_filename;
-                }
+            $uploadRes = saveSecureUpload(
+                $_FILES['proof_file'],
+                'leave_docs',
+                $allowed,
+                [],
+                5 * 1024 * 1024,
+                "leave_{$user_id}"
+            );
+            if ($uploadRes['success']) {
+                $proof_doc = $uploadRes['path'];
+            } else {
+                $message = $uploadRes['error'];
+                $message_type = 'error';
             }
         }
 
@@ -501,7 +503,7 @@ require_once __DIR__ . "/../includes/header.php";
                                 <td class="py-3.5 px-4">
                                     <p class="text-slate-300"><?= htmlspecialchars($row['notes'] ?: '-') ?></p>
                                     <?php if (!empty($row['proof_doc'])): ?>
-                                        <a href="../../<?= htmlspecialchars($row['proof_doc']) ?>" target="_blank"
+                                        <a href="<?= htmlspecialchars(resolveAssetUrl($row['proof_doc'], '../../')) ?>" target="_blank"
                                            class="inline-flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 mt-0.5">
                                             <i class="fa-solid fa-paperclip"></i> Lihat Berkas Surat
                                         </a>

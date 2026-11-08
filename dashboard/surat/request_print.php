@@ -135,9 +135,13 @@ function tglIndo($date_str, $bulan_indo) {
         <!-- KOP SURAT DINAS PEMERINTAH / LEMBAGA PENDIDIKAN -->
         <div class="relative pb-4 mb-6 border-b-4 border-slate-900" style="border-bottom-style: double;">
             <div class="flex items-center justify-center gap-5">
-                <div class="h-20 w-20 flex items-center justify-center rounded-2xl border-2 border-slate-800 bg-slate-50 text-slate-800 shrink-0 shadow-sm">
-                    <i class="fa-solid fa-graduation-cap text-3xl"></i>
-                </div>
+                <?php if (!empty($school_info['school_logo']) && (strpos($school_info['school_logo'], 'uploads/') !== false || strpos($school_info['school_logo'], 'http') !== false || file_exists(__DIR__ . '/../../' . $school_info['school_logo']))): ?>
+                    <img src="<?= htmlspecialchars(resolveAssetUrl($school_info['school_logo'], '../../')) ?>" alt="Logo Sekolah" class="h-20 w-20 object-contain shrink-0">
+                <?php else: ?>
+                    <div class="h-20 w-20 flex items-center justify-center rounded-2xl border-2 border-slate-800 bg-slate-50 text-slate-800 shrink-0 shadow-sm">
+                        <i class="fa-solid fa-graduation-cap text-3xl"></i>
+                    </div>
+                <?php endif; ?>
                 <div class="text-center font-sans">
                     <h3 class="text-xs font-bold uppercase tracking-widest text-slate-600">PEMERINTAH DAERAH PROVINSI / KABUPATEN</h3>
                     <h4 class="text-xs font-bold uppercase tracking-widest text-slate-700">DINAS PENDIDIKAN DAN KEBUDAYAAN</h4>
@@ -681,8 +685,10 @@ function tglIndo($date_str, $bulan_indo) {
                 $base_dir = rtrim(dirname($_SERVER['PHP_SELF'] ?? ''), '/\\');
                 $root_path = preg_replace('/\/dashboard.*$/', '', $base_dir);
                 $applicant_name = $req['applicant_name'] ?? '';
-                $letter_hash = strtoupper(substr(md5($letter_number . ($school['headmaster_nip'] ?? '') . 'SEKOLAH_AUTH_TTE'), 0, 16));
-                $base_verify_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $root_path . '/verify_document.php?doc_type=' . urlencode($type) . '&doc_num=' . urlencode($letter_number) . '&student_name=' . urlencode($applicant_name) . '&hash=' . $letter_hash;
+                $doc_type_code = $req['request_type'] ?? 'SURAT_KETERANGAN';
+                $headmaster_nip = $school_info['headmaster_nip'] ?? '';
+                $letter_hash = strtoupper(substr(md5($letter_number . $headmaster_nip . 'SEKOLAH_AUTH_TTE'), 0, 16));
+                $base_verify_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $root_path . '/verify_document.php?doc_type=' . urlencode($doc_type_code) . '&doc_num=' . urlencode($letter_number) . '&student_name=' . urlencode($applicant_name) . '&hash=' . $letter_hash;
                 ?>
                 <a href="<?= htmlspecialchars($base_verify_url) ?>" target="_blank" title="Scan / Klik untuk Verifikasi Resmi">
                     <img src="https://api.qrserver.com/v1/create-qr-code/?size=95x95&margin=0&data=<?= urlencode($base_verify_url) ?>" 
@@ -695,7 +701,7 @@ function tglIndo($date_str, $bulan_indo) {
 
             <div class="text-right">
                 <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
-                    'doc_type' => $type,
+                    'doc_type' => $doc_type_code,
                     'doc_num' => $letter_number,
                     'student_name' => $applicant_name,
                     'date' => tglIndo($req['updated_at'] ?: $req['created_at'], $bulan_indo)

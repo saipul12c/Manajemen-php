@@ -393,5 +393,10 @@ $pwa_info = $pwa_app_names[$parent_folder] ?? null;
     }
 </script>
 
+<?php
+// Live Chat Widget Terpadu (Untuk Pengguna Logged-In di Seluruh Dasbor)
+require_once __DIR__ . '/../../includes/live_chat_widget.php';
+?>
+
 </body>
 </html>

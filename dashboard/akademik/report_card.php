@@ -513,6 +513,10 @@ if (!$is_staff_or_teacher && !$clearance['is_cleared']) {
             margin: 12mm 15mm 15mm 15mm;
         }
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body { 
                 background: white !important; 
                 color: #0f172a !important; 
@@ -720,14 +724,27 @@ if (!$is_staff_or_teacher && !$clearance['is_cleared']) {
     <div id="paneReport" class="tab-pane active-tab print-paper w-full max-w-4xl rounded-3xl border border-white/15 bg-slate-900/95 p-6 sm:p-10 shadow-2xl backdrop-blur page-break">
         
         <!-- Kop Surat Resmi -->
-        <div class="text-center border-b-2 border-white/20 pb-5 mb-5">
-            <h1 class="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white">
-                <?= htmlspecialchars($school_info['school_name']) ?>
-            </h1>
-            <p class="text-xs text-slate-300 mt-1"><?= htmlspecialchars($school_info['school_address']) ?></p>
-            <p class="text-xs text-slate-400 font-mono">Telepon: <?= htmlspecialchars($school_info['school_phone']) ?> | Email: <?= htmlspecialchars($school_info['school_email']) ?></p>
-            <div class="inline-block mt-3 px-4 py-1 rounded-full border border-white/20 bg-white/5 text-xs font-bold uppercase tracking-widest text-blue-400">
-                Laporan Hasil Belajar Peserta Didik (E-Rapor)
+        <div class="flex items-center gap-4 border-b-2 border-white/20 pb-5 mb-5">
+            <?php 
+                $clean_kop_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                $kop_logo_exists = !empty($clean_kop_logo) && (strpos($clean_kop_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+            ?>
+            <?php if ($kop_logo_exists): ?>
+                <img src="<?= htmlspecialchars($clean_kop_logo) ?>" alt="Logo" class="h-20 w-20 object-contain shrink-0">
+            <?php else: ?>
+                <div class="h-16 w-16 rounded-2xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center text-3xl font-black shrink-0">
+                    <i class="fa-solid fa-school"></i>
+                </div>
+            <?php endif; ?>
+            <div class="flex-1 text-center pr-6">
+                <h1 class="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white">
+                    <?= htmlspecialchars($school_info['school_name']) ?>
+                </h1>
+                <p class="text-xs text-slate-300 mt-1"><?= htmlspecialchars($school_info['school_address']) ?></p>
+                <p class="text-xs text-slate-400 font-mono">Telepon: <?= htmlspecialchars($school_info['school_phone']) ?> | Email: <?= htmlspecialchars($school_info['school_email']) ?></p>
+                <div class="inline-block mt-2 px-4 py-0.5 rounded-full border border-white/20 bg-white/5 text-[11px] font-bold uppercase tracking-widest text-blue-400">
+                    Laporan Hasil Belajar Peserta Didik (E-Rapor)
+                </div>
             </div>
         </div>
 
@@ -1026,9 +1043,17 @@ if (!$is_staff_or_teacher && !$clearance['is_cleared']) {
             
             <!-- Logo & Kementerian -->
             <div class="space-y-4">
-                <div class="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-blue-500/10 border-2 border-blue-500/30 text-blue-400 text-5xl mb-2 shadow-inner">
-                    <i class="fa-solid fa-graduation-cap"></i>
-                </div>
+                <?php 
+                    $clean_cov_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                    $cov_logo_exists = !empty($clean_cov_logo) && (strpos($clean_cov_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+                ?>
+                <?php if ($cov_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_cov_logo) ?>" alt="Logo" class="inline-block h-24 w-24 object-contain mb-2">
+                <?php else: ?>
+                    <div class="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-blue-500/10 border-2 border-blue-500/30 text-blue-400 text-5xl mb-2 shadow-inner">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                <?php endif; ?>
                 <h2 class="text-xs sm:text-sm font-bold uppercase tracking-widest text-slate-300 leading-relaxed">
                     KEMENTERIAN PENDIDIKAN, KEBUDAYAAN, RISET, DAN TEKNOLOGI<br>REPUBLIK INDONESIA
                 </h2>

@@ -108,6 +108,10 @@ $invite_date = date('l, d F Y', strtotime('+3 days'));
             margin: 15mm 20mm 15mm 20mm;
         }
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body { 
                 background: white !important; 
                 color: #000 !important; 
@@ -155,15 +159,28 @@ $invite_date = date('l, d F Y', strtotime('+3 days'));
     <div class="print-card w-full max-w-4xl rounded-3xl border border-white/15 bg-white text-slate-900 p-8 sm:p-14 shadow-2xl">
         
         <!-- Kop Surat Resmi -->
-        <div class="text-center border-b-2 border-slate-900 pb-4 mb-6">
-            <h2 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
-                PEMERINTAH PROVINSI DAERAH KHUSUS IBUKOTA
-            </h2>
-            <h1 class="text-2xl sm:text-3xl font-black uppercase tracking-tight text-slate-950 mt-0.5">
-                <?= htmlspecialchars($school['school_name']) ?>
-            </h1>
-            <p class="text-xs text-slate-700 mt-1"><?= htmlspecialchars($school['school_address']) ?></p>
-            <p class="text-xs text-slate-600 font-mono">Telepon: <?= htmlspecialchars($school['school_phone']) ?> | Pos-el: <?= htmlspecialchars($school['school_email']) ?></p>
+        <div class="flex items-center gap-4 border-b-2 border-slate-900 pb-4 mb-6">
+            <?php 
+                $clean_bk_logo = !empty($school['school_logo']) ? resolveAssetUrl($school['school_logo'], '../../') : '';
+                $bk_logo_exists = !empty($clean_bk_logo) && (strpos($clean_bk_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school['school_logo'])));
+            ?>
+            <?php if ($bk_logo_exists): ?>
+                <img src="<?= htmlspecialchars($clean_bk_logo) ?>" alt="Logo" class="h-20 w-20 object-contain shrink-0">
+            <?php else: ?>
+                <div class="h-16 w-16 rounded-2xl bg-slate-900 text-white flex items-center justify-center text-3xl font-black shrink-0">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                </div>
+            <?php endif; ?>
+            <div class="flex-1 text-center pr-6">
+                <h2 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
+                    PEMERINTAH PROVINSI DAERAH KHUSUS IBUKOTA
+                </h2>
+                <h1 class="text-2xl sm:text-3xl font-black uppercase tracking-tight text-slate-950 mt-0.5">
+                    <?= htmlspecialchars($school['school_name']) ?>
+                </h1>
+                <p class="text-xs text-slate-700 mt-1"><?= htmlspecialchars($school['school_address']) ?></p>
+                <p class="text-xs text-slate-600 font-mono">Telepon: <?= htmlspecialchars($school['school_phone']) ?> | Pos-el: <?= htmlspecialchars($school['school_email']) ?></p>
+            </div>
         </div>
 
         <!-- Nomor & Perihal Surat -->

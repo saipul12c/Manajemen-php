@@ -144,43 +144,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 // -7 & -8 fix: Validasi ukuran file (maks 5MB) dan MIME type pada upload bukti pembayaran
                 $upload_error = false;
                 if (isset($_FILES['proof_file']) && $_FILES['proof_file']['error'] === UPLOAD_ERR_OK) {
-                    // -7 fix: Cek ukuran file maksimal 5MB
-                    if ($_FILES['proof_file']['size'] > 5 * 1024 * 1024) {
+                    $uploadRes = saveSecureUpload(
+                        $_FILES['proof_file'],
+                        'payments',
+                        ['jpg', 'jpeg', 'png', 'pdf'],
+                        [],
+                        5 * 1024 * 1024,
+                        'pay'
+                    );
+                    if ($uploadRes['success']) {
+                        $proof_url = $uploadRes['path'];
+                    } else {
                         $pdo->rollBack();
-                        $message = "Ukuran file bukti transfer maksimal 5MB.";
+                        $message = $uploadRes['error'];
                         $message_type = "error";
                         $upload_error = true;
-                    } else {
-                        $file_tmp = $_FILES['proof_file']['tmp_name'];
-                        $file_name = $_FILES['proof_file']['name'];
-                        $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                        $allowed_exts = ['jpg', 'jpeg', 'png', 'pdf'];
-                        $allowed_mimes = ['image/jpeg', 'image/pjpeg', 'image/png', 'application/pdf'];
-
-                        // -8 fix: Verifikasi MIME type asli via finfo
-                        $file_mime = '';
-                        if (function_exists('finfo_open')) {
-                            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                            if ($finfo) {
-                                $file_mime = finfo_file($finfo, $file_tmp);
-                                finfo_close($finfo);
-                            }
-                        } elseif (function_exists('mime_content_type')) {
-                            $file_mime = mime_content_type($file_tmp);
-                        }
-
-                        if (!in_array($file_ext, $allowed_exts, true) || ($file_mime && !in_array(strtolower($file_mime), $allowed_mimes, true))) {
-                            $pdo->rollBack();
-                            $message = "Format file bukti transfer tidak valid. Hanya JPG, PNG, dan PDF yang diizinkan.";
-                            $message_type = "error";
-                            $upload_error = true;
-                        } else {
-                            $new_file_name = 'pay_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
-                            $dest_path = $upload_dir . '/' . $new_file_name;
-                            if (move_uploaded_file($file_tmp, $dest_path)) {
-                                $proof_url = 'uploads/payments/' . $new_file_name;
-                            }
-                        }
                     }
                 }
 
@@ -651,7 +629,7 @@ require_once __DIR__ . "/../includes/header.php";
                                 </td>
                                 <td class="px-4 py-3">
                                     <?php if (!empty($pv['proof_url'])): ?>
-                                        <a href="../../<?= htmlspecialchars($pv['proof_url']) ?>" target="_blank" class="inline-flex items-center gap-1.5 text-xs text-blue-400 underline hover:text-blue-300">
+                                        <a href="<?= htmlspecialchars(resolveAssetUrl($pv['proof_url'], '../../')) ?>" target="_blank" class="inline-flex items-center gap-1.5 text-xs text-blue-400 underline hover:text-blue-300">
                                             <i class="fa-regular fa-image"></i> Lihat Bukti
                                         </a>
                                     <?php else: ?>

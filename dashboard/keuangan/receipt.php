@@ -141,6 +141,10 @@ $receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . 
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <style>
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             .no-print { display: none !important; }
             body { background: white !important; color: black !important; padding: 0 !important; }
             .receipt-box { border: 2px solid #000 !important; box-shadow: none !important; }
@@ -186,9 +190,17 @@ $receipt_no = "KWT/" . date('Y/m', strtotime($bill['payment_date'] ?? 'now')) . 
         
         <!-- Header Kop Sekolah -->
         <div class="flex items-center gap-4 border-b-2 border-slate-800 pb-4">
-            <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-white text-2xl font-extrabold shadow-md shrink-0">
-                <i class="fa-solid fa-graduation-cap"></i>
-            </div>
+            <?php 
+                $clean_rcp_logo = !empty($school['school_logo']) ? resolveAssetUrl($school['school_logo'], '../../') : '';
+                $rcp_logo_exists = !empty($clean_rcp_logo) && (strpos($clean_rcp_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school['school_logo'])));
+            ?>
+            <?php if ($rcp_logo_exists): ?>
+                <img src="<?= htmlspecialchars($clean_rcp_logo) ?>" alt="Logo" class="h-16 w-16 object-contain shrink-0">
+            <?php else: ?>
+                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-white text-2xl font-extrabold shadow-md shrink-0">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                </div>
+            <?php endif; ?>
             <div class="flex-1">
                 <h1 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900 leading-tight">
                     <?= htmlspecialchars($school['school_name']) ?>

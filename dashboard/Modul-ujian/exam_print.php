@@ -106,6 +106,7 @@ $info_tgl_cetak = tgl_indo(time());
 
 $cat_label = EXAM_CATEGORIES[$exam['category']]['label'] ?? strtoupper($exam['category']);
 $doc_number = sprintf("421.5 / %03d / BA-CBT / %s / %s", $exam['id'], date('m'), date('Y'));
+$school_info = getSchoolSettings($pdo);
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -360,6 +361,10 @@ $doc_number = sprintf("421.5 / %03d / BA-CBT / %s / %s", $exam['id'], date('m'),
 
         /* Print Media Styles */
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body {
                 background: #ffffff;
                 padding: 0;
@@ -407,14 +412,22 @@ $doc_number = sprintf("421.5 / %03d / BA-CBT / %s / %s", $exam['id'], date('m'),
 
         <!-- KOP SURAT RESMI -->
         <div class="kop-surat">
+            <?php 
+                $clean_exam_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                $exam_logo_exists = !empty($clean_exam_logo) && (strpos($clean_exam_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+            ?>
             <div class="kop-logo">
-                <i class="fa-solid fa-graduation-cap"></i>
+                <?php if ($exam_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_exam_logo) ?>" alt="Logo" style="max-height: 70px; max-width: 70px; object-fit: contain;">
+                <?php else: ?>
+                    <i class="fa-solid fa-graduation-cap"></i>
+                <?php endif; ?>
             </div>
             <div class="kop-header">
                 <h4>PEMERINTAH DAERAH PROVINSI PENDIDIKAN & KEBUDAYAAN</h4>
-                <h2>SISTEM MANAJEMEN AKADEMIK & CBT TERPADU</h2>
-                <p>Jl. Pendidikan Raya No. 45, Kompleks Pusat Pendidikan Modern | Telp. (021) 7890-1234</p>
-                <p>Website: https://manajemen-php.local | Email: cbt-evaluasi@sekolah.sch.id</p>
+                <h2><?= htmlspecialchars($school_info['school_name'] ?? 'SISTEM MANAJEMEN AKADEMIK & CBT TERPADU') ?></h2>
+                <p><?= htmlspecialchars($school_info['school_address'] ?? 'Jl. Pendidikan Raya No. 45') ?> | Telp: <?= htmlspecialchars($school_info['school_phone'] ?? '-') ?></p>
+                <p>Website: <?= htmlspecialchars($school_info['school_website'] ?? 'https://sekolah.sch.id') ?> | Email: <?= htmlspecialchars($school_info['school_email'] ?? 'info@sekolah.sch.id') ?></p>
             </div>
         </div>
 

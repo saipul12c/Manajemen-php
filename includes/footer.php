@@ -45,6 +45,32 @@ $school_email   = $school_info['school_email'] ?? 'info@sekolah.sch.id';
                         Semua Layanan Sistem Berjalan Normal
                     </span>
                 </div>
+
+                <?php if (!empty($school_info['social_instagram']) || !empty($school_info['social_youtube']) || !empty($school_info['social_facebook']) || !empty($school_info['social_tiktok'])): ?>
+                <div class="flex items-center gap-2.5 pt-2">
+                    <span class="text-[11px] text-slate-500 font-medium">Ikuti Kami:</span>
+                    <?php if (!empty($school_info['social_instagram'])): ?>
+                    <a href="<?= htmlspecialchars($school_info['social_instagram']) ?>" target="_blank" title="Instagram Resmi" class="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 border border-white/10 text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/30 transition text-xs">
+                        <i class="fa-brands fa-instagram"></i>
+                    </a>
+                    <?php endif; ?>
+                    <?php if (!empty($school_info['social_youtube'])): ?>
+                    <a href="<?= htmlspecialchars($school_info['social_youtube']) ?>" target="_blank" title="Kanal YouTube Resmi" class="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 border border-white/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/30 transition text-xs">
+                        <i class="fa-brands fa-youtube"></i>
+                    </a>
+                    <?php endif; ?>
+                    <?php if (!empty($school_info['social_facebook'])): ?>
+                    <a href="<?= htmlspecialchars($school_info['social_facebook']) ?>" target="_blank" title="Facebook Resmi" class="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 border border-white/10 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/30 transition text-xs">
+                        <i class="fa-brands fa-facebook"></i>
+                    </a>
+                    <?php endif; ?>
+                    <?php if (!empty($school_info['social_tiktok'])): ?>
+                    <a href="<?= htmlspecialchars($school_info['social_tiktok']) ?>" target="_blank" title="TikTok Resmi" class="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 border border-white/10 text-slate-200 hover:bg-white/20 hover:border-white/30 transition text-xs">
+                        <i class="fa-brands fa-tiktok"></i>
+                    </a>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
             </div>
 
             <!-- Kolom 3: Tautan Cepat Navigasi -->
@@ -129,3 +155,8 @@ $school_email   = $school_info['school_email'] ?? 'info@sekolah.sch.id';
         </div>
     </div>
 </footer>
+
+<?php
+// Live Chat Widget Terpadu (Bisa Digunakan Sebelum & Sesudah Login)
+require_once __DIR__ . '/live_chat_widget.php';
+?>

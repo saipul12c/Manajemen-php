@@ -223,27 +223,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $image_url = null;
             $audio_url = null;
 
-            // Validasi & Upload Gambar
+            // Validasi & Upload Gambar Soal
             if (!empty($_FILES['question_image']['name']) && $_FILES['question_image']['error'] === UPLOAD_ERR_OK) {
-                $allowed_exts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-                $allowed_mimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-                $file_name = $_FILES['question_image']['name'];
-                $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                $tmp_name = $_FILES['question_image']['tmp_name'];
-
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $detected_mime = finfo_file($finfo, $tmp_name);
-                finfo_close($finfo);
-
-                if (in_array($ext, $allowed_exts, true) && in_array($detected_mime, $allowed_mimes, true)) {
-                    $upload_dir = __DIR__ . "/../../uploads/exams/";
-                    if (!is_dir($upload_dir)) {
-                        mkdir($upload_dir, 0755, true);
-                    }
-                    $new_filename = "soal_" . $exam_id . "_" . uniqid() . "." . $ext;
-                    if (move_uploaded_file($tmp_name, $upload_dir . $new_filename)) {
-                        $image_url = "../../uploads/exams/" . $new_filename;
-                    }
+                $imgRes = saveSecureUpload(
+                    $_FILES['question_image'],
+                    'exams',
+                    ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+                    ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+                    5 * 1024 * 1024,
+                    "soal_" . $exam_id
+                );
+                if ($imgRes['success']) {
+                    $image_url = $imgRes['path'];
+                } else {
+                    $message = "Gagal mengunggah gambar soal: " . $imgRes['error'];
+                    $message_type = "error";
+                    $has_error = true;
                 }
             } elseif (!empty($_POST['image_url'])) {
                 $raw_url = trim($_POST['image_url']);
@@ -253,20 +248,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
 
             // Validasi & Upload Audio Listening
-            if (!empty($_FILES['question_audio']['name']) && $_FILES['question_audio']['error'] === UPLOAD_ERR_OK) {
-                $allowed_a_exts = ['mp3', 'wav', 'ogg', 'm4a', 'aac'];
-                $a_name = $_FILES['question_audio']['name'];
-                $a_ext = strtolower(pathinfo($a_name, PATHINFO_EXTENSION));
-                $a_tmp = $_FILES['question_audio']['tmp_name'];
-                if (in_array($a_ext, $allowed_a_exts, true)) {
-                    $upload_a_dir = __DIR__ . "/../../uploads/exams_audio/";
-                    if (!is_dir($upload_a_dir)) {
-                        mkdir($upload_a_dir, 0755, true);
-                    }
-                    $new_a_filename = "audio_" . $exam_id . "_" . uniqid() . "." . $a_ext;
-                    if (move_uploaded_file($a_tmp, $upload_a_dir . $new_a_filename)) {
-                        $audio_url = "../../uploads/exams_audio/" . $new_a_filename;
-                    }
+            if (!$has_error && !empty($_FILES['question_audio']['name']) && $_FILES['question_audio']['error'] === UPLOAD_ERR_OK) {
+                $audioRes = saveSecureUpload(
+                    $_FILES['question_audio'],
+                    'exams_audio',
+                    ['mp3', 'wav', 'ogg', 'm4a', 'aac'],
+                    ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/mp4', 'audio/x-m4a', 'audio/aac'],
+                    20 * 1024 * 1024,
+                    "audio_" . $exam_id
+                );
+                if ($audioRes['success']) {
+                    $audio_url = $audioRes['path'];
+                } else {
+                    $message = "Gagal mengunggah berkas audio listening: " . $audioRes['error'];
+                    $message_type = "error";
+                    $has_error = true;
                 }
             } elseif (!empty($_POST['audio_url'])) {
                 $raw_a_url = trim($_POST['audio_url']);
@@ -866,7 +862,7 @@ $cat_info = EXAM_CATEGORIES[$exam['category']] ?? ['label' => $exam['category'],
                             <!-- Lampiran Gambar Soal (Jika ada) -->
                             <?php if (!empty($q['image_url'])): ?>
                                 <div class="my-3 rounded-2xl overflow-hidden border border-white/10 bg-slate-950 p-2 max-w-sm">
-                                    <img src="<?= htmlspecialchars($q['image_url']) ?>" alt="Ilustrasi Soal" 
+                                    <img src="<?= htmlspecialchars(resolveAssetUrl($q['image_url'], '../../')) ?>" alt="Ilustrasi Soal" 
                                          class="rounded-xl max-h-48 w-auto object-contain mx-auto">
                                 </div>
                             <?php endif; ?>

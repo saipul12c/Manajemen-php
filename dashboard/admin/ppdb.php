@@ -1415,7 +1415,8 @@ function openReviewModal(data) {
     if (achievements && achievements.length > 0) {
         certCountSpan.textContent = achievements.length;
         certList.innerHTML = achievements.map((ach, idx) => {
-            const fileLink = ach.file ? `<a href="../../${ach.file}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white text-xs font-semibold transition"><i class="fa-solid fa-arrow-up-right-from-square"></i> Lihat Berkas ↗</a>` : `<span class="text-xs text-slate-500 italic">Tidak ada berkas</span>`;
+            const resolveUrl = (p) => p.startsWith('http') ? p : (p.startsWith('uploads/') ? '../../' + p : '../../' + p.replace(/^(\.\.\/)+/, ''));
+            const fileLink = ach.file ? `<a href="${resolveUrl(ach.file)}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white text-xs font-semibold transition"><i class="fa-solid fa-arrow-up-right-from-square"></i> Lihat Berkas ↗</a>` : `<span class="text-xs text-slate-500 italic">Tidak ada berkas</span>`;
             return `
                 <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/80 border border-white/5 text-xs">
                     <div class="flex items-center gap-2.5 min-w-0 pr-2">
@@ -1450,7 +1451,7 @@ function setupDocLink(linkId, boxId, path) {
     const link = document.getElementById(linkId);
     const box = document.getElementById(boxId);
     if (path) {
-        link.href = '../../' + path;
+        link.href = path.startsWith('http') ? path : (path.startsWith('uploads/') ? '../../' + path : '../../' + path.replace(/^(\.\.\/)+/, ''));
         link.textContent = 'Lihat Berkas ↗';
         link.classList.remove('text-slate-600', 'pointer-events-none');
         link.classList.add('text-blue-400');

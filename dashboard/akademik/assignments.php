@@ -36,19 +36,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $attachment_link = trim($_POST['attachment_link'] ?? '');
         $attachment_url = $attachment_link ?: null;
 
-        // Handle upload berkas soal / lampiran jika ada
+        // Handle upload berkas soal / lampiran jika ada dengan validasi keamanan terpusat
         if (isset($_FILES['attachment_file']) && $_FILES['attachment_file']['error'] === UPLOAD_ERR_OK) {
-            $f_tmp  = $_FILES['attachment_file']['tmp_name'];
-            $f_name = $_FILES['attachment_file']['name'];
-            $f_ext  = strtolower(pathinfo($f_name, PATHINFO_EXTENSION));
             $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'zip', 'xls', 'xlsx', 'ppt', 'pptx'];
-
-            if (in_array($f_ext, $allowed, true) && $_FILES['attachment_file']['size'] <= 20 * 1024 * 1024) {
-                $new_f_name = 'soal_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $f_ext;
-                $dest = $upload_dir . '/' . $new_f_name;
-                if (move_uploaded_file($f_tmp, $dest)) {
-                    $attachment_url = '../../uploads/assignments/' . $new_f_name;
-                }
+            $uploadRes = saveSecureUpload($_FILES['attachment_file'], 'assignments', $allowed, [], 20 * 1024 * 1024, 'soal');
+            if ($uploadRes['success']) {
+                $attachment_url = $uploadRes['path'];
+            } else {
+                $message = $uploadRes['error'];
+                $message_type = "error";
             }
         }
 
@@ -78,39 +74,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $link_url = trim($_POST['link_url'] ?? '');
     $file_url = $link_url ?: null;
 
-    // -09 fix: Handle File Upload jika ada dengan validasi MIME-type
+    // Handle File Upload jika ada dengan validasi keamanan berkas terpusat
     if (isset($_FILES['submission_file']) && $_FILES['submission_file']['error'] === UPLOAD_ERR_OK) {
-        $file_tmp  = $_FILES['submission_file']['tmp_name'];
-        $file_name = $_FILES['submission_file']['name'];
-        $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-        $allowed   = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'zip'];
-        $allowed_mimes = [
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'image/jpeg',
-            'image/png',
-            'application/zip',
-            'application/x-zip-compressed',
-            'application/octet-stream'
-        ];
-
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        $detected_mime = finfo_file($finfo, $file_tmp);
-        finfo_close($finfo);
-
-        if (!in_array($file_ext, $allowed, true) || !in_array($detected_mime, $allowed_mimes, true)) {
-            $message = "Format atau isi file tidak didukung. Gunakan berkas asli: PDF, DOC, DOCX, JPG, PNG, atau ZIP.";
-            $message_type = "error";
-        } elseif ($_FILES['submission_file']['size'] > 15 * 1024 * 1024) {
-            $message = "Ukuran file melebihi batas maksimal 15MB.";
-            $message_type = "error";
+        $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'zip'];
+        $uploadRes = saveSecureUpload(
+            $_FILES['submission_file'],
+            'assignments',
+            $allowed,
+            [],
+            15 * 1024 * 1024,
+            "tugas_{$assignment_id}_siswa_{$user_id}"
+        );
+        if ($uploadRes['success']) {
+            $file_url = $uploadRes['path'];
         } else {
-            $new_filename = 'tugas_' . $assignment_id . '_siswa_' . $user_id . '_' . time() . '.' . $file_ext;
-            $destination  = $upload_dir . '/' . $new_filename;
-            if (move_uploaded_file($file_tmp, $destination)) {
-                $file_url = '../../uploads/assignments/' . $new_filename;
-            }
+            $message = $uploadRes['error'];
+            $message_type = "error";
         }
     }
 
@@ -342,7 +321,7 @@ require_once __DIR__ . "/../includes/header.php";
                         <?php endif; ?>
                         <?php if (!empty($sub['file_url'])): ?>
                             <div class="pt-1">
-                                <a href="<?= htmlspecialchars($sub['file_url']) ?>" target="_blank" 
+                                <a href="<?= htmlspecialchars(resolveAssetUrl($sub['file_url'], '../../')) ?>" target="_blank" 
                                    class="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-400 hover:underline">
                                     <i class="fa-solid fa-paperclip"></i> Buka / Unduh Berkas Jawaban <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-0.5"></i>
                                 </a>
@@ -427,7 +406,7 @@ require_once __DIR__ . "/../includes/header.php";
                     <!-- Lampiran Lembar Soal Guru jika ada -->
                     <?php if (!empty($as['attachment_url'])): ?>
                         <div class="mb-4">
-                            <a href="<?= htmlspecialchars($as['attachment_url']) ?>" target="_blank" 
+                            <a href="<?= htmlspecialchars(resolveAssetUrl($as['attachment_url'], '../../')) ?>" target="_blank" 
                                class="inline-flex items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-300 hover:bg-blue-500/20 transition">
                                 <i class="fa-solid fa-paperclip"></i> Unduh Lembar Soal / Lampiran <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-0.5"></i>
                             </a>
@@ -459,7 +438,7 @@ require_once __DIR__ . "/../includes/header.php";
                                     </p>
                                 <?php endif; ?>
                                 <?php if (!empty($sub_data['file_url'])): ?>
-                                    <a href="<?= htmlspecialchars($sub_data['file_url']) ?>" target="_blank" class="text-blue-400 hover:underline inline-block mt-2 font-medium text-[11px]">
+                                    <a href="<?= htmlspecialchars(resolveAssetUrl($sub_data['file_url'], '../../')) ?>" target="_blank" class="text-blue-400 hover:underline inline-block mt-2 font-medium text-[11px]">
                                         <i class="fa-solid fa-paperclip mr-1"></i>Buka Berkas Terkirim <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-0.5"></i>
                                     </a>
                                 <?php endif; ?>
@@ -470,7 +449,7 @@ require_once __DIR__ . "/../includes/header.php";
                                     <i class="fa-solid fa-hourglass-half text-blue-400"></i> Terkumpul (Menunggu Penilaian)
                                 </span>
                                 <?php if (!empty($sub_data['file_url'])): ?>
-                                    <a href="<?= htmlspecialchars($sub_data['file_url']) ?>" target="_blank" class="text-blue-400 hover:underline font-semibold text-[11px]">
+                                    <a href="<?= htmlspecialchars(resolveAssetUrl($sub_data['file_url'], '../../')) ?>" target="_blank" class="text-blue-400 hover:underline font-semibold text-[11px]">
                                         <i class="fa-solid fa-paperclip mr-1"></i>Berkas <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-0.5"></i>
                                     </a>
                                 <?php endif; ?>
@@ -524,7 +503,7 @@ require_once __DIR__ . "/../includes/header.php";
                                         </p>
                                     <?php endif; ?>
                                     <?php if (!empty($sub_data['file_url'])): ?>
-                                        <a href="<?= htmlspecialchars($sub_data['file_url']) ?>" target="_blank" class="text-blue-400 hover:underline inline-block mt-2 font-medium text-[11px]">
+                                        <a href="<?= htmlspecialchars(resolveAssetUrl($sub_data['file_url'], '../../')) ?>" target="_blank" class="text-blue-400 hover:underline inline-block mt-2 font-medium text-[11px]">
                                             <i class="fa-solid fa-paperclip mr-1"></i>Buka Berkas Jawaban Anak <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-0.5"></i>
                                         </a>
                                     <?php endif; ?>
@@ -533,7 +512,7 @@ require_once __DIR__ . "/../includes/header.php";
                                 <div class="rounded-xl border border-blue-500/30 bg-blue-500/10 p-2.5 text-xs text-blue-300">
                                     <span><i class="fa-solid fa-hourglass-half mr-1 text-blue-400"></i>Sudah mengumpulkan tugas (Sedang menunggu penilaian guru).</span>
                                     <?php if (!empty($sub_data['file_url'])): ?>
-                                        <a href="<?= htmlspecialchars($sub_data['file_url']) ?>" target="_blank" class="text-blue-400 hover:underline block mt-1.5 font-medium text-[11px]">
+                                        <a href="<?= htmlspecialchars(resolveAssetUrl($sub_data['file_url'], '../../')) ?>" target="_blank" class="text-blue-400 hover:underline block mt-1.5 font-medium text-[11px]">
                                             <i class="fa-solid fa-paperclip mr-1"></i>Buka Berkas Jawaban <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-0.5"></i>
                                         </a>
                                     <?php endif; ?>

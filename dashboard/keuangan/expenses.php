@@ -47,24 +47,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $expense_no = $custom_no;
         }
 
-        // Upload Berkas / Nota Kwitansi
+        // Upload Berkas / Nota Kwitansi dengan validasi keamanan terpusat
         if (isset($_FILES['receipt_file']) && $_FILES['receipt_file']['error'] === UPLOAD_ERR_OK) {
-            $file_tmp  = $_FILES['receipt_file']['tmp_name'];
-            $file_name = $_FILES['receipt_file']['name'];
-            $file_size = $_FILES['receipt_file']['size'];
-            $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-            $allowed_ext   = ['jpg', 'jpeg', 'png', 'pdf'];
-            $allowed_mimes = ['image/jpeg', 'image/png', 'application/pdf'];
-
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $detected_mime = finfo_file($finfo, $file_tmp);
-            finfo_close($finfo);
-
-            if (in_array($file_ext, $allowed_ext, true) && in_array($detected_mime, $allowed_mimes, true) && $file_size <= 8 * 1024 * 1024) {
-                $new_file = "nota_" . time() . "_" . uniqid() . "." . $file_ext;
-                if (move_uploaded_file($file_tmp, $upload_expense_dir . "/" . $new_file)) {
-                    $receipt_doc = "../../uploads/expenses/" . $new_file;
-                }
+            $allowed = ['jpg', 'jpeg', 'png', 'pdf'];
+            $uploadRes = saveSecureUpload($_FILES['receipt_file'], 'expenses', $allowed, [], 8 * 1024 * 1024, 'nota');
+            if ($uploadRes['success']) {
+                $receipt_doc = $uploadRes['path'];
+            } else {
+                $message = $uploadRes['error'];
+                $message_type = 'error';
             }
         }
 
@@ -362,7 +353,7 @@ require_once __DIR__ . "/../includes/header.php";
                             <td class="px-6 py-4 text-right">
                                 <div class="flex items-center justify-end gap-2">
                                     <?php if (!empty($exp['receipt_doc'])): ?>
-                                        <a href="<?= htmlspecialchars($exp['receipt_doc']) ?>" target="_blank" 
+                                        <a href="<?= htmlspecialchars(resolveAssetUrl($exp['receipt_doc'], '../../')) ?>" target="_blank" 
                                            class="rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 text-xs font-semibold text-blue-400 transition" title="Lihat Kwitansi / Nota">
                                             <i class="fa-solid fa-file-invoice"></i> Nota
                                         </a>

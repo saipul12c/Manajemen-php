@@ -45,26 +45,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $agenda_no = $prefix . date('Y/m/') . sprintf('%03d', $cnt);
         }
 
-        // Upload berkas scan PDF / Gambar
+        // Upload berkas scan PDF / Gambar dengan validasi keamanan terpusat
         if (isset($_FILES['attachment_file']) && $_FILES['attachment_file']['error'] === UPLOAD_ERR_OK) {
-            $file_tmp  = $_FILES['attachment_file']['tmp_name'];
-            $file_name = $_FILES['attachment_file']['name'];
-            $file_size = $_FILES['attachment_file']['size'];
-            $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-            $allowed_ext   = ['pdf', 'jpg', 'jpeg', 'png'];
-
-            if (!in_array($file_ext, $allowed_ext, true)) {
-                $message = "Format file berkas harus berupa PDF, JPG, atau PNG.";
-                $message_type = "error";
-            } elseif ($file_size > 15 * 1024 * 1024) {
-                $message = "Ukuran file berkas maksimal 15MB.";
-                $message_type = "error";
+            $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+            $uploadRes = saveSecureUpload(
+                $_FILES['attachment_file'],
+                'letters',
+                $allowed,
+                [],
+                15 * 1024 * 1024,
+                "agenda_{$mail_type}"
+            );
+            if ($uploadRes['success']) {
+                $attachment_file = $uploadRes['path'];
             } else {
-                $new_filename = 'agenda_' . $mail_type . '_' . time() . '_' . rand(100, 999) . '.' . $file_ext;
-                $destination  = $upload_letter_dir . '/' . $new_filename;
-                if (move_uploaded_file($file_tmp, $destination)) {
-                    $attachment_file = '../../uploads/letters/' . $new_filename;
-                }
+                $message = $uploadRes['error'];
+                $message_type = 'error';
             }
         }
 
@@ -383,7 +379,7 @@ require_once __DIR__ . "/../includes/header.php";
                                             <i class="fa-solid fa-print"></i> Cetak
                                         </a>
                                     <?php elseif (!empty($m['attachment_file'])): ?>
-                                        <a href="<?= htmlspecialchars($m['attachment_file']) ?>" target="_blank" 
+                                        <a href="<?= htmlspecialchars(resolveAssetUrl($m['attachment_file'], '../../')) ?>" target="_blank" 
                                            class="rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1.5 text-xs font-semibold text-blue-300 transition inline-flex items-center gap-1" title="Lihat Berkas Lampiran">
                                             <i class="fa-solid fa-file-pdf"></i> Berkas
                                         </a>

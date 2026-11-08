@@ -82,6 +82,10 @@ if (!empty($a['class_name'])) {
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             .no-print {
                 display: none !important;
             }
@@ -153,8 +157,12 @@ if (!empty($a['class_name'])) {
         <!-- KOP SURAT RESMI DINAS -->
         <div class="flex items-center justify-between gap-4 pb-2 text-center">
             <div class="w-20 h-20 flex-shrink-0 flex items-center justify-center text-3xl">
-                <?php if (!empty($school['school_logo']) && (str_contains($school['school_logo'], '.') || str_contains($school['school_logo'], '/'))): ?>
-                    <img src="<?= htmlspecialchars($school['school_logo']) ?>" class="max-h-16 max-w-16 object-contain" alt="Logo">
+                <?php 
+                    $clean_ann_logo = !empty($school['school_logo']) ? resolveAssetUrl($school['school_logo'], '../../') : '';
+                    $ann_logo_exists = !empty($clean_ann_logo) && (strpos($clean_ann_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school['school_logo'])));
+                ?>
+                <?php if ($ann_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_ann_logo) ?>" class="max-h-16 max-w-16 object-contain" alt="Logo">
                 <?php else: ?>
                     <i class="fa-solid fa-graduation-cap text-slate-800"></i>
                 <?php endif; ?>
@@ -240,25 +248,13 @@ if (!empty($a['class_name'])) {
 
         <!-- TITIMANGSA & TANDA TANGAN -->
         <div class="flex justify-end pt-4 break-inside-avoid">
-            <div class="w-72 text-center text-xs sm:text-sm text-slate-900">
-                <p>Jakarta, <?= date('d F Y', $created_time) ?></p>
-                <p class="font-semibold mt-1">Kepala Sekolah,</p>
-
-                <!-- Stempel & Tanda Tangan Space / QR Verifikasi -->
-                <div class="my-3 flex items-center justify-center">
-                    <div class="p-2 border border-slate-300 rounded-lg bg-slate-50 text-[10px] text-slate-500 flex flex-col items-center">
-                        <span class="text-xl mb-1 text-slate-600"><i class="fa-solid fa-shield-halved"></i></span>
-                        <span class="font-mono font-bold text-slate-700">DOKUMEN TERVERIFIKASI</span>
-                        <span><?= $nomor_surat ?></span>
-                    </div>
-                </div>
-
-                <p class="font-bold underline text-sm sm:text-base text-slate-950">
-                    <?= htmlspecialchars($school['headmaster_name']) ?>
-                </p>
-                <p class="text-xs text-slate-700 mt-0.5">
-                    NIP. <?= htmlspecialchars($school['headmaster_nip']) ?>
-                </p>
+            <div class="text-right">
+                <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
+                    'doc_type' => 'SURAT_EDARAN',
+                    'doc_num' => $nomor_surat,
+                    'date' => date('d F Y', $created_time),
+                    'align' => 'right'
+                ]) ?>
             </div>
         </div>
 

@@ -102,6 +102,10 @@ if (empty($dynamic_subjects)) {
             color: #1e293b;
         }
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body {
                 background: white !important;
                 color: black !important;
@@ -303,14 +307,27 @@ if (empty($dynamic_subjects)) {
                 <div class="report-card-sheet bg-white p-8 sm:p-10 rounded-2xl shadow-xl text-slate-800 border border-slate-200">
                     
                     <!-- KOP RAPOR -->
-                    <div class="text-center border-b-2 border-slate-800 pb-4 mb-5">
-                        <h2 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
-                            <?= htmlspecialchars($school_info['school_name'] ?? 'SMA Bina Bangsa Nusantara') ?>
-                        </h2>
-                        <p class="text-xs text-slate-600 mt-0.5"><?= htmlspecialchars($school_info['school_address'] ?? 'Jakarta') ?></p>
-                        <p class="text-[11px] text-slate-500 font-mono">Telepon: <?= htmlspecialchars($school_info['school_phone'] ?? '-') ?> &bull; Email: <?= htmlspecialchars($school_info['school_email'] ?? '-') ?></p>
-                        <div class="inline-block mt-2 px-3 py-0.5 border border-slate-700 font-bold uppercase tracking-wider text-xs">
-                            Laporan Hasil Belajar Peserta Didik (E-Rapor)
+                    <div class="flex items-center gap-4 border-b-2 border-slate-800 pb-4 mb-5">
+                        <?php 
+                            $clean_bulk_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                            $bulk_logo_exists = !empty($clean_bulk_logo) && (strpos($clean_bulk_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+                        ?>
+                        <?php if ($bulk_logo_exists): ?>
+                            <img src="<?= htmlspecialchars($clean_bulk_logo) ?>" alt="Logo" class="h-16 w-16 object-contain shrink-0">
+                        <?php else: ?>
+                            <div class="h-16 w-16 rounded-2xl bg-blue-700 text-white flex items-center justify-center text-2xl font-black shrink-0">
+                                <i class="fa-solid fa-graduation-cap"></i>
+                            </div>
+                        <?php endif; ?>
+                        <div class="flex-1 text-center pr-6">
+                            <h2 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900">
+                                <?= htmlspecialchars($school_info['school_name'] ?? 'SMA Bina Bangsa Nusantara') ?>
+                            </h2>
+                            <p class="text-xs text-slate-600 mt-0.5"><?= htmlspecialchars($school_info['school_address'] ?? 'Jakarta') ?></p>
+                            <p class="text-[11px] text-slate-500 font-mono">Telepon: <?= htmlspecialchars($school_info['school_phone'] ?? '-') ?> &bull; Email: <?= htmlspecialchars($school_info['school_email'] ?? '-') ?></p>
+                            <div class="inline-block mt-2 px-3 py-0.5 border border-slate-700 font-bold uppercase tracking-wider text-xs">
+                                Laporan Hasil Belajar Peserta Didik (E-Rapor)
+                            </div>
                         </div>
                     </div>
 

@@ -78,58 +78,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_action']) && $_P
 
         // B. Cek jika menggunakan Canvas Pad (Base64)
         $canvas_data = $_POST['signature_canvas_data'] ?? '';
-        if (!$saved && !empty($canvas_data) && strpos($canvas_data, 'data:image/png;base64,') === 0) {
-            $base64_str = str_replace('data:image/png;base64,', '', $canvas_data);
-            $img_decoded = base64_decode($base64_str);
-            if ($img_decoded !== false) {
-                $filename = "teacher_{$user_id}_" . time() . ".png";
-                $target_path = $sig_dir . $filename;
-                if (file_put_contents($target_path, $img_decoded)) {
-                    $db_path = "uploads/signatures/" . $filename;
-                    $stmt_sig = $pdo->prepare("UPDATE users SET signature_image = ? WHERE id = ?");
-                    $stmt_sig->execute([$db_path, $user_id]);
-                    logActivity($pdo, 'UPDATE_TEACHER_SIGNATURE', "Memperbarui tanda tangan digital akun guru ID $user_id (Canvas)");
-                    $message = "Goresan tanda tangan digital Anda berhasil disimpan!";
-                    $message_type = "success";
-                    $saved = true;
-                }
+        if (!$saved && !empty($canvas_data) && strpos($canvas_data, 'data:image/') === 0) {
+            $canvasRes = saveSecureBase64Image($canvas_data, 'signatures', 2 * 1024 * 1024, "teacher_{$user_id}");
+            if ($canvasRes['success']) {
+                $stmt_sig = $pdo->prepare("UPDATE users SET signature_image = ? WHERE id = ?");
+                $stmt_sig->execute([$canvasRes['path'], $user_id]);
+                logActivity($pdo, 'UPDATE_TEACHER_SIGNATURE', "Memperbarui tanda tangan digital akun guru ID $user_id (Canvas)");
+                $message = "Goresan tanda tangan digital Anda berhasil disimpan!";
+                $message_type = "success";
+                $saved = true;
+            } else {
+                $message = "Gagal memproses goresan tanda tangan: " . $canvasRes['error'];
+                $message_type = "error";
             }
         }
 
         // C. Cek jika unggah berkas gambar/SVG
         if (!$saved && isset($_FILES['signature_file']) && $_FILES['signature_file']['error'] === UPLOAD_ERR_OK) {
-            $file = $_FILES['signature_file'];
-            $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-            $allowed_exts = ['png', 'svg', 'webp', 'jpg', 'jpeg'];
-            if (!in_array($ext, $allowed_exts, true)) {
-                $message = "Format berkas tidak valid. Harap gunakan berkas gambar PNG transparan, SVG, atau WEBP.";
-                $message_type = "error";
+            $fileRes = saveSecureUpload(
+                $_FILES['signature_file'],
+                'signatures',
+                ['png', 'svg', 'webp', 'jpg', 'jpeg'],
+                [],
+                2 * 1024 * 1024,
+                "teacher_{$user_id}"
+            );
+            if ($fileRes['success']) {
+                $stmt_sig = $pdo->prepare("UPDATE users SET signature_image = ? WHERE id = ?");
+                $stmt_sig->execute([$fileRes['path'], $user_id]);
+                logActivity($pdo, 'UPLOAD_TEACHER_SIGNATURE', "Mengunggah berkas scan tanda tangan akun guru ID $user_id");
+                $message = "Berkas scan tanda tangan Anda berhasil diperbarui!";
+                $message_type = "success";
+                $saved = true;
             } else {
-                // Sanitasi berkas SVG untuk mencegah Stored XSS via script atau event handler
-                if ($ext === 'svg') {
-                    $svg_content = (string) file_get_contents($file['tmp_name']);
-                    $svg_content = preg_replace('/<script\b[^>]*>(.*?)<\/script>/is', '', $svg_content);
-                    $svg_content = preg_replace('/\bon\w+\s*=\s*(["\']).*?\1/is', '', $svg_content);
-                    $svg_content = preg_replace('/\bon\w+\s*=\s*[^>\s]+/is', '', $svg_content);
-                    $svg_content = preg_replace('/javascript:/i', 'blocked:', $svg_content);
-                    $svg_content = preg_replace('/<foreignObject\b[^>]*>(.*?)<\/foreignObject>/is', '', $svg_content);
-                    file_put_contents($file['tmp_name'], $svg_content);
-                }
-
-                $filename = "teacher_{$user_id}_" . time() . "." . $ext;
-                $target_path = $sig_dir . $filename;
-                if (move_uploaded_file($file['tmp_name'], $target_path)) {
-                    $db_path = "uploads/signatures/" . $filename;
-                    $stmt_sig = $pdo->prepare("UPDATE users SET signature_image = ? WHERE id = ?");
-                    $stmt_sig->execute([$db_path, $user_id]);
-                    logActivity($pdo, 'UPLOAD_TEACHER_SIGNATURE', "Mengunggah berkas scan tanda tangan akun guru ID $user_id");
-                    $message = "Berkas scan tanda tangan Anda berhasil diperbarui!";
-                    $message_type = "success";
-                    $saved = true;
-                } else {
-                    $message = "Gagal memindahkan berkas tanda tangan yang diunggah.";
-                    $message_type = "error";
-                }
+                $message = "Gagal mengunggah berkas tanda tangan: " . $fileRes['error'];
+                $message_type = "error";
             }
         }
 
@@ -416,7 +399,7 @@ require_once __DIR__ . "/includes/header.php";
                             <?php 
                             $cur_ttd = !empty($me['signature_image']) ? $me['signature_image'] : 'uploads/signatures/default_teacher_ttd.svg';
                             ?>
-                            <img src="../<?= ltrim($cur_ttd, '/') ?>" alt="TTD Saya" class="max-h-full max-w-full object-contain">
+                            <img src="<?= htmlspecialchars(resolveAssetUrl($cur_ttd, '../')) ?>" alt="TTD Saya" class="max-h-full max-w-full object-contain">
                         </div>
                         <div>
                             <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-1">

@@ -172,6 +172,15 @@ try {
                         <p class="mt-3 text-sm sm:text-base text-slate-400 max-w-2xl">
                             Saluran komunikasi resmi civitas akademika <?= htmlspecialchars($school_info['school_name'] ?? 'Sekolah') ?>. Menampilkan pengumuman kedinasan, surat edaran penting, jadwal kegiatan, dan informasi akademik terbaru.
                         </p>
+
+                        <!-- Tombol Buka Mode TV Digital Signage -->
+                        <div class="mt-4 flex flex-wrap items-center gap-3">
+                            <a href="pengumuman.php" target="_blank"
+                               class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-sky-500/25 transition">
+                                <i class="fa-solid fa-tv"></i>
+                                <span>Buka Mode TV Mading Digital (Layar Lobi)</span>
+                            </a>
+                        </div>
                     </div>
 
                     <!-- Ringkasan Statistik -->

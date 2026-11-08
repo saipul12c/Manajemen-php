@@ -1,0 +1,19 @@
+{
+  "weather_activity": [
+    { "cuaca": "cerah", "suhu": "panas", "kelembaban": "tinggi", "angin": "lemah", "rekomendasi": "Jangan Main" },
+    { "cuaca": "cerah", "suhu": "panas", "kelembaban": "tinggi", "angin": "kencang", "rekomendasi": "Jangan Main" },
+    { "cuaca": "mendung", "suhu": "panas", "kelembaban": "tinggi", "angin": "lemah", "rekomendasi": "Boleh Main" },
+    { "cuaca": "hujan", "suhu": "sejuk", "kelembaban": "tinggi", "angin": "lemah", "rekomendasi": "Boleh Main" },
+    { "cuaca": "hujan", "suhu": "dingin", "kelembaban": "normal", "angin": "lemah", "rekomendasi": "Boleh Main" },
+    { "cuaca": "hujan", "suhu": "dingin", "kelembaban": "normal", "angin": "kencang", "rekomendasi": "Jangan Main" },
+    { "cuaca": "mendung", "suhu": "dingin", "kelembaban": "normal", "angin": "kencang", "rekomendasi": "Boleh Main" },
+    { "cuaca": "cerah", "suhu": "sejuk", "kelembaban": "tinggi", "angin": "lemah", "rekomendasi": "Jangan Main" },
+    { "cuaca": "cerah", "suhu": "dingin", "kelembaban": "normal", "angin": "lemah", "rekomendasi": "Boleh Main" },
+    { "cuaca": "hujan", "suhu": "sejuk", "kelembaban": "normal", "angin": "lemah", "rekomendasi": "Boleh Main" },
+    { "cuaca": "cerah", "suhu": "sejuk", "kelembaban": "normal", "angin": "kencang", "rekomendasi": "Boleh Main" },
+    { "cuaca": "mendung", "suhu": "sejuk", "kelembaban": "tinggi", "angin": "kencang", "rekomendasi": "Boleh Main" },
+    { "cuaca": "mendung", "suhu": "panas", "kelembaban": "normal", "angin": "lemah", "rekomendasi": "Boleh Main" },
+    { "cuaca": "hujan", "suhu": "sejuk", "kelembaban": "tinggi", "angin": "kencang", "rekomendasi": "Jangan Main" }
+  ]
+}
+

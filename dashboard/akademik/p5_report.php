@@ -207,6 +207,10 @@ $page_title = "Rapor Projek P5 - " . htmlspecialchars($student['name']);
             margin: 12mm 15mm 15mm 15mm;
         }
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body {
                 background: #ffffff !important;
                 color: #0f172a !important;
@@ -353,23 +357,36 @@ $page_title = "Rapor Projek P5 - " . htmlspecialchars($student['name']);
     <div class="print-paper w-full max-w-4xl rounded-3xl border border-white/15 bg-slate-900/95 p-6 sm:p-10 shadow-2xl backdrop-blur text-slate-100">
         
         <!-- KOP SURAT RESMI LEMBAGA -->
-        <div class="text-center border-b-2 border-white/20 print-border pb-4 mb-5">
-            <h1 class="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white print-text-dark">
-                <?= htmlspecialchars($school_info['school_name']) ?>
-            </h1>
-            <p class="text-xs text-slate-300 print-text-muted mt-0.5"><?= htmlspecialchars($school_info['school_address']) ?></p>
-            <p class="text-[11px] text-slate-400 print-text-muted font-mono mt-0.5">
-                NPSN: <?= htmlspecialchars($school_info['school_npsn'] ?? '10801234') ?> | Akreditasi: A | Telepon: <?= htmlspecialchars($school_info['school_phone']) ?> | Email: <?= htmlspecialchars($school_info['school_email']) ?>
-            </p>
-            
-            <div class="mt-4 pt-3 border-t border-dashed border-white/15 print-border">
-                <h2 class="text-base sm:text-lg font-black uppercase tracking-wider text-blue-400 print-text-dark">
-                    RAPOR PROJEK PENGUATAN PROFIL PELAJAR PANCASILA (P5)
-                </h2>
-                <p class="text-[11px] font-semibold tracking-wide text-slate-400 print-text-muted">
-                    Standar BSKAP Kemendikbudristek No. 009/H/KR/2022 - Kurikulum Merdeka
+        <div class="flex items-center gap-4 border-b-2 border-white/20 print-border pb-4 mb-5">
+            <?php 
+                $clean_p5_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                $p5_logo_exists = !empty($clean_p5_logo) && (strpos($clean_p5_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+            ?>
+            <?php if ($p5_logo_exists): ?>
+                <img src="<?= htmlspecialchars($clean_p5_logo) ?>" alt="Logo" class="h-20 w-20 object-contain shrink-0">
+            <?php else: ?>
+                <div class="h-16 w-16 rounded-2xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center text-3xl font-black shrink-0">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                </div>
+            <?php endif; ?>
+            <div class="flex-1 text-center pr-6">
+                <h1 class="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white print-text-dark">
+                    <?= htmlspecialchars($school_info['school_name']) ?>
+                </h1>
+                <p class="text-xs text-slate-300 print-text-muted mt-0.5"><?= htmlspecialchars($school_info['school_address']) ?></p>
+                <p class="text-[11px] text-slate-400 print-text-muted font-mono mt-0.5">
+                    NPSN: <?= htmlspecialchars($school_info['school_npsn'] ?? '10801234') ?> | Akreditasi: A | Telepon: <?= htmlspecialchars($school_info['school_phone']) ?> | Email: <?= htmlspecialchars($school_info['school_email']) ?>
                 </p>
             </div>
+        </div>
+        
+        <div class="text-center mb-5">
+            <h2 class="text-base sm:text-lg font-black uppercase tracking-wider text-blue-400 print-text-dark">
+                RAPOR PROJEK PENGUATAN PROFIL PELAJAR PANCASILA (P5)
+            </h2>
+            <p class="text-[11px] font-semibold tracking-wide text-slate-400 print-text-muted">
+                Standar BSKAP Kemendikbudristek No. 009/H/KR/2022 - Kurikulum Merdeka
+            </p>
         </div>
 
         <!-- IDENTITAS PESERTA DIDIK -->
@@ -566,36 +583,35 @@ $page_title = "Rapor Projek P5 - " . htmlspecialchars($student['name']);
 
                 <!-- Pihak 2: Koordinator Projek / Wali Kelas -->
                 <div>
-                    <p class="text-slate-400 print-text-muted text-[11px]">Fasilitator Projek,</p>
-                    <p class="font-bold text-white print-text-dark">Koordinator P5</p>
-                    <div class="h-20 flex flex-col items-center justify-center">
-                        <?php 
-                        $coord_name = $projects_to_report[0]['coordinator_name'] ?? ($student['homeroom_teacher_name'] ?? 'Fasilitator Projek');
-                        $coord_nip = $projects_to_report[0]['coordinator_nip'] ?? ($student['homeroom_teacher_nip'] ?? '-');
-                        $coord_deg = $projects_to_report[0]['coordinator_degree'] ?? ($student['homeroom_teacher_degree'] ?? '');
-                        $coord_full = $coord_name . (!empty($coord_deg) ? ', ' . $coord_deg : '');
-                        ?>
-                        <span class="text-[10px] font-mono text-emerald-400 print-text-muted">[TERVERIFIKASI DIGITAL]</span>
-                    </div>
-                    <p class="font-bold underline text-white print-text-dark"><?= htmlspecialchars($coord_full) ?></p>
-                    <p class="text-[11px] text-slate-400 print-text-muted">NIP. <?= htmlspecialchars($coord_nip ?: '-') ?></p>
+                    <p class="text-slate-400 print-text-muted text-[11px] mb-1">Fasilitator Projek,</p>
+                    <?php 
+                    $coord_name = $projects_to_report[0]['coordinator_name'] ?? ($student['homeroom_teacher_name'] ?? 'Fasilitator Projek');
+                    $coord_nip = $projects_to_report[0]['coordinator_nip'] ?? ($student['homeroom_teacher_nip'] ?? '-');
+                    $coord_deg = $projects_to_report[0]['coordinator_degree'] ?? ($student['homeroom_teacher_degree'] ?? '');
+                    $coord_full = $coord_name . (!empty($coord_deg) ? ', ' . $coord_deg : '');
+                    ?>
+                    <?= renderOfficialSignatureHtml($pdo, 'teacher', [
+                        'custom_name' => $coord_full,
+                        'custom_nip' => $coord_nip,
+                        'custom_title' => 'Koordinator Projek P5',
+                        'doc_type' => 'RAPOR_P5',
+                        'doc_num' => 'P5-' . $student['id'] . '-' . ($student['nisn'] ?: '2026'),
+                        'student_name' => $student['name'],
+                        'show_city_date' => false,
+                        'align' => 'center'
+                    ]) ?>
                 </div>
 
                 <!-- Pihak 3: Kepala Sekolah -->
                 <div>
-                    <p class="text-slate-400 print-text-muted text-[11px]">Mengetahui,</p>
-                    <p class="font-bold text-white print-text-dark">Kepala Sekolah</p>
-                    <div class="h-20 flex flex-col items-center justify-center">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=<?= urlencode('VERIFIED_P5_REPORT:'.$student['id'].':'.$student['nisn'].':'.date('Ymd')) ?>" 
-                             alt="QR Validasi" 
-                             class="h-16 w-16 rounded border border-white/20 print-border">
-                    </div>
-                    <?php 
-                    $headmaster_name = $school_info['headmaster_name'] ?? 'Drs. H. Mulyadi, M.Pd.';
-                    $headmaster_nip = $school_info['headmaster_nip'] ?? '197508122000031002';
-                    ?>
-                    <p class="font-bold underline text-white print-text-dark"><?= htmlspecialchars($headmaster_name) ?></p>
-                    <p class="text-[11px] text-slate-400 print-text-muted">NIP. <?= htmlspecialchars($headmaster_nip) ?></p>
+                    <p class="text-slate-400 print-text-muted text-[11px] mb-1">Mengetahui,</p>
+                    <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
+                        'doc_type' => 'RAPOR_P5',
+                        'doc_num' => 'P5-' . $student['id'] . '-' . ($student['nisn'] ?: '2026'),
+                        'student_name' => $student['name'],
+                        'show_city_date' => false,
+                        'align' => 'center'
+                    ]) ?>
                 </div>
             </div>
         </div>

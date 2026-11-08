@@ -76,6 +76,10 @@ foreach ($candidates as $c) {
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             .no-print { display: none !important; }
             body { background: white !important; color: black !important; padding: 0 !important; }
             .print-sheet { box-shadow: none !important; border: none !important; border-radius: 0 !important; width: 100% !important; max-width: 100% !important; padding: 0 !important; }
@@ -143,9 +147,17 @@ foreach ($candidates as $c) {
         <!-- KOP Surat Resmi -->
         <div class="flex items-center justify-between border-b-2 border-slate-900 pb-4 mb-5">
             <div class="flex items-center gap-4">
-                <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-700 text-white font-black text-2xl shadow-md">
-                    <i class="fa-solid fa-graduation-cap"></i>
-                </div>
+                <?php 
+                    $clean_dhpu_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                    $dhpu_logo_exists = !empty($clean_dhpu_logo) && (strpos($clean_dhpu_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+                ?>
+                <?php if ($dhpu_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_dhpu_logo) ?>" alt="Logo" class="h-16 w-16 object-contain shrink-0">
+                <?php else: ?>
+                    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-700 text-white font-black text-2xl shadow-md shrink-0">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                <?php endif; ?>
                 <div>
                     <h2 class="text-lg font-black text-slate-900 uppercase tracking-tight">PANITIA PENERIMAAN PESERTA DIDIK BARU (PPDB)</h2>
                     <h3 class="text-base font-bold text-teal-800 uppercase"><?= htmlspecialchars($school_info['school_name'] ?? 'SMA / SMK TERPADU INDONESIA') ?></h3>
@@ -314,13 +326,13 @@ foreach ($candidates as $c) {
                 <p class="text-[10px] text-slate-500 mt-0.5">NIP/ID: ..................................</p>
             </div>
             <div>
-                <p class="text-slate-500 mb-1">Ketua Panitia PPDB</p>
+                <p class="text-slate-500 mb-1">Ketua Panitia / Kepala Sekolah</p>
                 <div class="h-20"></div>
                 <p class="font-bold text-slate-900 underline uppercase">
-                    <?= htmlspecialchars($school_info['principal_name'] ?? '( ........................................ )') ?>
+                    <?= htmlspecialchars($school_info['headmaster_name'] ?? '( ........................................ )') ?>
                 </p>
                 <p class="text-[10px] text-slate-500 mt-0.5">
-                    NIP: <?= htmlspecialchars($school_info['principal_nip'] ?? '..................................') ?>
+                    NIP: <?= htmlspecialchars($school_info['headmaster_nip'] ?? '..................................') ?>
                 </p>
             </div>
         </div>

@@ -166,33 +166,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POS
                     $status = 'aktif';
                 }
 
+                $nip = trim($_POST['nip'] ?? ($target_user['nip'] ?? ''));
+                $title_degree = trim($_POST['title_degree'] ?? ($target_user['title_degree'] ?? ''));
+                $sig_update_sql = "";
+                $sig_update_param = null;
+
+                if (isset($_POST['reset_signature']) && $_POST['reset_signature'] === '1') {
+                    $sig_update_sql = ", signature_image = 'uploads/signatures/default_teacher_ttd.svg'";
+                } elseif (isset($_FILES['signature_file']) && $_FILES['signature_file']['error'] === UPLOAD_ERR_OK) {
+                    $sigRes = saveSecureUpload(
+                        $_FILES['signature_file'],
+                        'signatures',
+                        ['png', 'svg', 'webp', 'jpg', 'jpeg'],
+                        [],
+                        2 * 1024 * 1024,
+                        "teacher_{$edit_id}"
+                    );
+                    if ($sigRes['success']) {
+                        $sig_update_sql = ", signature_image = ?";
+                        $sig_update_param = $sigRes['path'];
+                    }
+                }
+
                 if ($new_password !== '') {
                     if (strlen($new_password) < 6) {
                         $message = "Password baru minimal 6 karakter.";
                         $message_type = "error";
                     } else {
                         $hashed = password_hash($new_password, PASSWORD_DEFAULT);
-                        $stmt_up = $pdo->prepare("
-                            UPDATE users 
-                            SET name = ?, email = ?, role = ?, phone = ?, address = ?, password = ?, 
-                                status = ?, status_reason = ?, status_updated_at = NOW(), status_updated_by = ? 
-                            WHERE id = ?
-                        ");
-                        $stmt_up->execute([$name, $email, $role, $phone, $address, $hashed, $status, $status_reason ?: null, $_SESSION['user_id'], $edit_id]);
+                        $sql = "UPDATE users 
+                                SET name = ?, email = ?, role = ?, phone = ?, address = ?, password = ?, 
+                                    status = ?, status_reason = ?, status_updated_at = NOW(), status_updated_by = ?,
+                                    nip = ?, title_degree = ? {$sig_update_sql}
+                                WHERE id = ?";
+                        $params = [$name, $email, $role, $phone, $address, $hashed, $status, $status_reason ?: null, $_SESSION['user_id'], $nip ?: null, $title_degree ?: null];
+                        if ($sig_update_param !== null) {
+                            $params[] = $sig_update_param;
+                        }
+                        $params[] = $edit_id;
+                        $stmt_up = $pdo->prepare($sql);
+                        $stmt_up->execute($params);
                         logActivity($pdo, 'EDIT_USER', "Memperbarui akun dan password: $name ($role), status: $status");
-                        $message = "Data pengguna, password, dan status berhasil diperbarui.";
+                        $message = "Data pengguna, kredensial, dan password berhasil diperbarui.";
                         $message_type = "success";
                     }
                 } else {
-                    $stmt_up = $pdo->prepare("
-                        UPDATE users 
-                        SET name = ?, email = ?, role = ?, phone = ?, address = ?, 
-                            status = ?, status_reason = ?, status_updated_at = NOW(), status_updated_by = ? 
-                        WHERE id = ?
-                    ");
-                    $stmt_up->execute([$name, $email, $role, $phone, $address, $status, $status_reason ?: null, $_SESSION['user_id'], $edit_id]);
+                    $sql = "UPDATE users 
+                            SET name = ?, email = ?, role = ?, phone = ?, address = ?, 
+                                status = ?, status_reason = ?, status_updated_at = NOW(), status_updated_by = ?,
+                                nip = ?, title_degree = ? {$sig_update_sql}
+                            WHERE id = ?";
+                    $params = [$name, $email, $role, $phone, $address, $status, $status_reason ?: null, $_SESSION['user_id'], $nip ?: null, $title_degree ?: null];
+                    if ($sig_update_param !== null) {
+                        $params[] = $sig_update_param;
+                    }
+                    $params[] = $edit_id;
+                    $stmt_up = $pdo->prepare($sql);
+                    $stmt_up->execute($params);
                     logActivity($pdo, 'EDIT_USER', "Memperbarui akun: $name ($role), status: $status");
-                    $message = "Data pengguna dan status berhasil diperbarui.";
+                    $message = "Data pengguna dan kredensial berhasil diperbarui.";
                     $message_type = "success";
                 }
 
@@ -553,7 +585,7 @@ require_once __DIR__ . "/../includes/header.php";
             <button onclick="document.getElementById('modalCreate').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
-        <form method="POST" class="space-y-4">
+        <form method="POST" enctype="multipart/form-data" class="space-y-4">
             <input type="hidden" name="form_type" value="create_user">
             <?= csrfField() ?>
 
@@ -618,7 +650,7 @@ require_once __DIR__ . "/../includes/header.php";
             <a href="users.php" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></a>
         </div>
 
-        <form method="POST" class="space-y-4">
+        <form method="POST" enctype="multipart/form-data" class="space-y-4">
             <input type="hidden" name="form_type" value="edit_user">
             <input type="hidden" name="user_id" value="<?= $editing_user['id'] ?>">
             <?= csrfField() ?>
@@ -682,6 +714,45 @@ require_once __DIR__ . "/../includes/header.php";
                 <label class="mb-1 block text-xs font-medium text-slate-300">Alamat Tempat Tinggal</label>
                 <textarea name="address" rows="2" class="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2 text-sm text-white outline-none focus:border-blue-500"><?= htmlspecialchars($editing_user['address'] ?? '') ?></textarea>
             </div>
+
+            <?php if ($editing_user['role'] === 'guru' || $editing_user['role'] === 'staf'): ?>
+            <div class="rounded-2xl border border-blue-500/30 bg-blue-500/5 p-4 space-y-3">
+                <h4 class="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-signature"></i> Identitas Akademik & Tanda Tangan Digital (TTD)
+                </h4>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="mb-1 block text-[11px] font-medium text-slate-300">NIP / NUPTK</label>
+                        <input type="text" name="nip" value="<?= htmlspecialchars($editing_user['nip'] ?? '') ?>" placeholder="19820415 200801 2 015" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500 font-mono">
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-[11px] font-medium text-slate-300">Gelar Akademik</label>
+                        <input type="text" name="title_degree" value="<?= htmlspecialchars($editing_user['title_degree'] ?? '') ?>" placeholder="Contoh: S.Pd, M.Pd" class="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-[11px] font-medium text-slate-300">Tanda Tangan Digital Saat Ini:</label>
+                    <div class="flex items-center gap-3 bg-slate-950 p-2.5 rounded-xl border border-white/10">
+                        <div class="h-12 w-28 bg-white/5 border border-white/10 rounded-lg p-1 flex items-center justify-center shrink-0">
+                            <?php 
+                                $user_ttd = !empty($editing_user['signature_image']) ? $editing_user['signature_image'] : 'uploads/signatures/default_teacher_ttd.svg';
+                            ?>
+                            <img src="<?= htmlspecialchars(resolveAssetUrl($user_ttd, '../../')) ?>" alt="TTD" class="max-h-full max-w-full object-contain">
+                        </div>
+                        <div class="flex-1 text-[11px] text-slate-400">
+                            <label class="block text-[10px] text-slate-500 uppercase font-semibold mb-0.5">Ganti Berkas TTD (PNG/SVG Transparan):</label>
+                            <input type="file" name="signature_file" accept=".png,.svg,.webp,.jpg,.jpeg" class="w-full text-[11px] text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer">
+                        </div>
+                    </div>
+                    <label class="inline-flex items-center gap-2 mt-2 text-[11px] text-slate-400 cursor-pointer">
+                        <input type="checkbox" name="reset_signature" value="1" class="rounded border-white/20 bg-slate-950 text-blue-600 focus:ring-0">
+                        <span>Reset tanda tangan ke grafis vektor SVG bawaan</span>
+                    </label>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <div class="mt-6 flex justify-end gap-3 pt-4 border-t border-white/10">
                 <a href="users.php" class="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">

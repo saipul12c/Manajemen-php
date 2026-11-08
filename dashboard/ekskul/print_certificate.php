@@ -74,6 +74,10 @@ $verify_hash = hash('sha256', $ref_no . '|' . $data['student_name'] . '|' . ($da
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             .no-print { display: none !important; }
             body { background: white !important; color: black !important; padding: 0 !important; }
             .cert-container { border: 4px double #1e293b !important; box-shadow: none !important; margin: 0 auto !important; }
@@ -123,8 +127,18 @@ $verify_hash = hash('sha256', $ref_no . '|' . $data['student_name'] . '|' . ($da
 
         <!-- KOP SURAT RESMI -->
         <div class="flex items-center justify-between pb-4 border-b-2 border-slate-900 gap-4">
-            <div class="w-16 h-16 flex items-center justify-center rounded-2xl bg-slate-100 border border-slate-300 text-slate-800 text-2xl font-black shrink-0">
-                <i class="fa-solid fa-graduation-cap"></i>
+            <?php 
+                $clean_cert_logo = !empty($school['school_logo']) ? resolveAssetUrl($school['school_logo'], '../../') : '';
+                $cert_logo_exists = !empty($clean_cert_logo) && (strpos($clean_cert_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school['school_logo'])));
+            ?>
+            <div class="w-16 h-16 flex items-center justify-center shrink-0">
+                <?php if ($cert_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_cert_logo) ?>" alt="Logo" class="max-h-16 max-w-16 object-contain">
+                <?php else: ?>
+                    <div class="w-16 h-16 flex items-center justify-center rounded-2xl bg-slate-100 border border-slate-300 text-slate-800 text-2xl font-black">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                <?php endif; ?>
             </div>
             <div class="text-center flex-1">
                 <p class="text-xs uppercase font-bold tracking-widest text-slate-600">Pemerintah Provinsi Dinas Pendidikan</p>
@@ -225,29 +239,29 @@ $verify_hash = hash('sha256', $ref_no . '|' . $data['student_name'] . '|' . ($da
         </div>
 
         <!-- TANDA TANGAN RESMI KEPALA SEKOLAH & PEMBINA -->
-        <div class="mt-14 pt-4 grid grid-cols-2 gap-8 text-xs text-center">
+        <div class="mt-14 pt-4 grid grid-cols-2 gap-8 text-xs text-center items-end">
             <div>
-                <p class="text-slate-600">Mengetahui,</p>
-                <p class="font-bold text-slate-900">Guru Pembina Ekstrakurikuler</p>
-                <div class="h-20 flex items-center justify-center">
-                    <!-- Simulasi TTE / Stempel -->
-                    <span class="font-serif italic text-slate-400 text-lg">Tanda Tangan Elektronik</span>
-                </div>
-                <p class="font-black text-slate-950 uppercase underline"><?= htmlspecialchars($data['leader_name'] ?? 'Guru Pembina') ?></p>
-                <p class="text-[10px] text-slate-600 font-mono">NIP: <?= htmlspecialchars($data['leader_nip'] ?: '-') ?></p>
+                <p class="text-slate-600 mb-1">Mengetahui,</p>
+                <?= renderOfficialSignatureHtml($pdo, 'teacher', [
+                    'custom_name' => $data['leader_name'] ?? 'Guru Pembina',
+                    'custom_nip' => $data['leader_nip'] ?: '19850101 201001 1 005',
+                    'custom_title' => 'Guru Pembina ' . ($data['ekskul_name'] ?? 'Ekstrakurikuler'),
+                    'doc_type' => 'SERTIFIKAT_EKSKUL',
+                    'doc_num' => $ref_no,
+                    'student_name' => $data['student_name'],
+                    'show_city_date' => false,
+                    'align' => 'center'
+                ]) ?>
             </div>
 
             <div>
-                <p class="text-slate-600">Ditetapkan di: Jakarta, <?= date('d F Y') ?></p>
-                <p class="font-bold text-slate-900">Kepala Sekolah</p>
-                <div class="h-20 flex items-center justify-center">
-                    <!-- Simulasi Stempel Resmi -->
-                    <div class="border-2 border-dashed border-blue-900/40 text-blue-900/60 rounded-full px-3 py-1 font-bold text-[9px] uppercase tracking-wider transform -rotate-6">
-                        ★ DISAHKAN SECARA ELEKTRONIK ★
-                    </div>
-                </div>
-                <p class="font-black text-slate-950 uppercase underline"><?= htmlspecialchars($school['headmaster_name'] ?? 'Dr. H. Bambang Sudirman, M.Pd') ?></p>
-                <p class="text-[10px] text-slate-600 font-mono">NIP: <?= htmlspecialchars($school['headmaster_nip'] ?? '19750812 199903 1 002') ?></p>
+                <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
+                    'doc_type' => 'SERTIFIKAT_EKSKUL',
+                    'doc_num' => $ref_no,
+                    'student_name' => $data['student_name'],
+                    'show_city_date' => true,
+                    'align' => 'center'
+                ]) ?>
             </div>
         </div>
 

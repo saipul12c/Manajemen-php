@@ -37,22 +37,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $description = trim($_POST['description'] ?? '');
         $status = $_POST['status'] ?? 'draft';
 
-        // Support direct file upload
+        // Support direct file upload dengan validasi keamanan terpusat
         if (isset($_FILES['doc_file']) && $_FILES['doc_file']['error'] === UPLOAD_ERR_OK) {
             $allowed = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip'];
-            $file_name = $_FILES['doc_file']['name'];
-            $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-            if (in_array($ext, $allowed, true)) {
-                $upload_dir = __DIR__ . "/../../uploads/curriculum/";
-                if (!is_dir($upload_dir)) {
-                    @mkdir($upload_dir, 0755, true);
-                }
-                $new_filename = "doc_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
-                if (move_uploaded_file($_FILES['doc_file']['tmp_name'], $upload_dir . $new_filename)) {
-                    $file_url = "uploads/curriculum/" . $new_filename;
-                }
+            $uploadRes = saveSecureUpload(
+                $_FILES['doc_file'],
+                'curriculum',
+                $allowed,
+                [],
+                25 * 1024 * 1024,
+                'doc'
+            );
+            if ($uploadRes['success']) {
+                $file_url = $uploadRes['path'];
             } else {
-                $message = "Format file tidak didukung. Unggah PDF/Word/Excel/PowerPoint.";
+                $message = $uploadRes['error'];
                 $message_type = "error";
             }
         }
@@ -347,8 +346,7 @@ require_once __DIR__ . "/../includes/header.php";
                     <div class="pt-4 border-t border-white/5 flex items-center justify-between gap-2 mt-2">
                         <div>
                             <?php if (!empty($doc['file_url'])): 
-                                $is_external = str_starts_with($doc['file_url'], 'http');
-                                $doc_link = $is_external ? $doc['file_url'] : '../../' . $doc['file_url'];
+                                $doc_link = resolveAssetUrl($doc['file_url'], '../../');
                             ?>
                                 <a href="<?= htmlspecialchars($doc_link) ?>" target="_blank"
                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 text-xs font-semibold transition">

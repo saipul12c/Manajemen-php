@@ -699,7 +699,7 @@ $is_timed = ($duration_minutes > 0);
                                     </div>
                                 </div>
                                 <audio controls controlsList="nodownload" class="w-full sm:w-72 h-10 rounded-xl bg-slate-900 shadow">
-                                    <source src="<?= htmlspecialchars($q['audio_url']) ?>" type="audio/mpeg">
+                                    <source src="<?= htmlspecialchars(resolveAssetUrl($q['audio_url'], '../../')) ?>" type="audio/mpeg">
                                     Browser Anda tidak mendukung pemutar audio.
                                 </audio>
                             </div>
@@ -714,7 +714,7 @@ $is_timed = ($duration_minutes > 0);
                         <?php if (!empty($q['image_url'])): ?>
                             <div class="pt-1">
                                 <div class="inline-block rounded-2xl overflow-hidden border border-white/15 bg-black/40 p-2 shadow-lg max-w-full">
-                                    <img src="<?= htmlspecialchars($q['image_url']) ?>" 
+                                    <img src="<?= htmlspecialchars(resolveAssetUrl($q['image_url'], '../../')) ?>" 
                                          alt="Gambar Pendukung Soal <?= $idx + 1 ?>" 
                                          class="max-h-72 w-auto rounded-xl object-contain hover:scale-[1.02] transition-transform duration-300">
                                 </div>

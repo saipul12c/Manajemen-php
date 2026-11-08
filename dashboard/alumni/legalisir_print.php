@@ -88,6 +88,10 @@ $verify_url = $base_url . $root_path . "/verify_document.php?doc_type=LEGALISIR"
             margin: 10mm;
         }
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             .no-print {
                 display: none !important;
             }
@@ -190,8 +194,12 @@ $verify_url = $base_url . $root_path . "/verify_document.php?doc_type=LEGALISIR"
         <!-- 1. KOP SURAT RESMI SEKOLAH -->
         <div class="relative z-20 border-b-2 border-slate-900 pb-4 mb-6">
             <div class="flex items-center gap-4">
-                <?php if (!empty($school['school_logo'])): ?>
-                    <img src="../../<?= htmlspecialchars($school['school_logo']) ?>" alt="Logo" class="h-20 w-20 object-contain shrink-0">
+                <?php 
+                    $clean_logo = !empty($school['school_logo']) ? resolveAssetUrl($school['school_logo'], '../../') : '';
+                    $logo_exists = !empty($clean_logo) && (strpos($clean_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school['school_logo'])));
+                ?>
+                <?php if ($logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_logo) ?>" alt="Logo" class="h-20 w-20 object-contain shrink-0">
                 <?php else: ?>
                     <div class="h-20 w-20 rounded-2xl bg-blue-700 text-white flex items-center justify-center text-3xl font-black shrink-0 shadow-md">
                         <i class="fa-solid fa-school"></i>
@@ -292,7 +300,8 @@ $verify_url = $base_url . $root_path . "/verify_document.php?doc_type=LEGALISIR"
             <div class="w-full sm:w-auto p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3">
                 <a href="<?= htmlspecialchars($verify_url) ?>" target="_blank" title="Scan / Klik untuk Verifikasi Keaslian TTE">
                     <img src="https://api.qrserver.com/v1/create-qr-code/?size=84x84&margin=0&data=<?= urlencode($verify_url) ?>" 
-                         alt="QR Legalisir" class="w-20 h-20 border border-emerald-400 p-1 rounded-xl bg-white shadow-sm shrink-0">
+                         alt="QR Legalisir" class="w-20 h-20 border border-emerald-400 p-1 rounded-xl bg-white shadow-sm shrink-0"
+                         onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23059669\'><path d=\'M3 3h8v8H3zm2 2v4h4V5zm8-2h8v8h-8zm2 2v4h4V5zM3 13h8v8H3zm2 2v4h4v-4zm13-2h3v2h-3zm-3 2h2v3h-2zm3 3h3v3h-3zm-5 0h2v3h-2zm2-2h3v2h-3z\'/></svg>';">
                 </a>
                 <div class="text-[11px] leading-snug">
                     <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-600 text-white font-mono font-bold text-[9px] mb-1">

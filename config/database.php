@@ -20,7 +20,7 @@ if (session_status() === PHP_SESSION_NONE) {
     ]);
 }
 
-// -17 fix: Dukungan membaca konfigurasi dari .env atau environment variable
+// Dukungan membaca konfigurasi database murni dari file .env atau environment variable
 $envFile = dirname(__DIR__) . '/.env';
 if (file_exists($envFile) && is_readable($envFile)) {
     $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -31,22 +31,26 @@ if (file_exists($envFile) && is_readable($envFile)) {
             list($name, $value) = explode('=', $line, 2);
             $name = trim($name);
             $value = trim($value, " \t\n\r\0\x0B\"'");
-            if (getenv($name) === false) {
-                putenv("$name=$value");
-                $_ENV[$name] = $value;
-            }
+            putenv("$name=$value");
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
         }
     }
 }
 
-$host = getenv('DB_HOST') ?: "localhost";
-$dbname = getenv('DB_NAME') ?: "website_login";
-$username = getenv('DB_USER') ?: "root";
-$password_db = (getenv('DB_PASS') !== false) ? getenv('DB_PASS') : (getenv('DB_PASSWORD') !== false ? getenv('DB_PASSWORD') : "");
+$host        = $_ENV['DB_HOST'] ?? getenv('DB_HOST') ?? '';
+$port        = $_ENV['DB_PORT'] ?? getenv('DB_PORT') ?? '';
+$dbname      = $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?? '';
+$username    = $_ENV['DB_USER'] ?? getenv('DB_USER') ?? '';
+$password_db = $_ENV['DB_PASS'] ?? getenv('DB_PASS') ?? '';
+
+$dsn = !empty($port)
+    ? "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4"
+    : "mysql:host=$host;dbname=$dbname;charset=utf8mb4";
 
 try {
     $pdo = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
+        $dsn,
         $username,
         $password_db,
         [
@@ -2749,7 +2753,38 @@ function getSchoolSettings(PDO $pdo, bool $forceRefresh = false): array {
         'ppdb_quota'          => '150',
         'ppdb_start_date'     => '',
         'ppdb_end_date'       => '',
-        'ppdb_closed_message' => 'Pendaftaran Peserta Didik Baru (PPDB) saat ini sedang ditutup atau batas kuota telah terpenuhi.'
+        'ppdb_closed_message' => 'Pendaftaran Peserta Didik Baru (PPDB) saat ini sedang ditutup atau batas kuota telah terpenuhi.',
+        // Identitas Legalitas & Kurikulum
+        'school_npsn'                => '20108921',
+        'school_accreditation'       => 'Akreditasi A (Unggul)',
+        'school_curriculum'          => 'Kurikulum Merdeka',
+        // Profil, Visi, Misi & Narasi Lembaga
+        'school_history'             => 'Didirikan dengan komitmen tinggi terhadap kualitas pembelajaran, kami memadukan kurikulum nasional berbasis kompetensi dengan pembelajaran digital modern. Sistem ini dirancang untuk memfasilitasi setiap aspek akademik, administratif, dan komunikasi antar stakeholder sekolah secara instan dan tanpa sekat birokrasi konvensional.',
+        'school_vision'              => 'Menjadi lembaga pendidikan terdepan yang menghasilkan insan berkarakter mulia, cerdas berteknologi, berwawasan lingkungan, serta unggul dalam persaingan global pada tahun 2030.',
+        'school_mission'             => "Menyelenggarakan proses pembelajaran aktif, kreatif, dan berbasis teknologi mutakhir.\nMenanamkan nilai-nilai religiusitas, kejujuran, dan toleransi dalam kehidupan bersosial.\nMenerapkan tata kelola digital terpadu yang transparan, akuntabel, dan bebas kertas (paperless).\nMempererat sinergi aktif antara guru, orang tua, dan masyarakat demi perkembangan siswa.",
+        // Jam Operasional & Layanan
+        'school_work_hours_weekday'  => 'Senin – Jumat: 07.30 – 15.30 WIB',
+        'school_work_hours_weekend'  => 'Sabtu: 08.00 – 12.00 WIB (Terbatas)',
+        // Media Sosial Resmi
+        'social_instagram'           => 'https://instagram.com/binabangsa',
+        'social_youtube'             => 'https://youtube.com/@binabangsa',
+        'social_facebook'            => 'https://facebook.com/binabangsa',
+        'social_tiktok'              => 'https://tiktok.com/@binabangsa',
+        'maps_embed_url'             => '',
+        // Pilihan Jurusan PPDB & Kebijakan
+        'ppdb_available_majors'      => "MIPA (Matematika & IPA)\nIPS (Ilmu Pengetahuan Sosial)\nBahasa & Budaya\nTeknologi Informasi & Jaringan",
+        // Konten Beranda / Landing Page
+        'hero_title'                 => 'Pusat Informasi & Administrasi Digital',
+        'hero_description'           => 'Platform cerdas operasional sekolah yang mengintegrasikan Papan Pengumuman Resmi, Katalog Perpustakaan & E-Book, PPDB Online, hingga portal akademik terpadu untuk 5 role pengguna.',
+        // Pengaturan Live Chat & Kecerdasan Buatan (AI)
+        'livechat_ai_enabled'        => '1',
+        'livechat_ai_provider'       => 'hybrid', // hybrid, local, gemini, openai, custom_llm
+        'livechat_ai_model'          => 'gemini-1.5-flash',
+        'livechat_ai_api_key'        => '',
+        'livechat_ai_endpoint'       => '',
+        'livechat_ai_bot_name'       => 'AI Asisten Sekolah',
+        'livechat_ai_system_prompt'  => 'Anda adalah Asisten Virtual Resmi Sekolah yang cerdas, santun, ramah, dan solutif. Bantu pengunjung, calon siswa, orang tua murid, dan civitas sekolah dengan memberikan informasi yang akurat seputar profil sekolah, PPDB, kurikulum, kegiatan belajar, keuangan/SPP, perpustakaan, fasilitas, dan jadwal operasional berdasarkan data resmi sekolah.',
+        'livechat_ai_auto_handoff'   => '1'
     ];
     try {
         $stmt = $pdo->query("SELECT setting_key, setting_value FROM school_settings");
@@ -2762,6 +2797,56 @@ function getSchoolSettings(PDO $pdo, bool $forceRefresh = false): array {
     } catch (Exception $e) {}
     $cached_settings = $defaults;
     return $defaults;
+}
+
+/**
+ * Dapatkan daftar jurusan PPDB sebagai array terstruktur
+ */
+function getSchoolMajors(PDO $pdo): array {
+    $settings = getSchoolSettings($pdo);
+    $raw = $settings['ppdb_available_majors'] ?? '';
+    $lines = preg_split('/[\r\n]+/', trim($raw));
+    $majors = [];
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line !== '') {
+            $majors[] = $line;
+        }
+    }
+    if (empty($majors)) {
+        $majors = [
+            'MIPA (Matematika & IPA)',
+            'IPS (Ilmu Pengetahuan Sosial)',
+            'Bahasa & Budaya',
+            'Teknologi Informasi & Jaringan'
+        ];
+    }
+    return $majors;
+}
+
+/**
+ * Dapatkan daftar butir misi sekolah sebagai array baris
+ */
+function getSchoolMissions(PDO $pdo): array {
+    $settings = getSchoolSettings($pdo);
+    $raw = $settings['school_mission'] ?? '';
+    $lines = preg_split('/[\r\n]+/', trim($raw));
+    $missions = [];
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line !== '') {
+            $missions[] = $line;
+        }
+    }
+    if (empty($missions)) {
+        $missions = [
+            'Menyelenggarakan proses pembelajaran aktif, kreatif, dan berbasis teknologi mutakhir.',
+            'Menanamkan nilai-nilai religiusitas, kejujuran, dan toleransi dalam kehidupan bersosial.',
+            'Menerapkan tata kelola digital terpadu yang transparan, akuntabel, dan bebas kertas (paperless).',
+            'Mempererat sinergi aktif antara guru, orang tua, dan masyarakat demi perkembangan siswa.'
+        ];
+    }
+    return $missions;
 }
 
 /**
@@ -2882,9 +2967,22 @@ function renderOfficialSignatureHtml(PDO $pdo, string $signer_key = 'headmaster'
         . "&date=" . urlencode($date_str)
         . "&hash=" . $doc_hash;
 
-    // Helper path gambar untuk web
-    $web_ttd_path = (strpos($ttd_img, '/') === 0 || strpos($ttd_img, 'http') === 0) ? $ttd_img : $root_path . '/' . ltrim($ttd_img, '/');
-    $web_stamp_path = (strpos($stamp_img, '/') === 0 || strpos($stamp_img, 'http') === 0) ? $stamp_img : $root_path . '/' . ltrim($stamp_img, '/');
+    // Helper path gambar untuk web dengan normalisasi terpusat & fallback otomatis jika file hilang
+    $clean_ttd = resolveAssetUrl($ttd_img);
+    $clean_stamp = resolveAssetUrl($stamp_img);
+
+    $app_root_disk = dirname(__DIR__);
+    if (!file_exists($app_root_disk . '/' . $clean_ttd)) {
+        $clean_ttd = ($signer_key === 'headmaster' || $signer_key === 'curriculum_head') 
+            ? 'uploads/signatures/default_headmaster_ttd.svg' 
+            : 'uploads/signatures/default_teacher_ttd.svg';
+    }
+    if (!file_exists($app_root_disk . '/' . $clean_stamp)) {
+        $clean_stamp = 'uploads/signatures/default_stamp.svg';
+    }
+
+    $web_ttd_path = (strpos($clean_ttd, 'http') === 0) ? $clean_ttd : (($root_path !== '' ? $root_path . '/' : '/') . ltrim($clean_ttd, '/'));
+    $web_stamp_path = (strpos($clean_stamp, 'http') === 0) ? $clean_stamp : (($root_path !== '' ? $root_path . '/' : '/') . ltrim($clean_stamp, '/'));
 
     // Alignment classes
     $align_class = "text-right ml-auto";
@@ -2893,7 +2991,7 @@ function renderOfficialSignatureHtml(PDO $pdo, string $signer_key = 'headmaster'
 
     ob_start();
     ?>
-    <div class="inline-block <?= $align_class ?> text-xs text-slate-800 font-sans max-w-xs relative select-none">
+    <div class="inline-block <?= $align_class ?> text-xs text-slate-800 font-sans max-w-xs relative select-none" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
         <?php if ($show_city_date): ?>
             <p class="text-slate-600 mb-0.5"><?= htmlspecialchars($city) ?>, <?= htmlspecialchars($date_str) ?></p>
         <?php endif; ?>
@@ -2907,9 +3005,9 @@ function renderOfficialSignatureHtml(PDO $pdo, string $signer_key = 'headmaster'
             <!-- Mode Digital Image: Scan TTD + Stempel -->
             <div class="h-20 relative flex items-center <?= $align === 'center' ? 'justify-center' : ($align === 'left' ? 'justify-start' : 'justify-end') ?> my-1">
                 <?php if ($show_stamp): ?>
-                    <img src="<?= htmlspecialchars($web_stamp_path) ?>" alt="Stempel" class="absolute w-20 h-20 object-contain pointer-events-none opacity-85 rotate-[-8deg] z-0 <?= $align === 'center' ? 'right-1/2 translate-x-1/2' : ($align === 'left' ? 'left-6' : 'right-10') ?>">
+                    <img src="<?= htmlspecialchars($web_stamp_path) ?>" alt="Stempel" class="absolute w-20 h-20 object-contain pointer-events-none select-none opacity-85 rotate-[-8deg] z-0 <?= $align === 'center' ? 'right-1/2 translate-x-1/2' : ($align === 'left' ? 'left-6' : 'right-10') ?>" style="mix-blend-mode: multiply; -webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-user-drag: none;">
                 <?php endif; ?>
-                <img src="<?= htmlspecialchars($web_ttd_path) ?>" alt="TTD" class="h-16 max-w-[170px] object-contain relative z-10">
+                <img src="<?= htmlspecialchars($web_ttd_path) ?>" alt="TTD" class="h-16 max-w-[170px] object-contain relative z-10 pointer-events-none select-none" style="-webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-user-drag: none;">
             </div>
 
         <?php elseif ($mode === 'digital_qr'): ?>
@@ -2917,7 +3015,8 @@ function renderOfficialSignatureHtml(PDO $pdo, string $signer_key = 'headmaster'
             <div class="py-2 flex items-center <?= $align === 'center' ? 'justify-center' : ($align === 'left' ? 'justify-start' : 'justify-end') ?> gap-2">
                 <a href="<?= htmlspecialchars($verify_url) ?>" target="_blank" title="Klik / Scan untuk Verifikasi Keaslian Dokumen">
                     <img src="https://api.qrserver.com/v1/create-qr-code/?size=76x76&margin=0&data=<?= urlencode($verify_url) ?>" 
-                         alt="QR Validasi" class="w-16 h-16 border border-slate-300 p-0.5 rounded shadow-sm">
+                         alt="QR Validasi" class="w-16 h-16 border border-slate-300 p-0.5 rounded shadow-sm"
+                         onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%232563eb\'><path d=\'M3 3h8v8H3zm2 2v4h4V5zm8-2h8v8h-8zm2 2v4h4V5zM3 13h8v8H3zm2 2v4h4v-4zm13-2h3v2h-3zm-3 2h2v3h-2zm3 3h3v3h-3zm-5 0h2v3h-2zm2-2h3v2h-3z\'/></svg>';">
                 </a>
                 <div class="text-left text-[9px] leading-tight">
                     <span class="inline-block font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1 py-0.5 rounded">TTE RESMI</span>
@@ -2930,12 +3029,13 @@ function renderOfficialSignatureHtml(PDO $pdo, string $signer_key = 'headmaster'
             <!-- Mode Hybrid: Gambar TTD + Stempel + Mini QR TTE -->
             <div class="h-20 relative flex items-center <?= $align === 'center' ? 'justify-center' : ($align === 'left' ? 'justify-start' : 'justify-end') ?> gap-2 my-1">
                 <?php if ($show_stamp): ?>
-                    <img src="<?= htmlspecialchars($web_stamp_path) ?>" alt="Stempel" class="absolute w-20 h-20 object-contain pointer-events-none opacity-85 rotate-[-8deg] z-0 <?= $align === 'center' ? 'right-1/2 translate-x-1/2' : ($align === 'left' ? 'left-8' : 'right-12') ?>">
+                    <img src="<?= htmlspecialchars($web_stamp_path) ?>" alt="Stempel" class="absolute w-20 h-20 object-contain pointer-events-none select-none opacity-85 rotate-[-8deg] z-0 <?= $align === 'center' ? 'right-1/2 translate-x-1/2' : ($align === 'left' ? 'left-8' : 'right-12') ?>" style="mix-blend-mode: multiply; -webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-user-drag: none;">
                 <?php endif; ?>
-                <img src="<?= htmlspecialchars($web_ttd_path) ?>" alt="TTD" class="h-16 max-w-[150px] object-contain relative z-10">
+                <img src="<?= htmlspecialchars($web_ttd_path) ?>" alt="TTD" class="h-16 max-w-[150px] object-contain relative z-10 pointer-events-none select-none" style="-webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-user-drag: none;">
                 <a href="<?= htmlspecialchars($verify_url) ?>" target="_blank" title="Scan QR Verifikasi Keaslian Dokumen" class="relative z-10 ml-1">
                     <img src="https://api.qrserver.com/v1/create-qr-code/?size=64x64&margin=0&data=<?= urlencode($verify_url) ?>" 
-                         alt="QR TTE" class="w-12 h-12 border border-blue-400/40 p-0.5 rounded bg-white shadow-sm">
+                         alt="QR TTE" class="w-12 h-12 border border-blue-400/40 p-0.5 rounded bg-white shadow-sm"
+                         onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%232563eb\'><path d=\'M3 3h8v8H3zm2 2v4h4V5zm8-2h8v8h-8zm2 2v4h4V5zM3 13h8v8H3zm2 2v4h4v-4zm13-2h3v2h-3zm-3 2h2v3h-2zm3 3h3v3h-3zm-5 0h2v3h-2zm2-2h3v2h-3z\'/></svg>';">
                 </a>
             </div>
         <?php endif; ?>
@@ -4584,3 +4684,132 @@ function getStudentExtracurriculars(PDO $pdo, int $studentId): array {
     $stmt->execute([$studentId]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
+
+/**
+ * =========================================================
+ * HELPER MODUL LIVE CHAT (REALTIME MULTI-ROLE & GUEST)
+ * =========================================================
+ */
+function initLiveChatTables(PDO $pdo): void {
+    static $initialized = false;
+    if ($initialized) return;
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `live_chat_sessions` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `session_token` VARCHAR(64) NOT NULL UNIQUE,
+                `user_id` INT DEFAULT NULL,
+                `guest_name` VARCHAR(150) DEFAULT NULL,
+                `guest_email` VARCHAR(150) DEFAULT NULL,
+                `guest_phone` VARCHAR(50) DEFAULT NULL,
+                `role_label` VARCHAR(50) NOT NULL DEFAULT 'Tamu',
+                `department` VARCHAR(50) NOT NULL DEFAULT 'Umum',
+                `status` ENUM('active', 'closed') NOT NULL DEFAULT 'active',
+                `ai_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+                `needs_human` TINYINT(1) NOT NULL DEFAULT 0,
+                `ip_address` VARCHAR(45) DEFAULT NULL,
+                `user_agent` TEXT DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX `idx_lcs_token` (`session_token`),
+                INDEX `idx_lcs_user` (`user_id`),
+                INDEX `idx_lcs_status` (`status`),
+                INDEX `idx_lcs_updated` (`updated_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+            CREATE TABLE IF NOT EXISTS `live_chat_messages` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `session_id` INT NOT NULL,
+                `sender_type` ENUM('guest', 'user', 'admin', 'bot') NOT NULL DEFAULT 'guest',
+                `sender_id` INT DEFAULT NULL,
+                `sender_name` VARCHAR(150) NOT NULL,
+                `message` TEXT NOT NULL,
+                `attachment_url` VARCHAR(255) DEFAULT NULL,
+                `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_lcm_session` (`session_id`),
+                INDEX `idx_lcm_read` (`is_read`),
+                INDEX `idx_lcm_created` (`created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+            -- TABEL PENYIMPANAN EKSKLUSIF SENTINEL NLP (100% DATABASE MYSQL)
+            CREATE TABLE IF NOT EXISTS `sentinel_nlp_knowledge` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `question` VARCHAR(500) NOT NULL,
+                `answer` TEXT NOT NULL,
+                `category` VARCHAR(100) NOT NULL DEFAULT 'pembelajaran_mandiri',
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY `uk_snk_question` (`question`(250))
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+            CREATE TABLE IF NOT EXISTS `sentinel_nlp_sessions` (
+                `session_id` VARCHAR(100) PRIMARY KEY,
+                `memory_data` LONGTEXT NOT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX `idx_sns_updated` (`updated_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+            CREATE TABLE IF NOT EXISTS `sentinel_nlp_documents` (
+                `id` VARCHAR(64) PRIMARY KEY,
+                `session_id` VARCHAR(100) NOT NULL,
+                `title` VARCHAR(255) NOT NULL,
+                `source` VARCHAR(50) NOT NULL DEFAULT 'user_upload',
+                `doc_data` LONGTEXT NOT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_snd_session` (`session_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        // Defensively check and add columns ai_enabled & needs_human if migrating existing table
+        try {
+            $cols = $pdo->query("SHOW COLUMNS FROM `live_chat_sessions` LIKE 'ai_enabled'")->fetchAll();
+            if (empty($cols)) {
+                $pdo->exec("ALTER TABLE `live_chat_sessions` ADD COLUMN `ai_enabled` TINYINT(1) NOT NULL DEFAULT 1 AFTER `status`");
+            }
+            $cols2 = $pdo->query("SHOW COLUMNS FROM `live_chat_sessions` LIKE 'needs_human'")->fetchAll();
+            if (empty($cols2)) {
+                $pdo->exec("ALTER TABLE `live_chat_sessions` ADD COLUMN `needs_human` TINYINT(1) NOT NULL DEFAULT 0 AFTER `ai_enabled`");
+            }
+
+            // Inisialisasi awal materi pembelajaran ke tabel MySQL jika masih kosong
+            $chkCount = (int)$pdo->query("SELECT COUNT(*) FROM `sentinel_nlp_knowledge`")->fetchColumn();
+            if ($chkCount === 0) {
+                $kPath = dirname(__DIR__) . '/engine/data/knowledge.json';
+                if (file_exists($kPath)) {
+                    $kData = json_decode(@file_get_contents($kPath), true);
+                    if (!empty($kData['learned']) && is_array($kData['learned'])) {
+                        $insStmt = $pdo->prepare("
+                            INSERT IGNORE INTO `sentinel_nlp_knowledge` (question, answer, category, created_at) 
+                            VALUES (?, ?, 'pembelajaran_mandiri', NOW())
+                        ");
+                        foreach ($kData['learned'] as $item) {
+                            if (!empty($item['question']) && !empty($item['answer'])) {
+                                $insStmt->execute([trim($item['question']), trim($item['answer'])]);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception $e_col) {}
+
+        $initialized = true;
+    } catch (Exception $e) {
+        // Defensive ignore
+    }
+}
+
+function getUnreadLiveChatCount(PDO $pdo): int {
+    try {
+        initLiveChatTables($pdo);
+        $stmt = $pdo->query("SELECT COUNT(*) FROM live_chat_messages WHERE is_read = 0 AND sender_type IN ('guest', 'user')");
+        return (int)$stmt->fetchColumn();
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+
+// Muat Helper Keamanan Upload & Resolusi Gambar Terpusat
+require_once __DIR__ . '/upload_helper.php';

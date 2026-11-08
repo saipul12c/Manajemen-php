@@ -283,7 +283,7 @@ $page_desc_text = $is_detail && $article
             <?php else: ?>
                 <?php
                     $cat_info = NEWS_CATEGORIES[$article['category']] ?? ['label' => ucfirst($article['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
-                    $cover_url = !empty($article['thumbnail']) ? 'uploads/news/' . htmlspecialchars($article['thumbnail']) : null;
+                    $cover_url = !empty($article['thumbnail']) ? resolveAssetUrl($article['thumbnail']) : null;
                     $reading_time = max(1, (int)ceil(str_word_count(strip_tags($article['content'])) / 200));
                 ?>
 
@@ -592,7 +592,7 @@ $page_desc_text = $is_detail && $article
                                 <?php foreach ($related_news as $rel): ?>
                                     <?php 
                                         $rel_cat = NEWS_CATEGORIES[$rel['category']] ?? ['label' => ucfirst($rel['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
-                                        $rel_thumb = !empty($rel['thumbnail']) ? 'uploads/news/' . htmlspecialchars($rel['thumbnail']) : null;
+                                        $rel_thumb = !empty($rel['thumbnail']) ? resolveAssetUrl($rel['thumbnail']) : null;
                                     ?>
                                     <a href="berita.php?id=<?= $rel['id'] ?>" class="glass-card rounded-2xl p-3 hover:border-sky-500/40 transition group flex flex-col justify-between">
                                         <div>
@@ -727,7 +727,7 @@ $page_desc_text = $is_detail && $article
                 <?php if ($featured_news && empty($search_query) && empty($filter_category)): ?>
                     <?php 
                         $feat_cat = NEWS_CATEGORIES[$featured_news['category']] ?? ['label' => ucfirst($featured_news['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
-                        $feat_thumb = !empty($featured_news['thumbnail']) ? 'uploads/news/' . htmlspecialchars($featured_news['thumbnail']) : null;
+                        $feat_thumb = !empty($featured_news['thumbnail']) ? resolveAssetUrl($featured_news['thumbnail']) : null;
                     ?>
                     <div class="relative overflow-hidden rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 shadow-2xl p-6 sm:p-8 group">
                         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
@@ -822,7 +822,7 @@ $page_desc_text = $is_detail && $article
                         <?php foreach ($news_items as $item): ?>
                             <?php 
                                 $cat_info = NEWS_CATEGORIES[$item['category']] ?? ['label' => ucfirst($item['category']), 'badge' => 'border-slate-500/30 bg-slate-500/10 text-slate-300'];
-                                $thumb_src = !empty($item['thumbnail']) ? 'uploads/news/' . htmlspecialchars($item['thumbnail']) : null;
+                                $thumb_src = !empty($item['thumbnail']) ? resolveAssetUrl($item['thumbnail']) : null;
                             ?>
                             <article class="glass-card rounded-3xl overflow-hidden flex flex-col justify-between hover:border-sky-500/40 hover:bg-slate-900/90 transition duration-300 group shadow-lg">
                                 <div>

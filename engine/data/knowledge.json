@@ -1,0 +1,421 @@
+{
+    "intents": [
+        {
+            "tag": "salam",
+            "patterns": [
+                "halo",
+                "hai",
+                "selamat pagi",
+                "selamat siang",
+                "selamat sore",
+                "selamat malam",
+                "assalamualaikum",
+                "halo bot",
+                "halo sentinel",
+                "hey",
+                "hello",
+                "hi"
+            ],
+            "responses": [
+                "Halo! Senang bisa berbincang dengan Anda. Ada yang bisa saya bantu hari ini?",
+                "Hai! Saya Sentinel AI siap membantu Anda dalam komputasi, sains, koding, dan percakapan cerdas.",
+                "Halo! Semoga hari Anda produktif dan menyenangkan. Apa yang ingin Anda diskusikan?",
+                "Wa'alaikumsalam! Halo, ada yang bisa saya bantu?"
+            ]
+        },
+        {
+            "tag": "identitas",
+            "patterns": [
+                "siapa kamu",
+                "siapakah kamu",
+                "kamu siapa",
+                "nama kamu siapa",
+                "siapa penciptamu",
+                "ceritakan tentang dirimu",
+                "apa nama sistem ini",
+                "apakah kamu ai"
+            ],
+            "responses": [
+                "Saya adalah **Sentinel AI**, sistem kecerdasan buatan cerdas yang dibangun menggunakan arsitektur pemrosesan bahasa alami (NLP), penalaran logis, dan jaringan syaraf tiruan.",
+                "Nama saya **Sentinel AI**. Saya dirancang untuk memproses teks, melakukan komputasi matematika, membantu pemrograman, dan menyimpan memori secara dinamis.",
+                "Saya adalah asisten AI Anda! Arsitektur saya memadukan algoritma TF-IDF, Cosine Similarity, Jaringan Syaraf Tiruan (MLP), dan Pohon Keputusan (Decision Tree) di PHP."
+            ]
+        },
+        {
+            "tag": "kemampuan",
+            "patterns": [
+                "apa yang bisa kamu lakukan",
+                "fitur apa saja yang kamu punya",
+                "kamu bisa apa",
+                "kemampuan kamu apa",
+                "bisa bantu apa",
+                "apa keahlianmu"
+            ],
+            "responses": [
+                "Saya memiliki berbagai kemampuan kecerdasan buatan modern:\n\n1. 💬 **NLP & Dialog Cerdas:** Percakapan kontekstual dengan analisis sentimen dan memori multi-turn.\n2. 🧮 **Penalaran Matematika & Waktu:** Menyelesaikan aritmatika, akar, pangkat, persentase, geometri, dan pembacaan kalender.\n3. 💻 **Asisten Pemrograman:** Membuat, mengulas, dan menjelaskan kode (PHP, JS, Python, HTML\/CSS, SQL).\n4. 📚 **Ensiklopedia Sains & Sejarah:** Menjawab konsep sains, biologi, fisika, sejarah, geografi, dan teknologi.\n5. 🧠 **Jaringan Syaraf Tiruan (Neural Network):** Pelatihan dan inferensi MLP dengan backpropagation.\n6. 🌳 **Pohon Keputusan (Decision Tree):** Klasifikasi prediktif berbasis entropi Shannon dan Gain ID3.\n7. 💡 **Self-Learning (Pembelajaran Mandiri):** Mempelajari fakta baru dan mengingat preferensi obrolan pengguna."
+            ]
+        },
+        {
+            "tag": "kabar",
+            "patterns": [
+                "bagaimana kabarmu",
+                "apa kabar",
+                "gimana kabarmu",
+                "kabarmu baik",
+                "sehat"
+            ],
+            "responses": [
+                "Kabar saya sangat baik, terima kasih! Semua algoritma dan modul memori saya beroperasi optimal. Bagaimana dengan kabar Anda sendiri?",
+                "Saya dalam kondisi 100% prima dan siap membantu! Semoga hari Anda berjalan lancar."
+            ]
+        },
+        {
+            "tag": "terima_kasih",
+            "patterns": [
+                "terima kasih",
+                "makasih",
+                "thanks",
+                "thank you",
+                "terimakasih banyak",
+                "makasih ya",
+                "mantap makasih"
+            ],
+            "responses": [
+                "Sama-sama! Senang sekali bisa membantu Anda 😊. Jangan ragu bertanya lagi jika ada hal lain.",
+                "Kembali kasih! Sukses selalu untuk aktivitas dan proyek Anda.",
+                "Dengan senang hati! Saya selalu siap mendampingi Anda kapan saja."
+            ]
+        },
+        {
+            "tag": "perpisahan",
+            "patterns": [
+                "dadah",
+                "selamat tinggal",
+                "sampai jumpa",
+                "bye",
+                "sampai nanti",
+                "selamat malam bot"
+            ],
+            "responses": [
+                "Sampai jumpa lagi! Semoga hari Anda senantiasa menyenangkan dan produktif.",
+                "Selamat tinggal! Senang bisa berdiskusi dengan Anda. Sampai bertemu di sesi obrolan berikutnya!",
+                "Sampai jumpa! Sentinel AI akan selalu ada di sini saat Anda membutuhkan bantuan."
+            ]
+        },
+        {
+            "tag": "bantuan",
+            "patterns": [
+                "tolong bantu saya",
+                "butuh bantuan",
+                "help",
+                "bantuan",
+                "panduan",
+                "cara memakai"
+            ],
+            "responses": [
+                "Tentu! Anda bisa:\n- Mengetik pertanyaan sains, sejarah, atau konsep umum.\n- Menghitung matematika (misal: *hitung 25 * 4 + 100* atau *diskon 20% dari 500000*).\n- Meminta contoh kode (misal: *buatkan koneksi PDO MySQL* atau *perulangan di PHP*).\n- Menanyakan keputusan cuaca Decision Tree atau prediksi XOR Neural Network.\n- Mengajari saya pengetahuan baru jika ada hal yang belum saya ketahui."
+            ]
+        },
+        {
+            "tag": "humor",
+            "patterns": [
+                "ceritakan lelucon",
+                "bikin lelucon",
+                "lawak dong",
+                "berikan lelucon",
+                "candaan",
+                "joke programmer"
+            ],
+            "responses": [
+                "Mengapa programmer suka memakai kacamata hitam? Karena mereka tidak suka melihat C#! Hehehe.",
+                "Ada 10 jenis orang di dunia: mereka yang paham bilangan biner, dan mereka yang tidak.",
+                "Mengapa bug komputer tidak pernah tidur? Karena mereka terus mencari celah di kode Anda!",
+                "Seorang programmer pergi ke pasar. Istrinya berkata: 'Beli 1 botol susu, dan jika ada telur, beli 10.' Programmer tersebut pulang membawa 10 botol susu karena di pasar ada telur! 😄"
+            ]
+        },
+        {
+            "tag": "tips_coding",
+            "patterns": [
+                "tips belajar coding",
+                "tips jadi programmer",
+                "cara belajar pemrograman",
+                "belajar koding cepat"
+            ],
+            "responses": [
+                "Berikut tips terbaik untuk belajar pemrograman:\n\n1. **Pahami Fondasi Logika & Algoritma:** Pelajari variabel, percabangan (`if-else`), perulangan (`loops`), dan struktur data.\n2. **Koding Langsung (Hands-on):** Jangan hanya membaca buku\/tutorial, langsung ketik kodenya di IDE dan jalankan!\n3. **Bangun Proyek Nyata:** Buat aplikasi sederhana seperti Todo List, kalkulator, atau sistem AI seperti Sentinel ini.\n4. **Terbiasa Membaca Error:** Jangan panik saat melihat pesan error; pesan error adalah petunjuk terbaik untuk memperbaiki bug.\n5. **Konsisten 30-60 Menit Setiap Hari:** Keteraturan harian jauh lebih efektif dibanding maraton 10 jam dalam satu malam."
+            ]
+        },
+        {
+            "tag": "kesehatan_tips",
+            "patterns": [
+                "tips menjaga kesehatan",
+                "cara hidup sehat",
+                "tips sehat",
+                "pola hidup sehat"
+            ],
+            "responses": [
+                "Berikut 5 pilar utama pola hidup sehat:\n\n1. 💧 **Cukupi Kebutuhan Cairan:** Minum setidaknya 2 liter (8 gelas) air putih setiap hari.\n2. 🥗 **Nutrisi Seimbang:** Konsumsi serat dari sayur, buah, protein berkualitas, dan kurangi gula olahan.\n3. 🏃‍♂️ **Aktivitas Fisik Teratur:** Luangkan minimal 30 menit jalan santai atau olahraga kardio 3-5 kali seminggu.\n4. 😴 **Tidur Berkualitas:** Istirahat selama 7–8 jam setiap malam untuk regenerasi sel tubuh dan fungsi otak optimal.\n5. 🧘 **Kelola Stres:** Luangkan waktu untuk hobi, meditasi, atau istirahat dari layar gawai secara teratur."
+            ]
+        },
+        {
+            "tag": "ppdb_sekolah",
+            "patterns": [
+                "info ppdb",
+                "syarat pendaftaran siswa baru",
+                "bagaimana cara daftar sekolah",
+                "kapan ppdb dibuka",
+                "alur pendaftaran ppdb",
+                "jalur zonasi dan prestasi",
+                "kuota pendaftaran siswa baru",
+                "berkas persyaratan masuk sekolah",
+                "dokumen pendaftaran ppdb",
+                "formulir penerimaan siswa baru"
+            ],
+            "responses": [
+                "Pendaftaran Peserta Didik Baru (PPDB) dapat diakses secara mandiri melalui menu **PPDB Online** di website sekolah ini. Tersedia 4 jalur seleksi: **Reguler \/ Tes**, **Zonasi Domisili**, **Prestasi**, dan **Afirmasi (KIP)**. Berkas yang diperlukan meliputi scan Kartu Keluarga, Akta Kelahiran, dan Ijazah\/SKL.",
+                "Untuk pendaftaran siswa baru (PPDB): Kunjungi menu **PPDB Online**, isi formulir biodata lengkap, unggah scan dokumen persyaratan, lalu cetak Kartu Pendaftaran ber-barcode resmi untuk mengikuti tahapan seleksi."
+            ]
+        },
+        {
+            "tag": "spp_keuangan",
+            "patterns": [
+                "biaya spp",
+                "uang sekolah berapa",
+                "cara bayar spp",
+                "pembayaran tagihan",
+                "virtual account spp",
+                "rekening pembayaran",
+                "metode bayar uang sekolah",
+                "apakah bisa transfer spp",
+                "cek tagihan keuangan",
+                "kuitansi spp"
+            ],
+            "responses": [
+                "Informasi Keuangan & SPP: Rincian tagihan semester berjalan, Virtual Account (BCA, Mandiri, BRI, BNI), dan kode QRIS dapat dilihat langsung pada menu **Keuangan** di Dashboard Portal siswa\/orang tua. Anda juga dapat membayar tunai di loket Tata Usaha pada jam kerja.",
+                "Pembayaran SPP dan uang sekolah dapat dilakukan melalui transfer Virtual Account, QRIS Nasional, maupun loket kasir sekolah. Setelah membayar, kuitansi resmi berstempel digital dan QR verifikasi dapat langsung diunduh."
+            ]
+        },
+        {
+            "tag": "jam_operasional_tu",
+            "patterns": [
+                "jam operasional tu",
+                "jam buka kantor sekolah",
+                "kapan tata usaha buka",
+                "jam kerja staf",
+                "apakah hari sabtu buka",
+                "hari kerja sekolah",
+                "jam berapa pelayanan tu",
+                "layanan kantor buka jam berapa"
+            ],
+            "responses": [
+                "Pelayanan kantor Tata Usaha (TU) sekolah buka setiap hari kerja **Senin s.d. Jumat pukul 07.30 – 15.30 WIB**. Hari Sabtu, Minggu, dan Hari Libur Nasional kantor tutup.",
+                "Jam kerja operasional sekolah: Senin hingga Jumat pukul 07.30 – 15.30 WIB. Kegiatan belajar mengajar (KBM) siswa berlangsung pukul 07.00 – 15.00 WIB."
+            ]
+        },
+        {
+            "tag": "kontak_alamat_sekolah",
+            "patterns": [
+                "dimana alamat sekolah",
+                "lokasi sekolah dimana",
+                "nomor telepon sekolah",
+                "email resmi sekolah",
+                "kontak sekolah",
+                "peta lokasi sekolah",
+                "siapa nama kepala sekolah",
+                "hubungi pihak sekolah"
+            ],
+            "responses": [
+                "Informasi Kontak & Lokasi Resmi Sekolah: Silakan periksa halaman **Kontak & Pusat Bantuan** pada website kami untuk peta Google Maps terintegrasi, alamat kampus lengkap, nomor telepon hotline, dan email resmi dinas.",
+                "Alamat dan kontak sekolah tercantum lengkap pada bagian footer situs serta halaman Tentang Kami. Anda dapat menghubungi layanan telepon sekolah pada jam kerja untuk informasi lebih lanjut."
+            ]
+        },
+        {
+            "tag": "fasilitas_sekolah",
+            "patterns": [
+                "fasilitas apa saja di sekolah",
+                "apakah ada lab komputer",
+                "lapangan olahraga ada apa saja",
+                "apakah ada wifi",
+                "sarana prasarana sekolah",
+                "fasilitas laboratorium",
+                "sarana ibadah sekolah"
+            ],
+            "responses": [
+                "Sekolah kami dilengkapi sarana dan prasarana modern: Laboratorium Komputer & Multimedia, Perpustakaan Digital, Laboratorium IPA & Bahasa, Lapangan Olahraga Multifungsi (Futsal, Basket, Voli), Masjid Sekolah, Ruang UKS, Kantin Sehat Higienis, serta jaringan Wi-Fi civitas berkecepatan tinggi.",
+                "Fasilitas utama sekolah meliputi ruang kelas ber-AC, laboratorium sains & komputer terkini, perpustakaan dengan e-reader digital, lapangan olahraga serbaguna, dan sarana ibadah yang nyaman."
+            ]
+        },
+        {
+            "tag": "ekstrakurikuler_sekolah",
+            "patterns": [
+                "apa saja ekskul di sekolah",
+                "kegiatan ekstrakurikuler ada apa",
+                "apakah ada ekskul pramuka",
+                "ekskul robotik dan coding",
+                "pilihan ekskul siswa",
+                "klub bakat minat",
+                "jadwal latihan ekskul"
+            ],
+            "responses": [
+                "Pilihan ekstrakurikuler sekolah mencakup: Pramuka (Wajib), Paskibra, PMR \/ KSPAN, Klub Futsal & Sepakbola, Bola Basket, Klub Robotik & IT Coding, Seni Tari & Musik Tradisional, serta Rohis\/Rokris. Pendaftaran dan jadwal latihan dapat diakses pada menu Ekstrakurikuler.",
+                "Ekstrakurikuler di sekolah kami dirancang untuk mengasah bakat dan karakter siswa, mulai dari bidang kepemimpinan (Pramuka\/Paskibra), olahraga (Futsal\/Basket), hingga teknologi (Robotika & Pemrograman)."
+            ]
+        },
+        {
+            "tag": "perpustakaan_sekolah",
+            "patterns": [
+                "layanan perpustakaan sekolah",
+                "apakah ada buku digital",
+                "cara pinjam buku perpus",
+                "katalog buku perpustakaan",
+                "jam buka perpustakaan",
+                "e-book perpustakaan",
+                "booking buku perpustakaan"
+            ],
+            "responses": [
+                "Perpustakaan digital sekolah menyediakan katalog buku fisik dan koleksi E-Book PDF yang dapat dibaca langsung di browser. Siswa dan guru juga dapat mereservasi \/ booking buku mandiri melalui menu **Perpustakaan**.",
+                "Ruang baca perpustakaan buka setiap hari kerja pukul 07.30 – 15.30 WIB. Civitas sekolah dapat mencari koleksi buku Kurikulum Merdeka, fiksi, karya ilmiah, dan majalah edukasi."
+            ]
+        },
+        {
+            "tag": "bantuan_akun_login",
+            "patterns": [
+                "lupa kata sandi",
+                "reset password akun",
+                "tidak bisa login",
+                "bantuan login siswa",
+                "bagaimana cara masuk portal",
+                "ganti password",
+                "akun terblokir"
+            ],
+            "responses": [
+                "Bantuan Akun & Login: Siswa dapat login menggunakan NISN\/Email terdaftar. Jika lupa kata sandi, gunakan fitur 'Lupa Kata Sandi' pada halaman login atau hubungi bagian Tata Usaha sekolah untuk permohonan reset password.",
+                "Untuk kendala akses akun portal: Pastikan NISN\/NIP dan kata sandi sudah benar. Layanan pemulihan mandiri tersedia via tautan Lupa Sandi ber-token aman yang dikirimkan ke kontak WhatsApp\/Email Anda."
+            ]
+        },
+        {
+            "tag": "akademik_ujian",
+            "patterns": [
+                "kapan jadwal ujian",
+                "kalender akademik semester",
+                "kapan libur sekolah",
+                "jadwal kegiatan sekolah",
+                "agenda sekolah terdekat",
+                "sistem ujian cbt"
+            ],
+            "responses": [
+                "Kalender akademik, jadwal asesmen sumatif\/ujian CBT, dan hari libur sekolah dapat dilihat secara real-time pada menu **Kalender Akademik** di dashboard masing-masing.",
+                "Ujian sekolah menggunakan sistem CBT terintegrasi dengan pengamanan proctoring layar penuh. Jadwal pelaksanaan dan kartu peserta ujian dapat diakses melalui menu Modul Ujian."
+            ]
+        }
+    ],
+    "learned": [
+        {
+            "question": "apa ibukota indonesia",
+            "answer": "Ibukota Indonesia adalah Nusantara (IKN).",
+            "learned_at": "2026-11-07 09:42:05",
+            "updated_at": "2026-11-07 14:14:18"
+        },
+        {
+            "question": "pendidikan itu apa",
+            "answer": "Pendidikan adalah proses pembelajaran terencana maupun alami untuk mengembangkan pengetahuan, keterampilan, karakter, dan potensi seseorang agar siap menjalani kehidupan di masyarakat. Pendidikan tidak terbatas pada bangku sekolah, melainkan berlangsung seumur hidup melalui pengajaran, pelatihan, atau pengalaman sehari-hari.",
+            "learned_at": "2026-11-07 10:50:00"
+        },
+        {
+            "question": "menurut Ki Hadjar Dewantara tentang pendidikan apa ?",
+            "answer": "Pendidikan adalah tuntunan di dalam hidup tumbuhnya anak-anak. Maksudnya, menuntun segala kekuatan kodrat yang ada pada anak-anak itu, agar mereka sebagai manusia dan sebagai anggota masyarakat dapatlah mencapai keselamatan dan kebahagiaan yang setinggi-tingginya.",
+            "learned_at": "2026-11-07 10:50:36"
+        },
+        {
+            "question": "menurut UU No. 20 Tahun 2003 (Sistem Pendidikan Nasional) apa?",
+            "answer": "Pendidikan adalah usaha sadar dan terencana untuk mewujudkan suasana belajar dan proses pembelajaran agar peserta didik secara aktif mengembangkan potensi dirinya untuk memiliki kekuatan spiritual keagamaan, pengendalian diri, kepribadian, kecerdasan, akhlak mulia, serta keterampilan yang diperlukan dirinya, masyarakat, bangsa, dan negara.",
+            "learned_at": "2026-11-07 10:51:11"
+        },
+        {
+            "question": "apa tujuan pendidikan ?",
+            "answer": "Mengembangkan Potensi Diri: Mengasah kemampuan berpikir kritis (kognitif), kepekaan emosi dan sikap (afektif), serta keterampilan fisik atau teknis (psikomotorik).\n\nMembentuk Karakter dan Moral: Menanamkan nilai-nilai etika, sopan santun, empati, dan tanggung jawab sosial agar seseorang mampu hidup berdampingan dengan baik.\n\nPewarisan Budaya dan Nilai: Meneruskan pengetahuan, bahasa, tradisi, dan norma dari satu generasi ke generasi berikutnya.\n\nKemandirian dan Kesejahteraan: Membekali individu dengan keahlian yang dibutuhkan untuk bekerja, berkarya, dan memecahkan masalah dalam kehidupan nyata.",
+            "learned_at": "2026-11-07 10:51:37"
+        },
+        {
+            "question": "Kapan jadwal syuting film 'Vampir & Zombi' bersama qari, dukun, dan kiai xenosentris yang lucu itu?",
+            "answer": "Wibawa sang juri vokal memang begitu خusyuk (khusyuk), qari dan zombi pun фаsih (fasih) bernyanyi tanpa jeda di xilofon!\"(Versi murni kata baku): \"Muzik xylofon dan vokal qari itu begitu syahdu, membuat wajah para juri tampak ceria.\"",
+            "learned_at": "2026-11-07 11:06:54"
+        },
+        {
+            "question": "apa kamu tau apa itu database?",
+            "answer": "Database atau basis data adalah kumpulan informasi atau data yang diorganisasikan secara sistematis dan disimpan secara elektronik di dalam sistem komputer agar dapat diakses, dikelola, dan diperbarui dengan mudah serta cepat. Jika dianalogikan dalam dunia nyata, database menyerupai sebuah lemari arsip raksasa yang sangat rapi, di mana setiap dokumen dikelompokkan ke dalam map dan laci khusus berdasarkan kategori tertentu sehingga petugas tidak perlu membongkar seluruh ruangan hanya untuk mencari satu lembar kertas. Dalam ekosistem digital modern, kehadiran database menjadi tulang punggung bagi hampir seluruh aplikasi dan situs web yang digunakan sehari-hari. Tanpa adanya sistem penyimpanan yang terstruktur ini, sebuah aplikasi tidak akan memiliki ingatan permanen untuk menyimpan profil pengguna, riwayat transaksi, atau katalog barang, sehingga segala aktivitas yang dilakukan di layar akan langsung hilang begitu perangkat dimatikan atau halaman dimuat ulang.\n\nUntuk menjalankan fungsinya, sebuah database tidak bekerja sendirian, melainkan dikendalikan oleh perangkat lunak khusus yang disebut sebagai Sistem Manajemen Basis Data atau Database Management System (DBMS). Perangkat lunak seperti MySQL, PostgreSQL, Oracle, hingga MongoDB ini bertindak sebagai perantara cerdas antara pengguna atau aplikasi dengan data fisik yang tersimpan di dalam piringan penyimpanan server. Ketika sebuah aplikasi membutuhkan informasi tertentu, aplikasi tersebut akan mengirimkan perintah menggunakan bahasa pemrograman khusus, seperti Structured Query Language (SQL), kepada DBMS. Sistem ini kemudian menerjemahkan perintah tersebut, mengeksekusi operasi dasar yang dikenal dengan konsep CRUD (Create untuk membuat data baru, Read untuk membaca data, Update untuk mengubah data, dan Delete untuk menghapus data), lalu mengirimkan kembali hasilnya ke layar pengguna hanya dalam hitungan milidetik.\n\nSeiring dengan perkembangan kompleksitas informasi, struktur database mengalami evolusi dan terbagi menjadi dua paradigma utama yang paling populer, yaitu database relasional dan database non-relasional. Database relasional mengorganisasikan data ke dalam tabel-tabel dua dimensi yang terdiri dari baris dan kolom, di mana setiap tabel dapat saling terhubung menggunakan pengenal unik seperti Primary Key dan Foreign Key untuk mencegah duplikasi data dan menjaga konsistensi informasi secara ketat. Sebaliknya, database non-relasional atau yang sering disebut NoSQL hadir untuk menjawab kebutuhan penyimpanan data modern yang sifatnya lebih cair, tidak terstruktur, dan berubah dengan cepat. Alih-alih memaksakan data masuk ke dalam baris dan kolom yang kaku, sistem non-relasional menyimpan informasi dalam bentuk dokumen JSON, pasangan kunci-nilai, atau jaringan grafik yang sangat fleksibel untuk menangani lonjakan data berskala besar.\n\nSelain mengatur kerapian penyimpanan, arsitektur database dirancang dengan mekanisme perlindungan tingkat tinggi guna menjamin integritas dan keamanan informasi di dalamnya. Dalam sistem transaksi yang krusial, database menerapkan prinsip ketat agar setiap proses pembaruan data berjalan secara utuh; jika terjadi kegagalan sistem atau pemadaman listrik di tengah jalan, perubahan yang belum selesai akan dibatalkan sepenuhnya agar tidak menghasilkan data yang cacat atau setengah jadi. Di samping itu, sistem ini mampu menangani konkurensi, yaitu kondisi ketika ribuan pengguna mengakses atau memodifikasi data yang sama pada detik yang bersamaan tanpa saling menimpa atau merusak catatan satu sama lain. Lapisan keamanan berlapis mulai dari pengaturan hak akses pengguna, enkripsi data, hingga fitur pencadangan otomatis juga ditanamkan secara bawaan untuk melindungi aset informasi dari ancaman peretasan maupun kerusakan perangkat keras.\n\nDalam praktiknya di kehidupan nyata, peran database terasa begitu dekat meskipun bekerja secara tak kasatmata di balik layar setiap interaksi digital manusia. Saat seseorang memindahkan saldo melalui aplikasi perbankan digital, database secara instan memastikan saldo pengirim berkurang dan saldo penerima bertambah secara presisi pada waktu yang bersamaan tanpa ada uang yang lenyap di tengah proses. Begitu pula di lingkungan institusi pendidikan atau pemerintahan, database memungkinkan ribuan catatan identitas, riwayat akademik, dan nilai ujian disimpan serta ditarik kembali menjadi laporan utuh kapan saja dibutuhkan tanpa risiko kertas lapuk atau terselip. Lebih jauh lagi, kumpulan data historis yang mengendap di dalam sistem ini kini menjadi bahan bakar utama bagi kecerdasan buatan dan analitik modern untuk membaca pola kebiasaan, memprediksi tren masa depan, serta membantu pengambilan keputusan strategis yang akurat.",
+            "learned_at": "2026-11-07 11:16:07"
+        },
+        {
+            "question": "siapa pencipta bahasa pemrograman php",
+            "answer": "Bahasa pemrograman PHP diciptakan oleh Rasmus Lerdorf pada tahun 1994.",
+            "learned_at": "2026-11-07 12:38:10"
+        },
+        {
+            "question": "jelaskan perbedaan utama antara algoritma backpropagation dan id3",
+            "answer": "Backpropagation melatih bobot jaringan saraf tiruan melalui turunan gradien error, sedangkan ID3 membangun pohon keputusan menggunakan perhitungan Information Gain dan Entropy.",
+            "learned_at": "2026-11-07 12:46:40",
+            "updated_at": "2026-11-07 12:47:03"
+        },
+        {
+            "question": "siapa presiden indonesia saat ini ?",
+            "answer": "bapak prabowo",
+            "learned_at": "2026-11-07 15:47:18"
+        },
+        {
+            "question": "apakah matahari itu bulat",
+            "answer": "matahari bulat dan panas",
+            "learned_at": "2026-11-07 16:42:18"
+        }
+    ],
+    "sentiment_words": {
+        "positive": [
+            "bagus",
+            "hebat",
+            "keren",
+            "mantap",
+            "luar biasa",
+            "senang",
+            "bahagia",
+            "suka",
+            "cinta",
+            "terbaik",
+            "puas",
+            "indah",
+            "sempurna",
+            "pintar",
+            "cerdas",
+            "bermanfaat",
+            "canggih",
+            "akurat",
+            "menakjubkan",
+            "brilian",
+            "istimewa",
+            "ramah",
+            "juara"
+        ],
+        "negative": [
+            "buruk",
+            "jelek",
+            "kecewa",
+            "sedih",
+            "marah",
+            "bodoh",
+            "rusak",
+            "payah",
+            "gagal",
+            "benci",
+            "sulit",
+            "kesal",
+            "parah",
+            "lelet",
+            "error",
+            "lambat",
+            "kacau",
+            "salah",
+            "mengecewakan",
+            "rugi",
+            "parah"
+        ]
+    }
+}

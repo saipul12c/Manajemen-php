@@ -338,6 +338,10 @@ $pass_pct  = $total_stu > 0 ? round(($count_pass / $total_stu) * 100, 1) : 0.0;
         .sig-space { height: 60px; }
 
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
             body {
                 background: #ffffff;
                 padding: 0;
@@ -380,8 +384,16 @@ $pass_pct  = $total_stu > 0 ? round(($count_pass / $total_stu) * 100, 1) : 0.0;
     <div class="page-container">
         <!-- Kop Surat -->
         <div class="kop-surat">
+            <?php 
+                $clean_gb_logo = !empty($school_info['school_logo']) ? resolveAssetUrl($school_info['school_logo'], '../../') : '';
+                $gb_logo_exists = !empty($clean_gb_logo) && (strpos($clean_gb_logo, 'http') === 0 || file_exists(dirname(__DIR__, 2) . '/' . resolveAssetUrl($school_info['school_logo'])));
+            ?>
             <div class="kop-logo">
-                <i class="fa-solid fa-graduation-cap"></i>
+                <?php if ($gb_logo_exists): ?>
+                    <img src="<?= htmlspecialchars($clean_gb_logo) ?>" alt="Logo" style="max-height: 70px; max-width: 70px; object-fit: contain;">
+                <?php else: ?>
+                    <i class="fa-solid fa-graduation-cap"></i>
+                <?php endif; ?>
             </div>
             <div class="kop-text">
                 <h2>PEMERINTAH DAERAH PROVINSI / DINAS PENDIDIKAN</h2>
@@ -472,19 +484,28 @@ $pass_pct  = $total_stu > 0 ? round(($count_pass / $total_stu) * 100, 1) : 0.0;
         </div>
 
         <!-- Tanda Tangan -->
-        <div class="signature-section">
-            <div class="sig-block">
-                <p>Wali Kelas / Guru Pengampu,</p>
-                <div class="sig-space"></div>
-                <p><strong><?= htmlspecialchars($_SESSION['user_name'] ?? 'Dewi Lestari, M.Pd') ?></strong></p>
-                <p style="font-size: 8.5pt; color: #444;">NIP: 19820315 200801 2 014</p>
+        <div class="signature-section" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 30px; page-break-inside: avoid;">
+            <div>
+                <p style="font-size: 9pt; color: #475569; margin-bottom: 4px; text-align: center;">Mengetahui,</p>
+                <?= renderOfficialSignatureHtml($pdo, 'teacher', [
+                    'teacher_id' => $user_id,
+                    'custom_name' => $_SESSION['user_name'] ?? 'Dewi Lestari, M.Pd',
+                    'custom_title' => 'Wali Kelas / Guru Pengampu',
+                    'doc_type' => 'LEGER_NILAI',
+                    'doc_num' => "LEGER/{$school_info['academic_year']}/" . ($selected_class_id ?: 'ALL'),
+                    'show_city_date' => false,
+                    'align' => 'center'
+                ]) ?>
             </div>
 
-            <div class="sig-block">
-                <p>Ditetapkan di Jakarta,<br><?= date('d F Y') ?><br>Kepala Sekolah,</p>
-                <div class="sig-space"></div>
-                <p><strong><?= htmlspecialchars($school_info['headmaster_name'] ?? 'Dr. H. Bambang Sudirman, M.Pd') ?></strong></p>
-                <p style="font-size: 8.5pt; color: #444;">NIP: <?= htmlspecialchars($school_info['headmaster_nip'] ?? '19750812 199903 1 002') ?></p>
+            <div>
+                <?= renderOfficialSignatureHtml($pdo, 'headmaster', [
+                    'doc_type' => 'LEGER_NILAI',
+                    'doc_num' => "LEGER/{$school_info['academic_year']}/" . ($selected_class_id ?: 'ALL'),
+                    'doc_title' => 'Leger Nilai Hasil Belajar',
+                    'show_city_date' => true,
+                    'align' => 'center'
+                ]) ?>
             </div>
         </div>
     </div>

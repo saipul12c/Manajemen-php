@@ -179,12 +179,14 @@ $user_role = $_SESSION['user_role'] ?? '';
                                 </div>
                                 <div>
                                     <span class="inline-block rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400">
-                                        Akreditasi A (Unggul)
+                                        <?= htmlspecialchars($school_info['school_accreditation'] ?? 'Akreditasi A (Unggul)') ?>
                                     </span>
                                     <h3 class="text-lg sm:text-xl font-bold text-white mt-1">
                                         <?= htmlspecialchars($school_info['school_name'] ?? 'SMA Bina Bangsa Nusantara') ?>
                                     </h3>
-                                    <p class="text-xs text-slate-400 font-mono">NPSN: 20108921 | Kurikulum Merdeka</p>
+                                    <p class="text-xs text-slate-400 font-mono">
+                                        NPSN: <?= htmlspecialchars($school_info['school_npsn'] ?? '20108921') ?> | <?= htmlspecialchars($school_info['school_curriculum'] ?? 'Kurikulum Merdeka') ?>
+                                    </p>
                                 </div>
                             </div>
 
@@ -255,7 +257,7 @@ $user_role = $_SESSION['user_role'] ?? '';
                                 Dedikasi Membangun Generasi Emas Berintegritas
                             </h2>
                             <p class="mt-4 text-sm sm:text-base text-slate-300 leading-relaxed">
-                                Didirikan dengan komitmen tinggi terhadap kualitas pembelajaran, kami memadukan kurikulum nasional berbasis kompetensi dengan pembelajaran digital modern. Sistem ini dirancang untuk memfasilitasi setiap aspek akademik, administratif, dan komunikasi antar stakeholder sekolah secara instan dan tanpa sekat birokrasi konvensional.
+                                <?= nl2br(htmlspecialchars($school_info['school_history'] ?? 'Didirikan dengan komitmen tinggi terhadap kualitas pembelajaran, kami memadukan kurikulum nasional berbasis kompetensi dengan pembelajaran digital modern. Sistem ini dirancang untuk memfasilitasi setiap aspek akademik, administratif, dan komunikasi antar stakeholder sekolah secara instan dan tanpa sekat birokrasi konvensional.')) ?>
                             </p>
                         </div>
 
@@ -270,7 +272,7 @@ $user_role = $_SESSION['user_role'] ?? '';
                                     <h4 class="text-base font-bold text-white">Visi Sekolah</h4>
                                 </div>
                                 <p class="text-sm text-slate-300 italic pl-11">
-                                    "Menjadi lembaga pendidikan terdepan yang menghasilkan insan berkarakter mulia, cerdas berteknologi, berwawasan lingkungan, serta unggul dalam persaingan global pada tahun 2030."
+                                    &ldquo;<?= htmlspecialchars($school_info['school_vision'] ?? 'Menjadi lembaga pendidikan terdepan yang menghasilkan insan berkarakter mulia, cerdas berteknologi, berwawasan lingkungan, serta unggul dalam persaingan global pada tahun 2030.') ?>&rdquo;
                                 </p>
                             </div>
 
@@ -281,23 +283,24 @@ $user_role = $_SESSION['user_role'] ?? '';
                                     </span>
                                     <h4 class="text-base font-bold text-white">Misi Utama Sekolah</h4>
                                 </div>
+                                <?php
+                                $missions = function_exists('getSchoolMissions') ? getSchoolMissions($pdo) : [];
+                                if (empty($missions)) {
+                                    $missions = [
+                                        'Menyelenggarakan proses pembelajaran aktif, kreatif, dan berbasis teknologi mutakhir.',
+                                        'Menanamkan nilai-nilai religiusitas, kejujuran, dan toleransi dalam kehidupan bersosial.',
+                                        'Menerapkan tata kelola digital terpadu yang transparan, akuntabel, dan bebas kertas (paperless).',
+                                        'Mempererat sinergi aktif antara guru, orang tua, dan masyarakat demi perkembangan siswa.'
+                                    ];
+                                }
+                                ?>
                                 <ul class="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-1 text-xs sm:text-sm text-slate-300">
+                                    <?php foreach ($missions as $m_item): ?>
                                     <li class="flex items-start gap-2">
                                         <i class="fa-solid fa-check-circle text-emerald-400 mt-1 shrink-0"></i>
-                                        <span>Menyelenggarakan proses pembelajaran aktif, kreatif, dan berbasis teknologi mutakhir.</span>
+                                        <span><?= htmlspecialchars($m_item) ?></span>
                                     </li>
-                                    <li class="flex items-start gap-2">
-                                        <i class="fa-solid fa-check-circle text-emerald-400 mt-1 shrink-0"></i>
-                                        <span>Menanamkan nilai-nilai religiusitas, kejujuran, dan toleransi dalam kehidupan bersosial.</span>
-                                    </li>
-                                    <li class="flex items-start gap-2">
-                                        <i class="fa-solid fa-check-circle text-emerald-400 mt-1 shrink-0"></i>
-                                        <span>Menerapkan tata kelola digital terpadu yang transparan, akuntabel, dan bebas kertas (paperless).</span>
-                                    </li>
-                                    <li class="flex items-start gap-2">
-                                        <i class="fa-solid fa-check-circle text-emerald-400 mt-1 shrink-0"></i>
-                                        <span>Mempererat sinergi aktif antara guru, orang tua, dan masyarakat demi perkembangan siswa.</span>
-                                    </li>
+                                    <?php endforeach; ?>
                                 </ul>
                             </div>
 
